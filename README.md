@@ -1,7 +1,7 @@
 # poly-maker
 
 A maker-only market-making bot for **Polymarket CLOB V2**, focused on political
-markets. Single async process, local-file config (no Google Sheets), typed and
+markets. Single async process, local-file config, typed and
 tested.
 
 > [!WARNING]
@@ -82,8 +82,9 @@ uv run polymaker run --paper
 # 4. preflight the wallet before going live
 uv run polymaker doctor
 
-# 5. one safe live round-trip (~$5 post-only order, placed deep and cancelled)
-uv run polymaker livetest
+# 5. self-tests: a deep post-only order (free), then a real fill round-trip (~cents)
+uv run polymaker livetest      # place a deep post-only order + cancel (no fill)
+uv run polymaker moneydoctor   # limit rest + market buy + market sell, auto-flattens
 
 # 6. go live
 uv run polymaker run

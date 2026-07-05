@@ -55,7 +55,8 @@ async def test_paper_gateway_places_and_cancels_without_wallet(meta):
 
 async def test_paper_gateway_heartbeat_and_cancel_all_noop():
     gw = ExecutionGateway(Config(), paper=True)
-    await gw.heartbeat("hb1")
+    assert await gw.heartbeat() is True  # paper: healthy no-op
+    assert gw.heartbeat_failures == 0
     await gw.cancel_all()  # no client, must not raise
 
 

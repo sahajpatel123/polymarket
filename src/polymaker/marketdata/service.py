@@ -55,6 +55,7 @@ class MarketDataService:
         self._subs: list[str] = []
         self._ws: Any = None
         self._stop = asyncio.Event()
+        self.connected: bool = False
 
     # ── subscription management ─────────────────────────────────────────
     def set_markets(self, markets: list[tuple[str, list[str]]]) -> None:
@@ -78,6 +79,11 @@ class MarketDataService:
         b = self.books.get(token_id)
         return b.last_update_ts if b else 0.0
 
+    def last_local_ts(self, token_id: str) -> float:
+        """Local receive time of the last book mutation (skew-proof staleness)."""
+        b = self.books.get(token_id)
+        return b.local_ts if b else 0.0
+
     # ── run loop ────────────────────────────────────────────────────────
     async def run(self) -> None:
         backoff = 1.0
@@ -98,15 +104,22 @@ class MarketDataService:
         if not self._subs:
             await asyncio.sleep(1.0)
             return
-        kwargs: dict[str, Any] = {"ping_interval": 5, "ping_timeout": None}
+        # ping_timeout matters: with None a half-dead TCP connection hangs
+        # forever. The server answers protocol pings (verified live), so a
+        # missing pong within 10s means the link is dead -> reconnect.
+        kwargs: dict[str, Any] = {"ping_interval": 5, "ping_timeout": 10, "open_timeout": 10}
         if self._proxy:
             kwargs["proxy"] = self._proxy
         async with websockets.connect(self._url, **kwargs) as ws:
             self._ws = ws
             await ws.send(json.dumps({"assets_ids": self._subs, "type": "market"}))
+            self.connected = True
             log.info("market_ws_subscribed", n=len(self._subs))
-            async for raw in ws:
-                self._handle(raw)
+            try:
+                async for raw in ws:
+                    self._handle(raw)
+            finally:
+                self.connected = False
 
     def stop(self) -> None:
         self._stop.set()

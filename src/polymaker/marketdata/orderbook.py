@@ -10,6 +10,7 @@ apply_* mutators. Nothing here does I/O; the WS layer drives it.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 
 from sortedcontainers import SortedDict
@@ -58,14 +59,15 @@ class BookView:
 class OrderBook:
     """YES-canonical L2 book for one market."""
 
-    __slots__ = ("bids", "asks", "tick_size", "last_update_ts", "book_hash")
+    __slots__ = ("bids", "asks", "tick_size", "last_update_ts", "local_ts", "book_hash")
 
     def __init__(self, tick_size: float = 0.001) -> None:
         # price -> size. bids and asks both ascending in price.
         self.bids: SortedDict[float, float] = SortedDict()
         self.asks: SortedDict[float, float] = SortedDict()
         self.tick_size = tick_size
-        self.last_update_ts: float = 0.0
+        self.last_update_ts: float = 0.0  # exchange timestamp (informational)
+        self.local_ts: float = 0.0  # local receive time — used for staleness (skew-proof)
         self.book_hash: str | None = None
 
     # ── mutation ────────────────────────────────────────────────────────
@@ -79,6 +81,7 @@ class OrderBook:
         self.bids = SortedDict({p: s for p, s in bids if s > 0})
         self.asks = SortedDict({p: s for p, s in asks if s > 0})
         self.last_update_ts = ts
+        self.local_ts = time.time()
         self.book_hash = book_hash
 
     def apply_delta(self, side: Side, price: float, size: float, ts: float) -> None:
@@ -88,6 +91,7 @@ class OrderBook:
         else:
             book[price] = size
         self.last_update_ts = ts
+        self.local_ts = time.time()
 
     def set_tick_size(self, tick_size: float) -> None:
         self.tick_size = tick_size

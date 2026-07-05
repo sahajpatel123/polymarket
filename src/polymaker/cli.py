@@ -193,6 +193,18 @@ def livetest(
     raise typer.Exit(0 if ok else 1)
 
 
+@app.command()
+def moneydoctor(
+    config_dir: str = typer.Option("config", help="config directory"),
+) -> None:
+    """LIVE trading self-test: rest a limit, then market buy + sell (spends a little)."""
+    from polymaker.moneydoctor import run_moneydoctor
+
+    cfg = Config.load(config_dir)
+    ok = asyncio.run(run_moneydoctor(cfg, console))
+    raise typer.Exit(0 if ok else 1)
+
+
 @app.command(name="cancel-all")
 def cancel_all(config_dir: str = typer.Option("config", help="config directory")) -> None:
     """Cancel all open orders for the wallet (panic button)."""

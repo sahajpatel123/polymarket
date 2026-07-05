@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -33,6 +34,7 @@ class UserStream:
         url: str = "wss://ws-subscriptions-clob.polymarket.com/ws/user",
         journal: Journal | None = None,
         proxy: str | None = None,
+        on_reconnect: Callable[[], None] | None = None,
     ) -> None:
         self._creds = creds
         self._address = our_address
@@ -42,8 +44,14 @@ class UserStream:
         self._url = url
         self._journal = journal
         self._proxy = proxy
+        self._on_reconnect = on_reconnect or (lambda: None)
         self._markets: list[str] = []
         self._stop = asyncio.Event()
+        # Connection health. ping_timeout guarantees a dead link flips
+        # `connected` to False within ~15s, so the engine can go blind-safe.
+        self.connected: bool = False
+        self.disconnected_since: float = time.time()
+        self._ever_connected = False
 
     def set_markets(self, condition_ids: list[str]) -> None:
         self._markets = condition_ids
@@ -73,14 +81,25 @@ class UserStream:
             },
             "markets": self._markets,
         }
-        kwargs: dict[str, Any] = {"ping_interval": 5, "ping_timeout": None}
+        kwargs: dict[str, Any] = {"ping_interval": 5, "ping_timeout": 10, "open_timeout": 10}
         if self._proxy:
             kwargs["proxy"] = self._proxy
         async with websockets.connect(self._url, **kwargs) as ws:
             await ws.send(json.dumps(sub))
-            log.info("user_ws_subscribed", markets=len(self._markets))
-            async for raw in ws:
-                self._handle(raw)
+            self.connected = True
+            is_reconnect = self._ever_connected
+            self._ever_connected = True
+            log.info("user_ws_subscribed", markets=len(self._markets), reconnect=is_reconnect)
+            if is_reconnect:
+                # events during the gap are LOST (no replay) — the engine must
+                # force a REST reconcile to recover any missed fills/cancels
+                self._on_reconnect()
+            try:
+                async for raw in ws:
+                    self._handle(raw)
+            finally:
+                self.connected = False
+                self.disconnected_since = time.time()
 
     def stop(self) -> None:
         self._stop.set()

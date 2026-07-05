@@ -72,7 +72,14 @@ class Engine:
         self._sweep: dict[str, bool] = {}
         self._merging: set[str] = set()
         self._token_cid: dict[str, str] = {}
-        self._tasks: list[asyncio.Task[Any]] = []
+        # supervised tasks: name -> (factory, task) so a dead task restarts
+        self._task_specs: dict[str, Any] = {}
+        self._tasks: dict[str, asyncio.Task[Any]] = {}
+        self._aux_tasks: list[asyncio.Task[Any]] = []  # fire-and-forget (merges)
+        # health / recovery signals
+        self._reconcile_now = asyncio.Event()
+        self._user_started = False  # user WS task launched (live mode)
+        self._hb_was_down = False
 
     # ── lifecycle ───────────────────────────────────────────────────────
     async def start(self) -> None:
@@ -89,24 +96,49 @@ class Engine:
             self.gateway.creds, self.gateway.address, self.user_proc,
             other_token=self._other_token, condition_of_token=self._cid_of_token,
             journal=self.journal, proxy=self.cfg.proxy,
+            on_reconnect=self._on_user_reconnect,
         )
         self.user.set_markets(list(self.metas))
 
-        # launch tasks
-        self._tasks.append(asyncio.create_task(self.md.run(), name="market_ws"))
+        # launch supervised tasks (a dead task is restarted, never silently gone)
+        self._spawn("market_ws", self.md.run)
         if not self.paper:
-            self._tasks.append(asyncio.create_task(self.user.run(), name="user_ws"))
-            self._tasks.append(asyncio.create_task(self._heartbeat_loop(), name="heartbeat"))
-        self._tasks.append(asyncio.create_task(self._reconcile_loop(), name="reconcile"))
+            assert self.user is not None
+            self._spawn("user_ws", self.user.run)
+            self._spawn("heartbeat", self._heartbeat_loop)
+            self._user_started = True
+        self._spawn("reconcile", self._reconcile_loop)
         for cid in self.metas:
-            self._tasks.append(asyncio.create_task(self._quoter(cid), name=f"quote:{cid[:8]}"))
+            self._spawn(f"quote:{cid[:8]}", lambda c=cid: self._quoter(c))
+        self._spawn("supervisor", self._supervise)
         self.risk.reset_day()
         log.info("engine_started", markets=len(self.metas), paper=self.paper)
+
+    def _spawn(self, name: str, factory: Any) -> None:
+        self._task_specs[name] = factory
+        self._tasks[name] = asyncio.create_task(factory(), name=name)
+
+    _supervise_interval_s: float = 5.0
+
+    async def _supervise(self) -> None:
+        """Restart any engine task that exits while we're running. Never down."""
+        while self._running:
+            await asyncio.sleep(self._supervise_interval_s)
+            for name, task in list(self._tasks.items()):
+                if name == "supervisor" or not task.done():
+                    continue
+                if not self._running:
+                    return
+                exc = None
+                with contextlib.suppress(asyncio.CancelledError, asyncio.InvalidStateError):
+                    exc = task.exception()
+                log.critical("task_died_restarting", task=name, err=str(exc) if exc else "exited")
+                self._tasks[name] = asyncio.create_task(self._task_specs[name](), name=name)
 
     async def run_forever(self) -> None:
         await self.start()
         with contextlib.suppress(asyncio.CancelledError):
-            await asyncio.gather(*self._tasks)
+            await asyncio.gather(*self._tasks.values(), *self._aux_tasks)
 
     async def shutdown(self) -> None:
         self._running = False
@@ -114,7 +146,7 @@ class Engine:
         self.md.stop()
         if self.user:
             self.user.stop()
-        for t in self._tasks:
+        for t in [*self._tasks.values(), *self._aux_tasks]:
             t.cancel()
         with contextlib.suppress(Exception):
             await self.gateway.cancel_all()
@@ -150,6 +182,10 @@ class Engine:
         reward_rates: dict[str, float],
     ) -> MarketMeta | None:
         tag_id = self.catalog.cached_tag("politics")
+        if tag_id is None:  # cold start: resolve + cache so the sweep is scoped
+            tag_id = await gamma.resolve_tag_id("politics")
+            if tag_id:
+                self.catalog.cache_tag("politics", tag_id)
         async for raw in gamma.iter_markets(tag_id=tag_id, max_pages=25):
             if (slug and raw.get("slug") == slug) or (condition_id and raw.get("conditionId") == condition_id):
                 m = parse_market(raw, reward_rates)
@@ -184,6 +220,16 @@ class Engine:
         ev = self._dirty.get(condition_id)
         if ev is not None:
             ev.set()
+
+    def _wake_all(self) -> None:
+        for ev in self._dirty.values():
+            ev.set()
+
+    def _on_user_reconnect(self) -> None:
+        """User WS reconnected: events during the gap were lost — force an
+        immediate REST reconcile before trusting our state again."""
+        log.warning("user_ws_reconnected_forcing_reconcile")
+        self._reconcile_now.set()
 
     def _on_trade(self, tp: TradePrint) -> None:
         cid = self._token_cid.get(tp.asset_id)
@@ -247,10 +293,30 @@ class Engine:
         q_max = p.q_max_usdc
         inv_util = abs(pos_yes.size - pos_no.size) * fv / q_max if q_max > 0 else 0.0
         hours_to_end = _hours_to_end(meta.end_date_iso, now)
-        ws_stale = (now - self.md.last_update_ts(meta.yes.token_id)) > self.cfg.risk.ws_stale_halt_s
 
-        rd = self.risk.evaluate(meta, ws_stale=ws_stale,
+        # ── blind/stale conditions: all use LOCAL receive time (skew-proof) ──
+        market_stale = (
+            (now - self.md.last_local_ts(meta.yes.token_id)) > self.cfg.risk.ws_stale_halt_s
+        )
+        user_blind = (
+            self._user_started
+            and self.user is not None
+            and not self.user.connected
+            and (now - self.user.disconnected_since) > self.cfg.risk.user_ws_blind_halt_s
+        )
+        hb_blind = (
+            not self.paper
+            and self.cfg.engine.heartbeat
+            and self.gateway.heartbeat_failures >= self.cfg.risk.heartbeat_halt_failures
+        )
+        blind = market_stale or user_blind or hb_blind
+        if blind:
+            log.warning("market_blind", cid=cid[:8], market_stale=market_stale,
+                        user_blind=user_blind, hb_blind=hb_blind)
+
+        rd = self.risk.evaluate(meta, ws_stale=blind,
                                 event_group_cost=self._event_group_cost(meta))
+        ws_stale = blind
         regime = self.regime_m[cid].decide(
             RegimeInputs(
                 now=now, tick=meta.tick_size, fv=fv, prev_fv=prev_fv,
@@ -277,18 +343,47 @@ class Engine:
             return
 
         if plan.to_cancel:
-            await self.gateway.cancel(plan.to_cancel)
-            for oid in plan.to_cancel:
-                self.state.remove_order(oid)
+            ok = await self.gateway.cancel(plan.to_cancel)
+            if ok:
+                for oid in plan.to_cancel:
+                    self.state.remove_order(oid)
+            else:
+                # cancel MAY have partially applied server-side — keep our view,
+                # resync from REST, and skip placing this cycle (avoid doubles)
+                await self._refresh_token_orders(meta, grace_s=10.0)
+                self._dirty[cid].set()
+                return
         if plan.to_place:
             placed = await self.gateway.place(plan.to_place, meta)
-            self.risk.note_order_result(bool(placed) or not plan.to_place)
+            self.risk.note_order_result(len(placed) == len(plan.to_place))
             for o in placed:
                 self.state.upsert_order(o)
+            if len(placed) < len(plan.to_place):
+                # QUARANTINE: a failed/partial batch may still have posted orders
+                # we don't have ids for. Cancel everything on these tokens
+                # (idempotent) and resync — never risk an untracked live order.
+                await self._quarantine(meta, reason="place_incomplete")
         log.info("requote", cid=cid[:8], regime=regime.value, fv=round(fv, 4),
                  place=len(plan.to_place), cancel=len(plan.to_cancel),
                  pos_yes=round(pos_yes.size, 1), pos_no=round(pos_no.size, 1))
         self._maybe_merge(cid, meta, p, pos_yes.size, pos_no.size)
+
+    async def _quarantine(self, meta: MarketMeta, reason: str) -> None:
+        """Cancel all orders on a market's tokens and resync state from REST."""
+        log.warning("quarantine", cid=meta.condition_id[:8], reason=reason)
+        for tok in (meta.yes.token_id, meta.no.token_id):
+            await self.gateway.cancel_asset(tok)
+            for o in self.state.orders_for(tok):
+                self.state.remove_order(o.order_id)
+        await self._refresh_token_orders(meta)
+
+    async def _refresh_token_orders(self, meta: MarketMeta, grace_s: float = 0.0) -> None:
+        """Open-orders resync for one market's tokens (grace_s=0 = authoritative)."""
+        live = await self.gateway.open_orders()
+        for tok in (meta.yes.token_id, meta.no.token_id):
+            self.state.replace_open_orders(
+                tok, [o for o in live if o.token_id == tok], grace_s=grace_s
+            )
 
     def _maybe_merge(self, cid: str, meta: MarketMeta, p: StrategyProfile,
                      yes_size: float, no_size: float) -> None:
@@ -296,7 +391,7 @@ class Engine:
         if amount < p.merge_min_size or cid in self._merging or self.paper:
             return
         self._merging.add(cid)
-        self._tasks.append(asyncio.create_task(self._merge_task(cid, meta, amount)))
+        self._aux_tasks.append(asyncio.create_task(self._merge_task(cid, meta, amount)))
 
     async def _merge_task(self, cid: str, meta: MarketMeta, amount: float) -> None:
         try:
@@ -309,25 +404,56 @@ class Engine:
     async def _heartbeat_loop(self) -> None:
         if not self.cfg.engine.heartbeat:
             return
+        halt_after = self.cfg.risk.heartbeat_halt_failures
         while self._running:
-            await self.gateway.heartbeat()
+            ok = await self.gateway.heartbeat()
+            if not ok and self.gateway.heartbeat_failures >= halt_after and not self._hb_was_down:
+                # exchange is (or soon will be) auto-cancelling everything we
+                # have live; recompute will see hb_blind and pull quotes
+                self._hb_was_down = True
+                log.critical("heartbeat_down_halting", failures=self.gateway.heartbeat_failures)
+                self._wake_all()
+            elif ok and self._hb_was_down:
+                # recovered: our server-side orders were wiped — drop local
+                # order state, resync authoritatively, then resume quoting
+                self._hb_was_down = False
+                log.warning("heartbeat_recovered_resyncing")
+                self.state.clear_orders()
+                for meta in self.metas.values():
+                    with contextlib.suppress(Exception):
+                        await self._refresh_token_orders(meta, grace_s=0.0)
+                self._wake_all()
             await asyncio.sleep(self.cfg.engine.heartbeat_interval_s)
 
     async def _reconcile_loop(self) -> None:
         while self._running:
-            await asyncio.sleep(self.cfg.engine.reconcile_interval_s)
+            # periodic cadence, but wake immediately when a reconnect/recovery
+            # demands an urgent resync
+            with contextlib.suppress(asyncio.TimeoutError):
+                await asyncio.wait_for(
+                    self._reconcile_now.wait(),
+                    timeout=self.cfg.engine.reconcile_interval_s,
+                )
+            forced = self._reconcile_now.is_set()
+            self._reconcile_now.clear()
             try:
                 positions = await self.gateway.positions()
                 if positions:
                     self.state.reconcile_positions(positions)
                 live = await self.gateway.open_orders()
-                if live or not self.paper:
-                    by_token: dict[str, list[Any]] = {}
-                    for o in live:
-                        by_token.setdefault(o.token_id, []).append(o)
-                    for tok, orders in by_token.items():
-                        if self.state.inflight(tok) == 0:
-                            self.state.replace_open_orders(tok, orders)
+                by_token: dict[str, list[Any]] = {}
+                for o in live:
+                    by_token.setdefault(o.token_id, []).append(o)
+                # iterate ALL our tokens, not just those present in the REST
+                # response — a token whose orders all vanished server-side must
+                # be cleaned up too (grace window protects fresh placements)
+                for tok in self._token_cid:
+                    if self.state.inflight(tok) == 0:
+                        self.state.replace_open_orders(tok, by_token.get(tok, []))
+                if forced:
+                    log.info("forced_reconcile_done", positions=len(positions),
+                             open_orders=len(live))
+                    self._wake_all()
             except Exception as exc:  # noqa: BLE001
                 log.warning("reconcile_error", err=str(exc))
 

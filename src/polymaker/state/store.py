@@ -65,8 +65,26 @@ class StateStore:
     def position(self, token_id: str) -> Position:
         return self.positions.get(token_id, Position(token_id))
 
-    def apply_fill(self, fill: Fill) -> None:
-        """Apply a fill optimistically to inventory + avg price."""
+    def apply_fill(self, fill: Fill) -> bool:
+        """Apply a fill optimistically to inventory + avg price.
+
+        IDEMPOTENT: the SQLite fills table is the dedupe gate (trade_id is the
+        primary key). A replayed fill — WS redelivery after reconnect, a MATCHED
+        arriving again after CONFIRMED, or a replay across process restarts —
+        is detected by INSERT OR IGNORE and NOT applied twice. Returns False
+        for duplicates so callers can skip their side effects too.
+        """
+        cur = self._conn.execute(
+            "INSERT OR IGNORE INTO fills(trade_id,token_id,side,price,size,is_maker,ts) VALUES(?,?,?,?,?,?,?)",
+            (fill.trade_id, fill.token_id, fill.side.value, fill.price, fill.size,
+             int(fill.is_maker), fill.ts),
+        )
+        self._conn.commit()
+        if cur.rowcount == 0:
+            log.warning("duplicate_fill_ignored", trade_id=fill.trade_id,
+                        token=fill.token_id[:12], side=fill.side.value, size=fill.size)
+            return False
+
         pos = self.positions.setdefault(fill.token_id, Position(fill.token_id))
         signed = fill.size if fill.side is Side.BUY else -fill.size
         new_size = pos.size + signed
@@ -83,9 +101,9 @@ class StateStore:
             pos.avg_price = 0.0
         self._last_fill_ts[fill.token_id] = fill.ts
         self._persist_position(pos)
-        self._record_fill(fill)
         log.info("fill", token=fill.token_id[:12], side=fill.side.value,
                  price=fill.price, size=fill.size, pos=round(pos.size, 2))
+        return True
 
     def set_position(self, token_id: str, size: float, avg_price: float) -> None:
         pos = Position(token_id, max(0.0, size), avg_price if size > 0 else 0.0)
@@ -128,25 +146,38 @@ class StateStore:
     def remove_order(self, order_id: str) -> None:
         self.orders.pop(order_id, None)
 
-    def replace_open_orders(self, token_id: str, live: list[OpenOrder]) -> None:
-        """Replace our view of a token's open orders from a REST snapshot."""
-        for oid in [o.order_id for o in self.orders.values() if o.token_id == token_id]:
-            self.orders.pop(oid, None)
+    def replace_open_orders(
+        self, token_id: str, live: list[OpenOrder], *, grace_s: float = 10.0
+    ) -> None:
+        """Replace our view of a token's open orders from a REST snapshot.
+
+        DOUBLE-ORDER GUARD: a REST snapshot can lag a placement by seconds. If we
+        dropped a just-placed order because the snapshot didn't include it yet,
+        the reconciler would immediately re-place it -> duplicate live orders.
+        So local orders younger than `grace_s` survive even when absent from the
+        snapshot (pass grace_s=0 to force an authoritative wipe, e.g. after the
+        exchange auto-cancelled everything on a heartbeat gap).
+        """
+        now = time.time()
+        live_ids = {o.order_id for o in live}
+        for o in [o for o in self.orders.values() if o.token_id == token_id]:
+            if o.order_id in live_ids:
+                continue
+            if now - o.created_ts < grace_s:
+                continue  # too young to trust its absence from the snapshot
+            self.orders.pop(o.order_id, None)
         for o in live:
             self.orders[o.order_id] = o
+
+    def clear_orders(self) -> None:
+        """Forget all local open orders (e.g. after a confirmed server-side wipe)."""
+        self.orders.clear()
 
     # ── persistence ─────────────────────────────────────────────────────
     def _persist_position(self, pos: Position) -> None:
         self._conn.execute(
             "INSERT OR REPLACE INTO positions(token_id,size,avg_price,updated_ts) VALUES(?,?,?,?)",
             (pos.token_id, pos.size, pos.avg_price, time.time()),
-        )
-        self._conn.commit()
-
-    def _record_fill(self, f: Fill) -> None:
-        self._conn.execute(
-            "INSERT OR IGNORE INTO fills(trade_id,token_id,side,price,size,is_maker,ts) VALUES(?,?,?,?,?,?,?)",
-            (f.trade_id, f.token_id, f.side.value, f.price, f.size, int(f.is_maker), f.ts),
         )
         self._conn.commit()
 

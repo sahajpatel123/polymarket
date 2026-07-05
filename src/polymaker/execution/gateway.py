@@ -53,6 +53,8 @@ class ExecutionGateway:
         self._order_bucket = TokenBucket(rate_per_s=200.0 * f, burst=500.0 * f)
         self._cancel_bucket = TokenBucket(rate_per_s=200.0 * f, burst=500.0 * f)
         self._paper_ids = itertools.count(1)
+        self._hb_id: str = ""  # heartbeat chain
+        self._hb_failures: int = 0
 
     @property
     def paper(self) -> bool:
@@ -159,9 +161,11 @@ class ExecutionGateway:
         return out
 
     # ── cancellation ────────────────────────────────────────────────────
-    async def cancel(self, order_ids: list[str]) -> None:
+    async def cancel(self, order_ids: list[str]) -> bool:
+        """Cancel by id. Returns True on success — callers must NOT drop the
+        orders from local state on failure (they may still be live)."""
         if not order_ids or self._paper:
-            return
+            return True
         await self._cancel_bucket.acquire(1)
 
         def _cancel() -> None:
@@ -169,19 +173,27 @@ class ExecutionGateway:
 
         try:
             await asyncio.to_thread(_cancel)
+            return True
         except Exception as exc:  # noqa: BLE001
             log.error("cancel_failed", err=str(exc), n=len(order_ids))
+            return False
 
-    async def cancel_asset(self, asset_id: str) -> None:
+    async def cancel_asset(self, asset_id: str) -> bool:
+        """Cancel every order on one token (idempotent quarantine primitive)."""
         if self._paper:
-            return
+            return True
 
         def _cancel() -> None:
             from py_clob_client_v2.clob_types import OrderMarketCancelParams
 
             self._client.cancel_market_orders(OrderMarketCancelParams(asset_id=asset_id))
 
-        await asyncio.to_thread(_cancel)
+        try:
+            await asyncio.to_thread(_cancel)
+            return True
+        except Exception as exc:  # noqa: BLE001
+            log.error("cancel_asset_failed", err=str(exc), token=asset_id[:12])
+            return False
 
     async def cancel_all(self) -> None:
         if self._paper or self._client is None:
@@ -189,14 +201,145 @@ class ExecutionGateway:
         await asyncio.to_thread(self._client.cancel_all)
         log.info("cancel_all_sent")
 
-    # ── heartbeat (dead-man switch) ─────────────────────────────────────
-    async def heartbeat(self, hb_id: str = "") -> None:
+    # ── market (taker) orders — used by moneydoctor, NOT the maker strategy ──
+    async def market_order(
+        self, token_id: str, side: Side, amount: float, meta: MarketMeta,
+        *, fak: bool = True,
+    ) -> dict[str, Any]:
+        """Place a marketable order. amount = USD for BUY, shares for SELL.
+
+        This is a TAKER order (crosses the spread) — only the moneydoctor live
+        self-test uses it; the maker strategy never does.
+        """
         if self._paper or self._client is None:
-            return
+            return {"paper": True}
+
+        def _do() -> dict[str, Any]:
+            from py_clob_client_v2.clob_types import (
+                MarketOrderArgsV2,
+                OrderType,
+                PartialCreateOrderOptions,
+            )
+
+            ot = OrderType.FAK if fak else OrderType.FOK
+            args = MarketOrderArgsV2(token_id=token_id, amount=amount,
+                                     side=side.value, order_type=ot)
+            opts = PartialCreateOrderOptions(tick_size=_tick_str(meta.tick_size),
+                                             neg_risk=meta.neg_risk)
+            try:
+                resp = self._client.create_and_post_market_order(args, opts, order_type=ot)
+                return resp if isinstance(resp, dict) else {"resp": resp}
+            except Exception as exc:  # noqa: BLE001 - surface as data, never crash the caller
+                return {"status": "failed", "error": str(exc)}
+
+        return await asyncio.to_thread(_do)
+
+    async def get_book(self, token_id: str) -> dict[str, float]:
+        """Live best bid/ask + touch depth for one token (public REST)."""
         try:
-            await asyncio.to_thread(self._client.post_heartbeat, hb_id)
+            async with httpx.AsyncClient(timeout=15.0) as c:
+                r = await c.get(f"{self._cfg.wallet.clob_host}/book",
+                                params={"token_id": token_id})
+                r.raise_for_status()
+                b = r.json()
+                bids = [(float(x["price"]), float(x["size"])) for x in b.get("bids", [])]
+                asks = [(float(x["price"]), float(x["size"])) for x in b.get("asks", [])]
+                best_bid = max(bids)[0] if bids else 0.0
+                best_ask = min(asks)[0] if asks else 1.0
+                ask_depth = sum(s for p, s in asks if p <= best_ask + 1e-9)
+                bid_depth = sum(s for p, s in bids if p >= best_bid - 1e-9)
+                return {"best_bid": best_bid, "best_ask": best_ask,
+                        "ask_depth": ask_depth, "bid_depth": bid_depth}
+        except (httpx.HTTPError, KeyError, ValueError) as exc:
+            log.warning("get_book_failed", err=str(exc))
+            return {}
+
+    async def token_balance(self, token_id: str) -> float:
+        """Exact on-chain conditional-token balance (shares) held by the funder.
+
+        Returns None on total RPC failure so callers can distinguish "0 shares"
+        from "couldn't read".
+        """
+        bal = await self._token_balance_opt(token_id)
+        return bal if bal is not None else 0.0
+
+    async def _token_balance_opt(self, token_id: str) -> float | None:
+        def _read() -> float | None:
+            from web3 import Web3
+            from web3.middleware import ExtraDataToPOAMiddleware
+
+            configured = self._cfg.secrets.polygon_rpc or self._cfg.wallet.polygon_rpc
+            rpcs = [configured, "https://polygon-bor-rpc.publicnode.com",
+                    "https://polygon.llamarpc.com", "https://rpc.ankr.com/polygon"]
+            abi = [{"name": "balanceOf", "type": "function", "stateMutability": "view",
+                    "inputs": [{"name": "a", "type": "address"}, {"name": "id", "type": "uint256"}],
+                    "outputs": [{"name": "", "type": "uint256"}]}]
+            for rpc in dict.fromkeys(rpcs):  # dedupe, keep order
+                try:
+                    w3 = Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 15}))
+                    w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
+                    ctf = w3.eth.contract(
+                        address=Web3.to_checksum_address("0x4D97DCd97eC945f40cF65F87097ACe5EA0476045"),
+                        abi=abi,
+                    )
+                    raw = ctf.functions.balanceOf(
+                        Web3.to_checksum_address(self.funder), int(token_id)
+                    ).call()
+                    return float(raw) / 1e6
+                except Exception:  # noqa: BLE001, PERF203 - try next RPC
+                    continue
+            return None
+
+        try:
+            return await asyncio.to_thread(_read)
         except Exception as exc:  # noqa: BLE001
-            log.warning("heartbeat_failed", err=str(exc))
+            log.warning("token_balance_failed", err=str(exc))
+            return None
+
+    async def collateral_balance(self) -> float:
+        """pUSD balance (float) on the funder."""
+        ba = await self.balance_allowance()
+        for k in ("balance", "collateral", "amount"):
+            if isinstance(ba, dict) and k in ba:
+                try:
+                    v = float(ba[k])
+                    return v / 1e6 if v > 1e6 else v
+                except (ValueError, TypeError):
+                    return 0.0
+        return 0.0
+
+    # ── heartbeat (dead-man switch) ─────────────────────────────────────
+    async def heartbeat(self) -> bool:
+        """Send one chained heartbeat. Returns True on success.
+
+        The exchange expects each heartbeat to carry the previous heartbeat_id.
+        Consecutive failures are tracked in `heartbeat_failures`: after enough
+        misses the exchange auto-cancels ALL our orders, so the engine must
+        stop quoting and resync once the heartbeat recovers.
+        """
+        if self._paper or self._client is None:
+            return True
+
+        def _beat() -> Any:
+            return self._client.post_heartbeat(self._hb_id)
+
+        try:
+            resp = await asyncio.to_thread(_beat)
+            new_id = _first(resp, "heartbeat_id", "heartbeatId", "id")
+            self._hb_id = str(new_id) if new_id else ""
+            if self._hb_failures:
+                log.info("heartbeat_recovered", after_failures=self._hb_failures)
+            self._hb_failures = 0
+            return True
+        except Exception as exc:  # noqa: BLE001
+            self._hb_failures += 1
+            self._hb_id = ""  # broken chain — restart it
+            log.warning("heartbeat_failed", err=str(exc), consecutive=self._hb_failures)
+            return False
+
+    @property
+    def heartbeat_failures(self) -> int:
+        return self._hb_failures
 
     # ── reads ───────────────────────────────────────────────────────────
     async def open_orders(self) -> list[OpenOrder]:

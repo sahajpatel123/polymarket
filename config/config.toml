@@ -18,7 +18,7 @@ signature_type = 3
 clob_host = "https://clob.polymarket.com"
 gamma_host = "https://gamma-api.polymarket.com"
 data_api_host = "https://data-api.polymarket.com"
-polygon_rpc = "https://polygon-rpc.com"
+polygon_rpc = "https://polygon-bor-rpc.publicnode.com"
 
 [engine]
 debounce_ms = 200               # min gap between quote recomputes per market
@@ -35,6 +35,8 @@ max_event_group_loss_usdc = 1000.0   # neg-risk group worst-case loss cap
 max_market_notional_usdc = 800.0     # per-market position+orders notional cap
 daily_loss_kill_usdc = 250.0         # realized daily loss -> halt new quotes
 ws_stale_halt_s = 10.0               # no book updates for this long -> halt market
+user_ws_blind_halt_s = 15.0          # user WS down this long -> pull all quotes (can't see fills)
+heartbeat_halt_failures = 3          # consecutive heartbeat misses -> halt + resync
 max_order_error_rate = 0.25          # rolling order-post error fraction -> halt
 
 [execution]

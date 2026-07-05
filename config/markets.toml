@@ -9,3 +9,13 @@
 # profile     = "political-longdated"
 # enabled     = false
 # q_max_usdc  = 800      # optional per-market override of the profile value
+
+[[markets]]
+slug    = "will-gavin-newsom-win-the-2028-democratic-presidential-nomination-568"
+profile = "political-longdated"
+enabled = true
+
+[[markets]]
+slug    = "will-jd-vance-win-the-2028-republican-presidential-nomination"
+profile = "political-longdated"
+enabled = true

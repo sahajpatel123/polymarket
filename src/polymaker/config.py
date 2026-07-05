@@ -26,7 +26,7 @@ class WalletConfig(BaseModel):
     clob_host: str = "https://clob.polymarket.com"
     gamma_host: str = "https://gamma-api.polymarket.com"
     data_api_host: str = "https://data-api.polymarket.com"
-    polygon_rpc: str = "https://polygon-rpc.com"
+    polygon_rpc: str = "https://polygon-bor-rpc.publicnode.com"
 
 
 class EngineConfig(BaseModel):
@@ -45,6 +45,10 @@ class RiskConfig(BaseModel):
     max_market_notional_usdc: float = 800.0
     daily_loss_kill_usdc: float = 250.0
     ws_stale_halt_s: float = 10.0
+    # user WS down this long -> we can't see our fills -> pull all quotes
+    user_ws_blind_halt_s: float = 15.0
+    # consecutive heartbeat failures -> exchange is auto-cancelling us -> halt
+    heartbeat_halt_failures: int = 3
     max_order_error_rate: float = 0.25
 
 

@@ -62,9 +62,12 @@ class UserEventProcessor:
     def on_trade(self, ev: TradeEvent, condition_id: str) -> None:
         if ev.status is TradeState.MATCHED:
             if ev.trade_id in self._applied:
-                return  # idempotent: already counted this match
+                return  # idempotent: already counted this match (in-memory fast path)
             fill = Fill(ev.token_id, ev.our_side, ev.price, ev.size, ev.trade_id, ev.ts, is_maker=True)
-            self._store.apply_fill(fill)
+            if not self._store.apply_fill(fill):
+                # duplicate at the persistent layer (replay after CONFIRMED or
+                # across restarts) — apply NO side effects
+                return
             self._store.mark_inflight(ev.token_id)
             self._applied[ev.trade_id] = fill
             self._on_fill(fill)
@@ -77,10 +80,15 @@ class UserEventProcessor:
                 self._applied.pop(ev.trade_id, None)
                 self._on_change(condition_id)
 
-        elif ev.status in (TradeState.FAILED, TradeState.RETRYING):
+        elif ev.status is TradeState.RETRYING:
+            # tx being retried on-chain — it may still succeed. Keep the
+            # optimistic fill and the inflight guard; only FAILED is terminal.
+            log.warning("trade_retrying", trade_id=ev.trade_id, token=ev.token_id[:12])
+
+        elif ev.status is TradeState.FAILED:
             prior = self._applied.pop(ev.trade_id, None)
             if prior is not None:
-                # reverse the optimistic fill
+                # reverse the optimistic fill (idempotent via the :reverse id)
                 self._store.apply_fill(
                     Fill(prior.token_id, prior.side.opposite, prior.price, prior.size,
                          f"{prior.trade_id}:reverse", prior.ts, is_maker=True)
