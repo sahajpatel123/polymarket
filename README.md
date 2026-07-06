@@ -36,29 +36,11 @@ uv run polymaker --help
 ## Configure
 
 ```bash
-cp .env.example .env         # then edit: PK + BROWSER_ADDRESS
+cp .env.example .env         # then edit two values:
 ```
 
-### Which wallet address?
-
-Polymarket's current **deposit-wallet** architecture shows several addresses in
-the UI, and the labels are inconsistent. What matters:
-
-- **`BROWSER_ADDRESS` = the funder** — the *smart-contract wallet that actually
-  holds your pUSD and positions*. Depending on the account it may be shown as the
-  "deposit" or "developer" address; the reliable test is which one holds the
-  money. `polymaker doctor` reads the balance so you can confirm.
-- **`PK` = the private key of your signer** — the EOA (e.g. your MetaMask account)
-  that *owns/controls* that wallet. This is a **different** address than the
-  funder, and that's correct: your key signs on behalf of the wallet that holds
-  the funds. (A "deployer" / factory address, if shown, is Polymarket's shared
-  contract — ignore it.)
-
-Set `signature_type` in `config/config.toml` to match how the account was made:
-`3` = POLY_1271 deposit wallet (current default), `2` = older browser-wallet
-Gnosis Safe, `1` = email/magic proxy, `0` = plain EOA. A wrong type fails loudly
-(`polymaker doctor` / `livetest` report it). Approvals must have been granted
-from the funding wallet — trading once in the UI does this.
+- `PK` — the private key of your signer wallet
+- `BROWSER_ADDRESS` — your Polymarket address (shown on the profile / developer page)
 
 Everything else is TOML under [`config/`](config/):
 

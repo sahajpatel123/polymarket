@@ -478,3 +478,4 @@ logs/
 positions/
 data/
 *.whl
+session/
