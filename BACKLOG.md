@@ -59,9 +59,11 @@ done without evidence (script output / tests) from that cycle.
   required status check for merge gating
 
 ### T1-07 Dependency audit script
-- Status: `todo`
+- Status: `done`
 - Done when: a script checks every dependency against pinned versions/hashes
   and flags anything with post-install scripts or unexplained version bumps.
+- Evidence: `scripts/deps_audit.py`, `deps/baseline.json`, `tests/test_deps_audit.py`;
+  CI runs `--fail-on-flags`
 
 ### T1-08 Local metrics dashboard
 - Status: `todo`
