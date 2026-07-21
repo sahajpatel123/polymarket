@@ -52,9 +52,11 @@ done without evidence (script output / tests) from that cycle.
   edge tests; disconnect covered by hardening cancel-failure test
 
 ### T1-06 CI pipeline
-- Status: `todo`
+- Status: `done`
 - Done when: every commit automatically runs the full test suite and reports
   pass/fail before merge is possible.
+- Evidence: `.github/workflows/ci.yml` (pytest on push/PR to main); README notes
+  required status check for merge gating
 
 ### T1-07 Dependency audit script
 - Status: `todo`

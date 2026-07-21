@@ -12,3 +12,4 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-21T21:38:00Z | Tier1 | T1-03 alerting wrapper: five required kinds + verify script (thresholds untouched) | `scripts/verify_alerts.py` all_required_posted=true; pytest 125 passed | merged
 2026-07-21T21:52:00Z | Tier1 | T1-04 structured JSON logs with daily rotation + market/time grep | `tests/test_logging.py`; grep_logs matches; pytest 127 passed | merged
 2026-07-21T22:06:00Z | Tier1 | T1-05 edge-case matrix + config/quoting/reconcile tests | docs/EDGE_CASES.md; pytest 137 passed | merged
+2026-07-21T22:20:00Z | Tier1 | T1-06 GitHub Actions CI runs full pytest on push/PR to main | .github/workflows/ci.yml; local pytest 137 passed | merged

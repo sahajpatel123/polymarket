@@ -141,6 +141,11 @@ uv run ruff check src tests
 uv run mypy src
 ```
 
+GitHub Actions runs `uv run pytest -q` on every push and pull request to
+`main` (see [`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Enable the
+`pytest` check as a required status check in branch protection so merges cannot
+land without a green suite.
+
 ## Status
 
 Implemented end to end: config, catalog/scanner, order book + analytics,
