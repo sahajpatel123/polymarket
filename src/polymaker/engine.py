@@ -389,7 +389,7 @@ class Engine:
             except asyncio.CancelledError:
                 break
             except Exception as exc:  # noqa: BLE001
-                log.error("quoter_error", cid=cid[:8], err=str(exc))
+                log.error("quoter_error", condition_id=cid, cid=cid[:8], err=str(exc))
                 await asyncio.sleep(0.5)
 
     def _next_wake_s(self, cid: str, base_tick: float) -> float:
@@ -470,7 +470,7 @@ class Engine:
         halted = cid in self._halted
         blind = market_stale or user_blind or hb_blind or halted
         if blind:
-            log.warning("market_blind", cid=cid[:8], market_stale=market_stale,
+            log.warning("market_blind", condition_id=cid, cid=cid[:8], market_stale=market_stale,
                         user_blind=user_blind, hb_blind=hb_blind, halted=halted)
             if market_stale or user_blind:
                 self.alerter.alert(
@@ -571,7 +571,8 @@ class Engine:
                 and regime in (Regime.QUIET, Regime.TRENDING)
             )
             if shed:
-                log.warning("shed_load", cid=cid[:8], pressure=round(self.gateway.order_pressure, 2))
+                log.warning("shed_load", condition_id=cid, cid=cid[:8],
+                            pressure=round(self.gateway.order_pressure, 2))
                 self._dirty[cid].set()  # retry soon
             else:
                 placed = await self.gateway.place(plan.to_place, meta)
@@ -602,7 +603,7 @@ class Engine:
                     # tokens (idempotent) and resync — never risk an untracked order.
                     await self._quarantine(meta, reason="place_incomplete")
         self._last_quote_fv[cid] = fv
-        log.info("requote", cid=cid[:8], regime=regime.value, fv=round(fv, 4),
+        log.info("requote", condition_id=cid, cid=cid[:8], regime=regime.value, fv=round(fv, 4),
                  place=placed_n, cancel=len(plan.to_cancel),
                  pos_yes=round(pos_yes.size, 1), pos_no=round(pos_no.size, 1),
                  tox=round(est.markout.toxicity, 3), flowz=round(est.flow.z, 2))
@@ -610,7 +611,8 @@ class Engine:
 
     async def _quarantine(self, meta: MarketMeta, reason: str) -> None:
         """Cancel all orders on a market's tokens and resync state from REST."""
-        log.warning("quarantine", cid=meta.condition_id[:8], reason=reason)
+        log.warning("quarantine", condition_id=meta.condition_id, cid=meta.condition_id[:8],
+                    reason=reason)
         for tok in (meta.yes.token_id, meta.no.token_id):
             await self.gateway.cancel_asset(tok)
             for o in self.state.orders_for(tok):
@@ -778,8 +780,8 @@ class Engine:
             if closed or not accepting:
                 if cid not in self._halted:
                     self._halted.add(cid)
-                    log.critical("market_halted_by_meta", cid=cid[:8], closed=closed,
-                                 accepting=accepting)
+                    log.critical("market_halted_by_meta", condition_id=cid, cid=cid[:8],
+                                 closed=closed, accepting=accepting)
                     self.alerter.alert(f"halted:{cid[:8]}",
                                        f"{self.metas[cid].question[:40]} closed/not-accepting",
                                        critical=True)
@@ -810,7 +812,7 @@ class Engine:
                    if v is not None and getattr(old, k) != v}
         if updates:
             self.metas[cid] = dataclasses.replace(old, **updates)
-            log.info("meta_refreshed", cid=cid[:8], **updates)
+            log.info("meta_refreshed", condition_id=cid, cid=cid[:8], **updates)
             self._wake_cid(cid)
 
     async def _metadata_refresh_loop(self) -> None:

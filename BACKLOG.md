@@ -35,10 +35,12 @@ done without evidence (script output / tests) from that cycle.
   `tests/test_alerts.py`
 
 ### T1-04 Structured logging
-- Status: `todo`
+- Status: `done`
 - Done when: all logs are JSON with consistent fields, rotated, and greppable
   by market ID and time range. (Partial: structlog JSON file exists; rotation
   and market-ID greppability still incomplete.)
+- Evidence: TimedRotatingFileHandler + required fields in `logging.py`;
+  `scripts/grep_logs.py` / `polymaker.loggrep`; `tests/test_logging.py`
 
 ### T1-05 Test suite for deterministic components
 - Status: `todo`
