@@ -25,7 +25,8 @@ markets. Single async process, local-file config, typed and tested.
   later analysis (replay backtester not built yet).
 
 Agent-oriented architecture notes: [CLAUDE.md](CLAUDE.md). Live ops notes:
-[TIPS.md](TIPS.md).
+[TIPS.md](TIPS.md). Unattended cycles:
+[AUTONOMOUS_LOOP_PROTOCOL.md](AUTONOMOUS_LOOP_PROTOCOL.md).
 
 ## Install
 
