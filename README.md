@@ -1,28 +1,31 @@
 # poly-maker
 
 A maker-only market-making bot for **Polymarket CLOB V2**, focused on political
-markets. Single async process, local-file config, typed and
-tested.
+markets. Single async process, local-file config, typed and tested.
 
 > [!WARNING]
 > Market making on Polymarket is competitive and can lose money. This is a
 > reference implementation and a research harness, not a guaranteed-profitable
 > product. Test in `--paper` mode first; go live with small size.
 
-## What it does
+## What it does (as implemented)
 
-- Discovers political markets via the **Gamma API** (seconds) and ranks them by
-  reward + rebate income vs. volatility/spread risk.
+- Discovers political markets via the **Gamma API** and ranks them by a
+  reward + rebate heuristic vs. spread/extremity ([docs/market-selection.md](docs/market-selection.md)).
+  The live trade list is **manual** (`config/markets.toml`).
 - Maintains a live order book per token from the **market WebSocket**.
-- Quotes **maker-only** — every order is post-only. Fair-value + inventory-skew
-  strategy that posts BUY-YES and BUY-NO as a two-sided quote, with live
-  volatility/toxicity estimation and a regime machine that pulls quotes during
-  news events (see [Strategy](#strategy)).
-- Reconciles a target quote set against live orders with churn tolerances; runs
-  the exchange **heartbeat** dead-man switch; enforces risk caps and a daily-loss
-  kill switch.
-- Config, market selection, and state are **local files + SQLite**. An operator
-  with the repo, a `.env`, and a funded wallet is a complete deployment.
+- Quotes **maker-only** (post-only). Fair-value + inventory-skew strategy posts
+  BUY-YES and BUY-NO, with live vol/toxicity estimators and a regime machine
+  that pulls quotes on sweeps/jumps ([docs/strategy.md](docs/strategy.md)).
+- Reconciles target quotes against live orders with churn tolerances
+  ([docs/order-reconciliation.md](docs/order-reconciliation.md)).
+- Exchange **heartbeat** dead-man switch (live mode); risk caps; daily-loss and
+  order-error kill switches.
+- Config + state are **local TOML + SQLite**. Journals under `journal/` for
+  later analysis (replay backtester not built yet).
+
+Agent-oriented architecture notes: [CLAUDE.md](CLAUDE.md). Live ops notes:
+[TIPS.md](TIPS.md).
 
 ## Install
 
@@ -36,45 +39,68 @@ uv run polymaker --help
 ## Configure
 
 ```bash
-cp .env.example .env         # then edit two values:
+cp .env.example .env         # then edit:
 ```
 
-- `PK` — the private key of your signer wallet
-- `BROWSER_ADDRESS` — your Polymarket address (shown on the profile / developer page)
+- `PK` — private key of the **signer** wallet
+- `BROWSER_ADDRESS` — Polymarket **funder** address (deposit/proxy wallet that
+  holds pUSD for `signature_type` 1/2/3; for EOA type 0 this is usually the
+  same as the signer)
 
-Everything else is TOML under [`config/`](config/):
+Optional: `ALERT_WEBHOOK_URL`, `ALL_PROXY` / `HTTPS_PROXY`, builder/relayer
+creds for deposit-wallet merges (see `.env.example`).
 
-- `config.toml` — wallet/engine/risk/execution settings
-- `strategy.toml` — named parameter profiles (`political-longdated`, `political-hot`)
-- `markets.toml` — the trade list (populated via the CLI below)
+TOML under [`config/`](config/):
+
+| File | Role |
+|------|------|
+| `config.toml` | wallet / engine / risk / execution / paths |
+| `strategy.toml` | named profiles (`newsom-mm`, `romania-pm` shipped) |
+| `markets.toml` | trade list (`slug`, `profile`, `enabled`, optional overrides) |
+
+`signature_type` in `config.toml`: `0` EOA, `1` email/magic proxy, `2` Gnosis
+Safe, `3` POLY_1271 deposit wallet (current Polymarket default). Wrong type
+fails auth — `polymaker doctor` / `livetest` catch this.
+
+For a tiny defensive self-test layout, use `--config-dir livecfg` (profile
+`live-tiny`).
 
 ## Use
 
 ```bash
-# 1. discover + rank political markets (writes to state.db)
+# 1. discover + rank political markets (writes state.db + markets.csv)
 uv run polymaker scan
 uv run polymaker markets
 
-# 2. add markets to the trade list
-uv run polymaker markets-add <slug> --profile political-longdated
+# 2. add markets to the trade list (profile must exist in strategy.toml)
+uv run polymaker markets-add <slug> --profile newsom-mm
 
-# 3. dry run: full pipeline against the live feed, no orders posted
+# 3. paper: live books + full quote pipeline, no orders posted
 uv run polymaker run --paper
 
 # 4. preflight the wallet before going live
 uv run polymaker doctor
 
-# 5. self-tests: a deep post-only order (free), then a real fill round-trip (~cents)
-uv run polymaker livetest      # place a deep post-only order + cancel (no fill)
-uv run polymaker moneydoctor   # limit rest + market buy + market sell, auto-flattens
+# 5. self-tests against the exchange
+uv run polymaker livetest      # deep post-only + cancel (no intentional fill)
+uv run polymaker moneydoctor   # limit rest + market buy/sell; spends a little
 
-# 6. go live
+# 6. go live (ONE process only — see TIPS.md)
 uv run polymaker run
 
 # ops
-uv run polymaker status        # positions / open orders
+uv run polymaker status        # positions / open orders from SQLite
+uv run polymaker pnl           # latest equity / daily PnL snapshot
 uv run polymaker cancel-all    # panic button
 ```
+
+### Paper mode details
+
+`--paper` exercises market data → estimators → regime → quoting → reconcile
+against the **live** WebSocket book. The gateway invents `paper-*` order ids and
+never posts. It does **not** simulate fills, inventory, toxicity from fills, or
+user-stream updates. Use it to validate quote placement and regime behavior in
+logs (`logs/paper.jsonl`), not as a PnL backtest.
 
 ## Architecture
 
@@ -84,63 +110,46 @@ user WS   ─▶ StateStore                                         RiskManager 
 Gamma     ─▶ Catalog/scanner ─▶ SQLite            periodic REST reconcile ┘
 ```
 
-One async event loop. The strategy layer is a pure function `(book, inventory,
-params, clock) → TargetQuotes` — deterministic and unit-tested. The engine owns
-all I/O and state around it; the `ExecutionGateway` wraps `py-clob-client-v2`
-(which handles the V2 EIP-712 signing) and offloads its blocking calls to a
-thread pool so the hot path never stalls. State (positions, orders, PnL, catalog)
-lives in one SQLite file; raw WS/order events are journaled to `journal/` for
-replay.
+One async event loop. Strategy is a pure function
+`(book, inventory, params, clock) → TargetQuotes`. `ExecutionGateway` wraps
+`py-clob-client-v2` (V2 EIP-712 signing) on a thread pool. State lives in one
+SQLite file; raw events journal to `journal/` when enabled.
 
-## Strategy
+## Strategy (summary)
 
-Maker-only, quoting both sides of each market as USDC-collateralized bids:
+Maker-only, both sides as USDC bids:
 
-- **Fair value** — depth-weighted microprice off the live book, nudged by an
-  EWMA of signed trade flow.
-- **Quote construction** — reservation price `r = FV − skew(inventory)`;
-  half-spread `δ = base + c_vol·σ + c_tox·toxicity`. Post **BUY-YES at `r − δ`**
-  and **BUY-NO at `(1 − r) − δ`**. Because both legs are bids that sum below 1,
-  a filled pair merges back to USDC at locked edge `1 − p − q` — a maker-only
-  exit that never crosses the spread.
-- **Inventory skew** — net position leans both quotes: long YES → bid YES lower,
-  bid NO higher (acquire the offsetting leg). Size tapers as inventory approaches
-  a soft cap, then the adding side is pulled entirely.
-- **Volatility / toxicity** — realized-vol and per-fill markout (adverse
-  selection) EWMAs widen the spread and shrink size in markets that pick us off.
-- **Regime machine** — per market: `QUIET` (farm rewards in-band), `TRENDING`
-  (lean + widen + half size), `EVENT` (sweep/jump detected → pull quotes, cool
-  off), `REDUCE_ONLY` (inventory cap / near end date → exits only), `HALTED`
-  (stale data / resolved / kill switch → cancel all).
-- **Rewards + rebates** — quotes stay inside the liquidity-rewards band in QUIET;
-  the market selector also scores the new maker-rebate program (a share of taker
-  fees rebated to makers).
-- **Risk** — per-market notional cap, neg-risk event-group worst-case cap, total
-  exposure cap, daily-loss kill switch, WS-staleness halt.
+- **Fair value** — depth-weighted microprice + EWMA signed-flow nudge
+- **Quotes** — reservation `r = FV − skew(inventory)`; half-spread
+  `δ = base + c_vol·σ + c_tox·toxicity`; BUY-YES at `r − δ`, BUY-NO at
+  `(1 − r) − δ`
+- **Inventory skew** — long YES → lower YES bid / higher NO bid; soft cap pulls
+  the adding side
+- **Regime** — `QUIET` / `TRENDING` / `EVENT` / `REDUCE_ONLY` / `HALTED`
+- **Risk** — per-market and total inventory caps, neg-risk event-group cap,
+  daily-loss kill, WS/user/heartbeat blinds
 
-Tune it all via profiles in `config/strategy.toml`.
+Full math and known unused knobs: [docs/strategy.md](docs/strategy.md).
 
 ## Develop
 
 ```bash
 uv run pytest                 # unit suite (offline)
-POLYMAKER_LIVE=1 uv run pytest tests/test_live_marketdata.py   # live WS integration
-uv run ruff check src tests   # lint
-uv run mypy src               # types (strict)
+POLYMAKER_LIVE=1 uv run pytest tests/test_live_marketdata.py   # live WS
+uv run ruff check src tests
+uv run mypy src
 ```
 
 ## Status
 
-Implemented and live-verified end to end (auth → book → strategy → sign → post →
-cancel): config, catalog/scanner, order book + analytics, strategy (FV,
-vol/toxicity, regime, quoting), state store + lifecycle, execution gateway +
-reconciler + heartbeat, market/user websockets, risk manager, merger (EOA path),
-engine, CLI, paper mode, journal capture. 83 tests; ruff + mypy strict clean.
+Implemented end to end: config, catalog/scanner, order book + analytics,
+strategy (FV, vol/toxicity, regime, quoting), state store, execution gateway +
+reconciler + heartbeat, market/user websockets, risk manager, merger (EOA /
+Safe / deposit-wallet with builder creds), engine, CLI, paper mode, journal
+capture. Offline test suite under `tests/`; ruff + mypy strict configured.
 
-Not yet built: a replay backtester over the captured journals, and external data
-feeds (polls / news / cross-venue). Merging through a Safe/proxy wallet routes a
-tx via the relayer and isn't wired yet — until then inventory exits via limit
-sells rather than merging.
+Not built: journal/L2 **replay backtester**; external news/cross-venue feeds;
+engine hot-reload of `markets.toml` (`watchfiles` is listed but unused).
 
 ## License
 
