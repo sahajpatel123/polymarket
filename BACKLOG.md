@@ -66,10 +66,12 @@ done without evidence (script output / tests) from that cycle.
   CI runs `--fail-on-flags`
 
 ### T1-08 Local metrics dashboard
-- Status: `todo`
+- Status: `done`
 - Done when: the metrics from T1-01 are visualized simply enough that a human
   glancing at it once or twice a day can assess system health without reading
   raw logs.
+- Evidence: `scripts/metrics_dashboard.py` → `logs/dashboard.html`;
+  `polymaker dashboard`; `tests/test_dashboard.py`
 
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 

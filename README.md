@@ -92,7 +92,15 @@ uv run polymaker run
 # ops
 uv run polymaker status        # positions / open orders from SQLite
 uv run polymaker pnl           # latest equity / daily PnL snapshot
+uv run polymaker dashboard     # HTML health view from metrics log
 uv run polymaker cancel-all    # panic button
+```
+
+Glance metrics without reading JSONL:
+
+```bash
+uv run python scripts/metrics_dashboard.py   # writes logs/dashboard.html
+open logs/dashboard.html
 ```
 
 ### Paper mode details

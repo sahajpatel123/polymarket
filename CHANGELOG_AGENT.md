@@ -14,3 +14,4 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-21T22:06:00Z | Tier1 | T1-05 edge-case matrix + config/quoting/reconcile tests | docs/EDGE_CASES.md; pytest 137 passed | merged
 2026-07-21T22:20:00Z | Tier1 | T1-06 GitHub Actions CI runs full pytest on push/PR to main | .github/workflows/ci.yml; local pytest 137 passed | merged
 2026-07-21T22:36:00Z | Tier1 | T1-07 deps audit vs uv.lock hashes + baseline drift + METADATA hints | scripts/deps_audit.py ok=true; tests/test_deps_audit.py | merged
+2026-07-21T22:51:00Z | Tier1 | T1-08 local HTML metrics dashboard from T1-01 log | scripts/metrics_dashboard.py; pytest 142 passed | merged
