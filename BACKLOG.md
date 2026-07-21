@@ -43,11 +43,13 @@ done without evidence (script output / tests) from that cycle.
   `scripts/grep_logs.py` / `polymaker.loggrep`; `tests/test_logging.py`
 
 ### T1-05 Test suite for deterministic components
-- Status: `todo`
+- Status: `done`
 - Done when: order reconciliation, quote-generation math, and config parsing
   each have unit tests covering documented edge cases (zero inventory, max
   inventory, missing market data, disconnect mid-quote). (Partial suite exists;
   edge-case matrix not fully documented/covered.)
+- Evidence: `docs/EDGE_CASES.md`; `tests/test_config.py`; quoting/reconcile
+  edge tests; disconnect covered by hardening cancel-failure test
 
 ### T1-06 CI pipeline
 - Status: `todo`
