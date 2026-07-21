@@ -18,10 +18,12 @@ done without evidence (script output / tests) from that cycle.
   `src/polymaker/metrics/`; verified `tests/test_metrics.py`
 
 ### T1-02 Deterministic backtest/replay harness
-- Status: `todo`
+- Status: `done`
 - Done when: a script replays a historical order-book/log window through the
   current strategy code and reproduces the same metrics as T1-01, with no live
   connection required.
+- Evidence: `src/polymaker/replay/`, `scripts/replay_backtest.py`,
+  `tests/test_replay.py`
 
 ### T1-03 Alerting wrapper
 - Status: `todo`
