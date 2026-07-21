@@ -14,6 +14,7 @@ import asyncio
 import contextlib
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from polymaker.alerts import Alerter
@@ -28,6 +29,7 @@ from polymaker.logging import get_logger
 from polymaker.marketdata.parse import TradePrint
 from polymaker.marketdata.service import MarketDataService
 from polymaker.merge import Merger
+from polymaker.metrics import MetricsLogger, inventory_fields
 from polymaker.risk.manager import RiskManager
 from polymaker.state.store import StateStore
 from polymaker.state.tracker import UserEventProcessor
@@ -52,6 +54,8 @@ class Engine:
 
         self.journal = Journal(cfg.paths.journal_dir, enabled=cfg.engine.journal,
                                day="paper" if paper else "live")
+        metrics_name = "metrics-paper.jsonl" if paper else "metrics-live.jsonl"
+        self.metrics = MetricsLogger(Path(cfg.paths.log_dir) / metrics_name, enabled=True)
         self.state = StateStore(cfg.paths.db)
         self.catalog = CatalogStore(cfg.paths.db)
         self.gateway = ExecutionGateway(cfg, self.journal, paper=paper)
@@ -168,6 +172,7 @@ class Engine:
             await self.gateway.cancel_all()
         self.gateway.close()
         self.journal.close()
+        self.metrics.close()
         self.state.close()
         self.catalog.close()
 
@@ -194,6 +199,24 @@ class Engine:
                 self._locks[meta.condition_id] = asyncio.Lock()
                 for tok in (meta.yes.token_id, meta.no.token_id):
                     self._token_cid[tok] = meta.condition_id
+                from polymaker.catalog.scoring import score_market
+
+                sc = score_market(meta)
+                self.metrics.emit(
+                    "market_meta",
+                    condition_id=meta.condition_id,
+                    slug=meta.slug,
+                    tick_size=meta.tick_size,
+                    rewards_daily_rate=meta.rewards_daily_rate,
+                    rewards_min_size=meta.rewards_min_size,
+                    rewards_max_spread=meta.rewards_max_spread,
+                    rebate_rate=meta.rebate_rate,
+                    rebate_potential_daily=sc.rebate_potential,
+                    score=sc.score,
+                    taker_fee_bps=meta.taker_fee_bps,
+                    fees_enabled=meta.fees_enabled,
+                    paper=self.paper,
+                )
 
     async def _fetch_meta(
         self, gamma: GammaClient, slug: str | None, condition_id: str | None,
@@ -311,8 +334,25 @@ class Engine:
             return
         est = self.est[cid]
         fv = est.last_fv if est.last_fv is not None else fill.price
-        token_fv = fv if fill.token_id == self.metas[cid].yes.token_id else (1.0 - fv)
+        meta = self.metas[cid]
+        token_fv = fv if fill.token_id == meta.yes.token_id else (1.0 - fv)
         est.markout.record_fill(fill.side, token_fv, fill.ts)
+        pos_yes = self.state.position(meta.yes.token_id)
+        pos_no = self.state.position(meta.no.token_id)
+        self.metrics.emit(
+            "fill",
+            ts=fill.ts,
+            condition_id=cid,
+            token_id=fill.token_id,
+            side=fill.side.value,
+            price=fill.price,
+            size=fill.size,
+            trade_id=fill.trade_id,
+            mid=token_fv,
+            fv=fv,
+            paper=self.paper,
+            **inventory_fields(pos_yes.size, pos_no.size),
+        )
 
     # ── quoter ──────────────────────────────────────────────────────────
     async def _quoter(self, cid: str) -> None:
@@ -455,13 +495,39 @@ class Engine:
         live = self.state.orders_for(meta.yes.token_id) + self.state.orders_for(meta.no.token_id)
         plan = reconcile(tq, live, tick=meta.tick_size,
                          reprice_ticks=p.reprice_ticks, resize_frac=p.resize_frac)
+
+        inv = inventory_fields(pos_yes.size, pos_no.size)
+        self.metrics.emit(
+            "mark",
+            ts=now,
+            condition_id=cid,
+            fv=fv,
+            regime=regime.value,
+            paper=self.paper,
+            **inv,
+        )
+
         if plan.is_noop:
             self._maybe_merge(cid, meta, p, pos_yes.size, pos_no.size)
             return
 
         if plan.to_cancel:
+            pending_cancel = [self.state.orders[oid] for oid in plan.to_cancel if oid in self.state.orders]
             ok = await self.gateway.cancel(plan.to_cancel)
             if ok:
+                for o in pending_cancel:
+                    self.metrics.emit(
+                        "cancel",
+                        ts=now,
+                        condition_id=cid,
+                        token_id=o.token_id,
+                        side=o.side.value,
+                        price=o.price,
+                        size=o.size,
+                        order_id=o.order_id,
+                        paper=self.paper,
+                        **inv,
+                    )
                 for oid in plan.to_cancel:
                     self.state.remove_order(oid)
             else:
@@ -487,8 +553,25 @@ class Engine:
                 placed = await self.gateway.place(plan.to_place, meta)
                 placed_n = len(placed)
                 self.risk.note_order_result(len(placed) == len(plan.to_place))
+                reward_band = meta.rewards_max_spread / 100.0
                 for o in placed:
                     self.state.upsert_order(o)
+                    mid_tok = fv if o.token_id == meta.yes.token_id else (1.0 - fv)
+                    in_band = reward_band > 0 and abs(o.price - mid_tok) <= reward_band
+                    self.metrics.emit(
+                        "quote",
+                        ts=now,
+                        condition_id=cid,
+                        token_id=o.token_id,
+                        side=o.side.value,
+                        price=o.price,
+                        size=o.size,
+                        order_id=o.order_id,
+                        mid=mid_tok,
+                        in_reward_band=in_band,
+                        paper=self.paper,
+                        **inv,
+                    )
                 if len(placed) < len(plan.to_place):
                     # QUARANTINE: a failed/partial batch may still have posted
                     # orders we don't have ids for. Cancel everything on these
