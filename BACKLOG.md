@@ -26,11 +26,13 @@ done without evidence (script output / tests) from that cycle.
   `tests/test_replay.py`
 
 ### T1-03 Alerting wrapper
-- Status: `todo`
+- Status: `done`
 - Done when: process crash, kill-switch trigger, daily-loss-cap trigger,
   WebSocket disconnect beyond N seconds, and API auth failure each produce an
   immediate message to a configured endpoint, verified by deliberately
   triggering each condition in paper mode.
+- Evidence: `scripts/verify_alerts.py` → all_required_posted=true;
+  `tests/test_alerts.py`
 
 ### T1-04 Structured logging
 - Status: `todo`
@@ -94,6 +96,58 @@ Tier-2 merge. Human reviews via `PENDING_REVIEW.md`.
 - Status: `todo`
 - Done when: backtested limits bind before daily-loss cap across historical
   volatile windows. (**Does not** change kill-switch / daily-loss-cap values.)
+
+## Tier 1 — performance & execution latency (perf-agent)
+
+### P1-01 Latency/throughput benchmark harness
+- Status: `done`
+- Owner: perf-agent
+- Started: 2026-07-22T03:00:00Z
+- Evidence: `scripts/bench_latency.py`, `tests/test_bench_latency.py`; 5 tests pass;
+  baseline: replay p50=41.5us p95=71.2us p99=115.4us (26842 eps);
+  pure strategy p50=12.4us p95=16.4us p99=16.7us (77584 ops/s)
+- Owner: perf-agent
+- Done when: a script measures, on a fixed replayed data window, the time from
+  market-data-received to quote/order-submitted (p50/p95/p99), and orders-
+  processed-per-second under load. Must exist before any optimization below.
+- Evidence: `scripts/bench_latency.py`, `tests/test_bench_latency.py`
+
+### P1-02 Profile the current hot path
+- Status: `done`
+- Owner: perf-agent
+- Started: 2026-07-22T03:10:00Z
+- Evidence: `perf/profile_2026-07-22.txt`; top 3 bottlenecks:
+  1. OrderBook.view() — 0.083s cum (19.1%); _nth_bid/_nth_ask iterate full
+     SortedDict even for n=0; depth_within uses generator+sum
+  2. construct_quotes() — 0.068s cum (15.7%); _add_layers 0.024s, round() x39943
+  3. reconcile() — 0.031s cum (7.1%); defaultdict + set lookups
+- Done when: profiler output attached naming the top 3 actual bottlenecks —
+  not assumed ones. Do not optimize what you assume is slow.
+- Evidence: `perf/profile_<date>.txt` or inline cProfile output
+
+### P1-03 Fix the top bottleneck, re-measure, repeat
+- Status: `in-progress`
+- Owner: perf-agent
+- Started: 2026-07-22T03:20:00Z
+- Target: OrderBook.view() — optimize _nth_bid/_nth_ask (n=0 fast path via
+  peekitem), _top_size (islice to avoid full list), depth_within (direct loop)
+- Done when: one bottleneck at a time, each with before/after benchmark numbers
+  and golden-output diff attached. Tests + golden-output diff must pass.
+- Evidence: per-change benchmark output + `tests/test_bench_latency.py`
+
+### P1-04 Connection/network layer efficiency
+- Status: `todo`
+- Owner: perf-agent
+- Done when: connection pooling, keep-alive, reduced round trips to the exchange
+  API, once code-level bottlenecks are addressed.
+- Evidence: benchmark output showing improvement
+
+### P1-05 Build/runtime tuning
+- Status: `todo`
+- Owner: perf-agent
+- Done when: concurrency and resource settings tuned, last, once code-level
+  bottlenecks are addressed.
+- Evidence: benchmark output showing improvement
 
 ## Never autonomous
 

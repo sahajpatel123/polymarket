@@ -224,6 +224,11 @@ def run(
         asyncio.run(_go())
     except KeyboardInterrupt:
         console.print("\n[yellow]Stopped.[/yellow]")
+    except Exception as exc:  # noqa: BLE001
+        from polymaker.alerts import PROCESS_CRASH
+
+        engine.alerter.alert(PROCESS_CRASH, f"engine crashed: {exc}", critical=True)
+        raise
 
 
 @app.command()
