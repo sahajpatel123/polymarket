@@ -17,7 +17,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from polymaker.alerts import Alerter
+from polymaker.alerts import (
+    API_AUTH,
+    DAILY_LOSS,
+    KILL_SWITCH,
+    PROCESS_CRASH,
+    WS_DISCONNECT,
+    Alerter,
+)
 from polymaker.catalog.gamma import GammaClient, fetch_reward_rates, parse_market
 from polymaker.catalog.store import CatalogStore
 from polymaker.config import Config, StrategyProfile
@@ -59,9 +66,9 @@ class Engine:
         self.state = StateStore(cfg.paths.db)
         self.catalog = CatalogStore(cfg.paths.db)
         self.gateway = ExecutionGateway(cfg, self.journal, paper=paper)
+        self.alerter = Alerter(cfg.secrets.alert_webhook_url, proxy=cfg.proxy)
         self.risk = RiskManager(cfg.risk, self.state)
         self.merger = Merger(cfg)
-        self.alerter = Alerter(cfg.secrets.alert_webhook_url, proxy=cfg.proxy)
 
         self.md = MarketDataService(on_dirty=self._on_dirty, on_trade=self._on_trade,
                                     journal=self.journal, proxy=cfg.proxy)
@@ -94,7 +101,11 @@ class Engine:
     # ── lifecycle ───────────────────────────────────────────────────────
     async def start(self) -> None:
         self._running = True
-        await self.gateway.connect()
+        try:
+            await self.gateway.connect()
+        except Exception as exc:  # noqa: BLE001
+            self.alerter.alert(API_AUTH, f"gateway connect/auth failed: {exc}", critical=True)
+            raise
         await self._resolve_markets()
         if not self.metas:
             log.warning("no_markets_selected", hint="add markets to config/markets.toml, run `polymaker scan`")
@@ -152,7 +163,9 @@ class Engine:
                 with contextlib.suppress(asyncio.CancelledError, asyncio.InvalidStateError):
                     exc = task.exception()
                 log.critical("task_died_restarting", task=name, err=str(exc) if exc else "exited")
-                self.alerter.alert("task_died", f"{name} died: {exc}", critical=True)
+                self.alerter.alert(
+                    PROCESS_CRASH, f"{name} died: {exc}", critical=True
+                )
                 self._tasks[name] = asyncio.create_task(self._task_specs[name](), name=name)
 
     async def run_forever(self) -> None:
@@ -459,6 +472,13 @@ class Engine:
         if blind:
             log.warning("market_blind", cid=cid[:8], market_stale=market_stale,
                         user_blind=user_blind, hb_blind=hb_blind, halted=halted)
+            if market_stale or user_blind:
+                self.alerter.alert(
+                    WS_DISCONNECT,
+                    f"{meta.question[:40]} ws disconnect "
+                    f"(market_stale={market_stale} user_blind={user_blind})",
+                    critical=True,
+                )
             self.alerter.alert(
                 f"blind:{cid[:8]}",
                 f"{meta.question[:40]} blind (stale={market_stale} user={user_blind} "
@@ -469,6 +489,10 @@ class Engine:
         rd = self.risk.evaluate(meta, ws_stale=blind,
                                 event_group_cost=self._event_group_cost(meta))
         if rd.halt and rd.reason not in ("ws_stale",):
+            if "daily_loss" in rd.reason:
+                self.alerter.alert(DAILY_LOSS, f"daily loss kill: {rd.reason}", critical=True)
+            if "kill" in rd.reason:
+                self.alerter.alert(KILL_SWITCH, f"kill switch: {rd.reason}", critical=True)
             self.alerter.alert(
                 f"risk_halt:{rd.reason}", f"risk halt: {rd.reason}",
                 critical=any(k in rd.reason for k in ("daily_loss", "kill", "error_rate")),
@@ -836,6 +860,15 @@ class Engine:
 
     def _cid_of_token(self, token_id: str) -> str | None:
         return self._token_cid.get(token_id)
+
+    def engage_kill_switch(self, reason: str = "manual_kill") -> None:
+        """Operator/manual kill — alerts then sets RiskManager killed flag.
+
+        Does not change kill thresholds; only notifies + engages existing switch.
+        """
+        self.risk.kill()
+        self.alerter.alert(KILL_SWITCH, f"kill switch engaged: {reason}", critical=True)
+        self._wake_all()
 
     def _event_group_cost(self, meta: MarketMeta) -> float:
         if not meta.event_id:
