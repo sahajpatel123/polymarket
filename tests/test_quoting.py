@@ -185,3 +185,30 @@ def test_quiet_regime_clamps_spread_to_reward_band(meta, profile):
     top_yes = max(q.price for q in tq.quotes if q.token_id == "yes-token" and q.side == Side.BUY)
     # bid should be within (band + a tick of rounding) of FV
     assert top_yes >= 0.50 - band - meta.tick_size
+
+
+def test_zero_inventory_quotes_both_entry_sides(meta, profile):
+    """Documented edge: flat book → BUY YES and BUY NO (no exits)."""
+    tq = construct_quotes(_inputs(meta, profile))
+    assert not [q for q in tq.quotes if q.side == Side.SELL]
+    assert {q.token_id for q in tq.quotes if q.side == Side.BUY} >= {"yes-token", "no-token"}
+
+
+def test_max_inventory_pulls_adding_side(meta, profile):
+    """When utilization >= q_soft_frac, stop adding YES (long) / NO (short)."""
+    # defaults: q_max_usdc=500, fv=0.5 → q_max_shares=1000; soft 0.6 → 600 shares
+    tq = construct_quotes(
+        _inputs(meta, profile, pos_yes=Position("yes-token", 600, 0.5), vol_short=0.01)
+    )
+    yes_buys = [q for q in tq.quotes if q.token_id == "yes-token" and q.side == Side.BUY]
+    no_buys = [q for q in tq.quotes if q.token_id == "no-token" and q.side == Side.BUY]
+    assert yes_buys == []
+    assert no_buys  # still bid the offsetting leg
+
+
+def test_missing_book_view_does_not_crash(meta, profile):
+    """Missing market data: empty BookView — construct_quotes must not raise."""
+    empty = view(None, None)
+    tq = construct_quotes(_inputs(meta, profile, yes_view=empty, no_view=empty))
+    assert tq.condition_id == meta.condition_id
+    assert isinstance(tq.quotes, tuple)

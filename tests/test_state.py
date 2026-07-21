@@ -169,3 +169,11 @@ def test_reconcile_matches_layers_one_to_one():
     assert plan.to_cancel == []
     assert len(plan.to_place) == 1  # only the missing deeper layer
     assert plan.to_place[0].price == 0.47
+
+
+def test_reconcile_keeps_at_exact_reprice_boundary():
+    """abs(price delta) == reprice_ticks * tick must still keep the order."""
+    tq = TargetQuotes("cid", Regime.QUIET, (Quote("tok", Side.BUY, 0.49, 100),))
+    live = [_live("o1", "tok", Side.BUY, 0.47, 100)]  # exactly 2 ticks at 0.01
+    plan = reconcile(tq, live, tick=0.01, reprice_ticks=2, resize_frac=0.15)
+    assert plan.is_noop
