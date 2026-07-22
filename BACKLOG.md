@@ -195,6 +195,12 @@ done without evidence (script output / tests) from that cycle.
   wired into append_strategy_cycle.
 - Evidence: `scripts/paper_health.py`; live status=OK fresh ages
 
+### T1-26 Strategy cycle summary + ETA to 24h gate
+- Status: `done`
+- Done when: a script summarizes strategy_cycles.jsonl with hours remaining and
+  wall-clock ETA to the Tier-2 runtime gate.
+- Evidence: `scripts/summarize_strategy_cycles.py`
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

@@ -78,3 +78,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T09:18:00Z | Tier1 | T1-24 liquidity-oracle rank; scanner vs oracle spearman=-1 under zero-fill paper (Tier2 gated) | rank_vs_realized spearman_vs_oracle=-1.0; pytest pass; gate quotes=1496 need_hours>=24 | merged
 
 2026-07-22T09:28:00Z | Tier1 | T1-25 paper_health staleness watchdog; collector fresh (Tier2 gated) | paper_health status=OK; append cycle includes health; pytest test_paper_health PASS; gate quotes=1611 need_hours>=24 | merged
+
+2026-07-22T09:38:00Z | Tier1 | T1-26 cycle summary ETA to 24h gate; paper healthy (Tier2 gated) | summarize_strategy_cycles status=OK; append health=OK; gate quotes=1725 need_hours>=24 | merged
