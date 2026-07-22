@@ -133,6 +133,14 @@ done without evidence (script output / tests) from that cycle.
   live top market ~12.8 USDC/h reward accrual; trend_vol_ratio live sweep
   2→8 dn_quote=-24 (candidate for later T2-04, not merged)
 
+### T1-17 Knob candidate OOS validator + candidates doc
+- Status: `done`
+- Done when: a script compares full-window vs holdout metric deltas for a knob
+  and flags non-replicated / thin-holdout results; candidates tracked in
+  docs/STRATEGY_CANDIDATES.md.
+- Evidence: `scripts/validate_knob_candidate.py`; live trend_vol_ratio
+  full_dn_quote=-24 holdout_dn_quote=0 oos_replicated=false thin_holdout=true
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
