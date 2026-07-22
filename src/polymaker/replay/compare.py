@@ -17,7 +17,7 @@ from typing import Any
 from polymaker.config import StrategyProfile
 from polymaker.domain import MarketMeta
 from polymaker.metrics.analyze import MetricsReport, analyze
-from polymaker.replay import ReplayResult, load_journal, run_replay
+from polymaker.replay import ReplayResult, filter_rows_for_tokens, load_journal, run_replay
 
 
 METRIC_KEYS = (
@@ -55,10 +55,13 @@ def slice_journal_rows(
     *,
     holdout_frac: float = 0.0,
     use_holdout: bool = False,
+    split: str = "time",
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Optionally keep only the first or last fraction of the timeline.
+    """Optionally keep only the first or last fraction of the journal.
 
-    holdout_frac in (0, 1): split by timestamp span.
+    holdout_frac in (0, 1):
+      split='time'   → cut by timestamp span (can be thin if activity is front-loaded)
+      split='events' → cut by event count (guarantees holdout has ~frac of rows)
     use_holdout=False → tuning/in-sample (first 1-holdout_frac).
     use_holdout=True  → OOS holdout (last holdout_frac).
     holdout_frac<=0   → full journal.
@@ -68,6 +71,7 @@ def slice_journal_rows(
         ts1 = float(rows[-1].get("ts") or 0.0) if rows else 0.0
         return rows, {
             "mode": "full",
+            "split": split,
             "n_events": len(rows),
             "ts_start": ts0,
             "ts_end": ts1,
@@ -75,12 +79,35 @@ def slice_journal_rows(
         }
 
     frac = min(max(float(holdout_frac), 0.0), 0.95)
+    if split == "events":
+        cut_i = max(1, min(len(rows) - 1, int(round(len(rows) * (1.0 - frac)))))
+        if use_holdout:
+            sliced = rows[cut_i:]
+            mode = "holdout_events"
+        else:
+            sliced = rows[:cut_i]
+            mode = "tune_events"
+        if not sliced:
+            sliced = rows
+            mode = f"{mode}_fallback_full"
+        return sliced, {
+            "mode": mode,
+            "split": "events",
+            "n_events": len(sliced),
+            "n_events_full": len(rows),
+            "cut_index": cut_i,
+            "ts_start": float(sliced[0].get("ts") or 0.0),
+            "ts_end": float(sliced[-1].get("ts") or 0.0),
+            "holdout_frac": frac,
+        }
+
     ts_vals = [float(r.get("ts") or 0.0) for r in rows]
     t_min, t_max = min(ts_vals), max(ts_vals)
     span = t_max - t_min
     if span <= 0:
         return rows, {
             "mode": "full_degenerate_ts",
+            "split": "time",
             "n_events": len(rows),
             "ts_start": t_min,
             "ts_end": t_max,
@@ -99,6 +126,7 @@ def slice_journal_rows(
         mode = f"{mode}_fallback_full"
     return sliced, {
         "mode": mode,
+        "split": "time",
         "n_events": len(sliced),
         "n_events_full": len(rows),
         "ts_start": float(sliced[0].get("ts") or 0.0),
@@ -172,12 +200,26 @@ def compare_profiles(
     *,
     holdout_frac: float = 0.0,
     use_holdout: bool = False,
+    split: str = "time",
 ) -> CompareResult:
     """Replay baseline and candidate on the same (optionally sliced) journal."""
     rows = load_journal(journal_path)
+    n_unfiltered = len(rows)
+    # Restrict to this market's tokens before holdout cuts (multi-market tapes).
+    yes_id = meta.yes.token_id
+    no_id = meta.no.token_id
+    if yes_id not in ("yes-token", "") and no_id not in ("no-token", ""):
+        filtered = filter_rows_for_tokens(rows, yes_token=yes_id, no_token=no_id)
+        if filtered:
+            rows = filtered
     sliced, window = slice_journal_rows(
-        rows, holdout_frac=holdout_frac, use_holdout=use_holdout
+        rows, holdout_frac=holdout_frac, use_holdout=use_holdout, split=split
     )
+    window = {
+        **window,
+        "n_events_unfiltered": n_unfiltered,
+        "n_events_market": len(rows),
+    }
     out_dir.mkdir(parents=True, exist_ok=True)
     sliced_path = write_sliced_journal(sliced, out_dir / "journal_window.jsonl")
 

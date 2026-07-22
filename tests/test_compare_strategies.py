@@ -77,6 +77,20 @@ def test_slice_journal_holdout_splits_timeline() -> None:
     assert max(float(r["ts"]) for r in tune) < min(float(r["ts"]) for r in hold)
 
 
+def test_slice_journal_events_split_balances_counts() -> None:
+    rows = [{"ts": float(i), "kind": "book", "data": {}} for i in range(10)]
+    tune, w_tune = slice_journal_rows(
+        rows, holdout_frac=0.3, use_holdout=False, split="events"
+    )
+    hold, w_hold = slice_journal_rows(
+        rows, holdout_frac=0.3, use_holdout=True, split="events"
+    )
+    assert w_tune["mode"] == "tune_events"
+    assert w_hold["mode"] == "holdout_events"
+    assert len(tune) + len(hold) == len(rows)
+    assert len(hold) == 3  # 30% of 10
+
+
 def test_compare_profiles_detects_knob_delta(tmp_path: Path, meta) -> None:
     journal = tmp_path / "j.jsonl"
     _journal_fixture(

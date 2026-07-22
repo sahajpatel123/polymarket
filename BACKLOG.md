@@ -141,6 +141,13 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: `scripts/validate_knob_candidate.py`; live trend_vol_ratio
   full_dn_quote=-24 holdout_dn_quote=0 oos_replicated=false thin_holdout=true
 
+### T1-18 Event-count holdout + market-token journal filter
+- Status: `done`
+- Done when: holdout splits can cut by event count; compare/validate filter
+  multi-market journals to the target YES/NO tokens before slicing.
+- Evidence: `slice_journal_rows(split=events)`, `filter_rows_for_tokens`;
+  C-01 still oos_replicated=false after market-filtered event holdout
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

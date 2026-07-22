@@ -89,6 +89,44 @@ def load_journal(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def filter_rows_for_tokens(
+    rows: list[dict[str, Any]],
+    *,
+    yes_token: str,
+    no_token: str,
+) -> list[dict[str, Any]]:
+    """Keep journal rows that touch the given YES/NO token ids.
+
+    Multi-market journals otherwise poison time/event holdout splits: the last
+    30% of rows may be almost entirely a different market.
+    """
+    wanted = {yes_token, no_token}
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        kind = str(row.get("kind") or "")
+        data = row.get("data")
+        if kind == "book" and isinstance(data, dict):
+            if str(data.get("asset_id") or "") in wanted:
+                out.append(row)
+            continue
+        if kind == "last_trade_price" and isinstance(data, dict):
+            if str(data.get("asset_id") or "") in wanted:
+                out.append(row)
+            continue
+        if kind == "tick_size_change" and isinstance(data, dict):
+            if str(data.get("asset_id") or "") in wanted:
+                out.append(row)
+            continue
+        if kind == "price_change" and isinstance(data, dict):
+            changes = data.get("price_changes") or []
+            if any(str(ch.get("asset_id") or "") in wanted for ch in changes if isinstance(ch, dict)):
+                # Keep row; apply_journal_event ignores non-matching assets.
+                out.append(row)
+            continue
+        # drop orders_out / unknown
+    return out
+
+
 def infer_yes_no_tokens(
     metrics_path: Path,
     condition_id: str,

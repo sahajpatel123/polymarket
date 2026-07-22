@@ -60,3 +60,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T07:58:00Z | Tier1 | T1-16 reward scorecard; live trend_vol_ratio sweep evidence (Tier2 gated on hours) | scorecard status=OK reward_sum~21.3 top_rph~12.8; sweep trend_vol_ratio 8:dn_quote=-24; pytest test_reward_scorecard PASS; gate quotes=627 need_hours>=24 | merged
 
 2026-07-22T08:08:00Z | Tier1 | T1-17 OOS knob validator; trend_vol_ratio candidate NOT replicated on thin holdout (Tier2 gated) | validate status=OK full_dn_quote=-24 holdout_dn_quote=0 oos_replicated=false thin_holdout=true; docs/STRATEGY_CANDIDATES.md; gate quotes=737 need_hours>=24 | merged
+
+2026-07-22T08:18:00Z | Tier1 | T1-18 event holdout + market token filter; C-01 still fails OOS (Tier2 gated) | validate events split full_dn_quote=-27 holdout_dn_quote=0 oos_replicated=false; pytest compare+validate 9 passed; gate quotes=845 need_hours>=24 | merged

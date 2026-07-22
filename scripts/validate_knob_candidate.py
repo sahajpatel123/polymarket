@@ -51,6 +51,7 @@ def _run_window(
     values: list[Any],
     holdout_frac: float,
     use_holdout: bool,
+    split: str,
 ) -> dict[str, Any]:
     rows = []
     window_meta: dict[str, Any] = {}
@@ -66,6 +67,7 @@ def _run_window(
                 root / f"v{i}",
                 holdout_frac=holdout_frac,
                 use_holdout=use_holdout,
+                split=split,
             )
             if not window_meta:
                 window_meta = dict(result.window)
@@ -87,6 +89,8 @@ def main() -> int:
     ap.add_argument("--knob", required=True)
     ap.add_argument("--values", required=True)
     ap.add_argument("--holdout-frac", type=float, default=0.3)
+    ap.add_argument("--split", choices=("time", "events"), default="events",
+                    help="Holdout cut by timestamp span or event count (default events)")
     ap.add_argument("--yes-token", default="yes-token")
     ap.add_argument("--no-token", default="no-token")
     ap.add_argument("--condition-id", default="0xreplay")
@@ -130,11 +134,11 @@ def main() -> int:
 
     full = _run_window(
         journal=journal, meta=meta, baseline=baseline, knob=args.knob, values=values,
-        holdout_frac=0.0, use_holdout=False,
+        holdout_frac=0.0, use_holdout=False, split=args.split,
     )
     hold = _run_window(
         journal=journal, meta=meta, baseline=baseline, knob=args.knob, values=values,
-        holdout_frac=args.holdout_frac, use_holdout=True,
+        holdout_frac=args.holdout_frac, use_holdout=True, split=args.split,
     )
 
     # Pick best non-baseline value on full window by prefer direction

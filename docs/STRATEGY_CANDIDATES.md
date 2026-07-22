@@ -11,9 +11,9 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
   without flow confirmation (skews toward staying quoted).
 - **In-sample (full live tape, newsom market, 2026-07-22 ~1h):**
   `trend_vol_ratio` 2→8 → `dn_quote=-24`, `dn_cancel=-24`.
-- **OOS holdout (last 30%):** `dn_quote=0` → **not replicated**.
-  `validate_knob_candidate.py`: `oos_replicated=false` (effect is in-sample only
-  on this window; do not promote yet).
+- **OOS holdout (last 30% events, market-filtered):** `dn_quote=0` → **not
+  replicated** (holdout still quote-thin: 4 baseline quotes). Validator:
+  `oos_replicated=false`, `thin_holdout=true`.
 - **Next:** re-validate after ≥24h paper / denser adverse windows; if OOS still
   fails, reject or combine with higher `trend_flow_z` instead.
 - **Status:** `watching` (blocked on data, not code)
