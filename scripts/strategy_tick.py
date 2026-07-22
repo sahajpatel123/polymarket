@@ -92,6 +92,10 @@ def main() -> int:
     line = _status_line(err, out)
     report["steps"]["summarize"] = {"rc": code, "status_line": line, **_parse_kv(line)}
 
+    code, out, err = _run([py, "scripts/unused_knob_toml_scan.py"])
+    line = _status_line(err, out)
+    report["steps"]["unused_knobs"] = {"rc": code, "status_line": line, **_parse_kv(line)}
+
     if args.append:
         cmd = [py, "scripts/append_strategy_cycle.py"]
         if args.skip_connectivity:
@@ -106,6 +110,7 @@ def main() -> int:
     conn = report["steps"].get("connectivity") or {}
     c01 = report["steps"].get("c01") or {}
     sm = report["steps"].get("summarize") or {}
+    unused = report["steps"].get("unused_knobs") or {}
     ap_step = report["steps"].get("append") or {}
     conn_line = str(conn.get("status_line") or "")
     if conn.get("status") == "SKIPPED":
@@ -121,6 +126,7 @@ def main() -> int:
         f"outage_alert={c01.get('outage_alert')} "
         f"runtime_h={sm.get('runtime_h')} eta_paused={sm.get('eta_paused')} "
         f"tape_frozen={sm.get('tape_frozen')} "
+        f"unused_set={unused.get('n_set_unused')} "
         f"append={ap_step.get('status') or ('SKIPPED' if not args.append else 'UNKNOWN')}",
         file=sys.stderr,
     )
@@ -129,6 +135,8 @@ def main() -> int:
     if report["steps"]["c01"]["rc"] not in (0, 1):
         bad = True
     if report["steps"]["summarize"]["rc"] != 0:
+        bad = True
+    if report["steps"]["unused_knobs"]["rc"] != 0:
         bad = True
     if args.append and report["steps"]["append"]["rc"] != 0:
         bad = True

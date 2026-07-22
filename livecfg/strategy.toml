@@ -18,10 +18,13 @@ resize_frac         = 0.2
 min_edge_ticks      = 1
 event_cooloff_s     = 90
 event_jump_ticks    = 6
+# UNUSED by live path today (C-04): see scripts/unused_knob_toml_scan.py
 event_sweep_levels  = 2
 trend_flow_z        = 1.2
+# UNUSED by live path today (C-04)
 end_date_taper_days = 7
 reduce_only_hours   = 48
 halt_before_hours   = 6
+# UNUSED by live path today (C-04)
 exit_urgency_s      = 600
 merge_min_size      = 20.0
