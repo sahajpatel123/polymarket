@@ -13,24 +13,39 @@ from typing import Any, TextIO
 
 
 class MetricsLogger:
-    """Append-only JSONL writer. Disabled when path is None."""
+    """Append-only JSONL writer. Disabled when path is None.
+
+    Batches serialized lines in an in-memory buffer and flushes them in bulk
+    to reduce per-event write() system-call overhead on the hot path.
+    """
+
+    _BATCH_SIZE = 256
 
     def __init__(self, path: str | Path | None, *, enabled: bool = True) -> None:
         self.enabled = enabled and path is not None
         self._fh: TextIO | None = None
+        self._buffer: list[str] = []
         if self.enabled:
             p = Path(path)  # type: ignore[arg-type]
             p.parent.mkdir(parents=True, exist_ok=True)
-            self._fh = p.open("a", buffering=1)
+            self._fh = p.open("a", buffering=8192)
 
     def emit(self, event: str, **fields: Any) -> None:
         if not self.enabled or self._fh is None:
             return
         row = {"ts": fields.pop("ts", time.time()), "event": event, **fields}
-        self._fh.write(json.dumps(row, default=str) + "\n")
+        self._buffer.append(json.dumps(row, default=str))
+        if len(self._buffer) >= self._BATCH_SIZE:
+            self._flush()
+
+    def _flush(self) -> None:
+        if self._buffer:
+            self._fh.write("\n".join(self._buffer) + "\n")
+            self._buffer.clear()
 
     def close(self) -> None:
         if self._fh is not None:
+            self._flush()
             self._fh.close()
             self._fh = None
 
