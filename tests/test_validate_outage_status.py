@@ -46,7 +46,7 @@ def test_validate_status_missing_keys() -> None:
 
 
 def test_validate_status_stale_when_open() -> None:
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     ts = datetime.fromisoformat("2026-07-22T21:00:00+00:00").timestamp()
     rep = validate_status(_full(), max_age_s=60, now=ts + 600)
