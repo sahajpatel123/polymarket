@@ -254,6 +254,13 @@ done without evidence (script output / tests) from that cycle.
   stdout (paper ~6.5h collecting).
 - Evidence: scripts listed above; WEEKLY_REPORT generated 2026-07-22T13:30Z
 
+### T1-34 Quote lifetime / requote-interval churn report
+- Status: `done`
+- Done when: a script reports lifetime and requote-interval p50/p95 from
+  metrics-paper.jsonl (T2-05 evidence); wired into append_strategy_cycle.
+- Evidence: `src/polymaker/metrics/churn.py`, `scripts/quote_churn_report.py`,
+  `tests/test_quote_churn_report.py`
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

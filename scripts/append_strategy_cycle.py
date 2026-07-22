@@ -50,6 +50,7 @@ def main() -> int:
         ("gate", [py, "scripts/paper_data_gate.py"]),
         ("health", [py, "scripts/paper_health.py"]),
         ("shadow", [py, "scripts/shadow_adverse_selection.py"]),
+        ("churn", [py, "scripts/quote_churn_report.py"]),
     ):
         code, stdout, stderr = _run_capture(cmd)
         codes[name] = code
@@ -72,6 +73,7 @@ def main() -> int:
         "rank": statuses.get("rank", {}),
         "health": statuses.get("health", {}),
         "shadow": statuses.get("shadow", {}),
+        "churn": statuses.get("churn", {}),
         "gate": statuses.get("gate_full", statuses.get("gate", {})),
     }
     out = Path(args.out)
@@ -82,13 +84,15 @@ def main() -> int:
     g = row["gate"]
     h = row["health"]
     sh = row["shadow"]
+    ch = row["churn"]
     print(
         f"status=OK appended={out} runtime_h={g.get('runtime_hours')} "
         f"quotes={g.get('quotes_for_gate')} tier2={g.get('tier2_allowed')} "
         f"spearman={row['rank'].get('spearman')} health={h.get('status')} "
         f"shadow_lifetimes={sh.get('lifetimes')} "
         f"crossed_frac={sh.get('crossed_frac')} "
-        f"markout_30s={sh.get('markout_30s')}",
+        f"markout_30s={sh.get('markout_30s')} "
+        f"life_p50={ch.get('life_p50')} rq_p50={ch.get('rq_p50')}",
         file=sys.stderr,
     )
     # health returncode 1 = stale; still append evidence but surface non-zero

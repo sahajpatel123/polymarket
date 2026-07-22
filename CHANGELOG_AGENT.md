@@ -128,3 +128,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T13:20:00Z | Tier1 | T1-32 richest paper-log discovery — fix gate shadowing by tiny logs/paper.jsonl | gate restored livecfg runtime_h=6.33 quotes=4200; pytest test_paper_data_gate pass | merged
 
 2026-07-22T13:31:00Z | Tier1 | T1-33 richest-log discovery across health/regime/scorecard/rank/snapshot; weekly report refresh | gate livecfg 6.51h/4318q; WEEKLY_REPORT overwritten; pytest related pass | merged
+
+2026-07-22T13:40:00Z | Tier1 | T1-34 quote lifetime/requote churn report (T2-05 evidence) | pytest pass; live life_p50/rq_p50 on ~6.6h tape; wired into cycle append | merged
