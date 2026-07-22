@@ -232,3 +232,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T22:10:00Z | Tier1 | T1-84 strategy_tick runs deps_audit each cycle; deps_* in outage_status + weekly; live ok bumps=0 | ~6.7h DOWN; no Tier2 | merged
 
 2026-07-22T22:20:00Z | Tier1 | T1-85 fix stale docs: political-longdated/hot are shipped in strategy.toml | profiles validate; ~6.8h DOWN; no Tier2 | merged
+
+2026-07-22T22:30:00Z | Tier1 | T1-86 persist tape_frozen/eta_paused/last_requote_age_s in outage_status; weekly refresh ~7h outage | STILL_DOWN; no Tier2 | merged

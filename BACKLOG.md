@@ -572,6 +572,12 @@ done without evidence (script output / tests) from that cycle.
   shipped in config/strategy.toml; remove "absent" gap; profiles validate.
 - Evidence: StrategyProfile.model_validate OK for all 4 config profiles
 
+### T1-86 Persist tape_frozen / requote age in outage_status
+- Status: `done`
+- Done when: strategy_tick merges tape_frozen, eta_paused, last_requote_age_s
+  into logs/outage_status.json; weekly snapshot includes those fields.
+- Evidence: live outage_status shows tape_frozen=True and requote age during ~7h DOWN
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
