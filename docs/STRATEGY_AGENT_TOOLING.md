@@ -12,6 +12,7 @@ uv run python scripts/paper_health.py            # fail if quotes go stale
 uv run python scripts/ensure_paper_collector.py --restart  # relaunch if STALE
 uv run python scripts/polymarket_connectivity.py  # REST+WS upstream probe
 uv run python scripts/outage_window_report.py     # STALE/DOWN duration from cycles
+uv run python scripts/await_polymarket_recovery.py --once  # check / relaunch when UP
 ```
 
 ## Evaluation / candidates
@@ -35,7 +36,7 @@ uv run python scripts/outage_window_report.py     # STALE/DOWN duration from cyc
 | `scripts/ensure_paper_collector.py` | Diagnose STALE paper collector; optional `--restart` |
 | `scripts/polymarket_connectivity.py` | REST + market WS upstream probe (outage vs local) |
 | `scripts/outage_window_report.py` | STALE/DOWN window durations from strategy_cycles |
-| `scripts/trending_counterfactual.py` | Offline C-01 TRENDING suppress; `--sweep-vol --by-market` |
+| `scripts/await_polymarket_recovery.py` | Poll until REST+WS UP; optional collector restart |
 
 ## Open candidates
 

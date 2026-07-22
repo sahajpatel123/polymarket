@@ -39,12 +39,22 @@ def _parse_status_line(stderr: str) -> dict[str, str]:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--out", default="logs/strategy_cycles.jsonl")
+    ap.add_argument(
+        "--skip-connectivity",
+        action="store_true",
+        help="Skip Polymarket REST/WS probe (faster during known outages)",
+    )
+    ap.add_argument(
+        "--with-counterfactual",
+        action="store_true",
+        help="Record offline C-01 suppress_frac@vol=8 (no network)",
+    )
     args = ap.parse_args()
 
     py = sys.executable
     codes = {}
     statuses = {}
-    for name, cmd in (
+    cmds: list[tuple[str, list[str]]] = [
         ("snapshot", [py, "scripts/strategy_snapshot.py"]),
         ("rank", [py, "scripts/rank_vs_realized.py"]),
         ("gate", [py, "scripts/paper_data_gate.py"]),
@@ -53,8 +63,25 @@ def main() -> int:
         ("churn", [py, "scripts/quote_churn_report.py"]),
         ("schema", [py, "scripts/verify_metrics_schema.py", "--tail", "50"]),
         ("paper_schema", [py, "scripts/verify_paper_schema.py", "--tail", "50"]),
-        ("connectivity", [py, "scripts/polymarket_connectivity.py", "--timeout-s", "5"]),
-    ):
+    ]
+    if not args.skip_connectivity:
+        cmds.append(
+            ("connectivity", [py, "scripts/polymarket_connectivity.py", "--timeout-s", "5"])
+        )
+    if args.with_counterfactual:
+        cmds.append(
+            (
+                "counterfactual",
+                [
+                    py,
+                    "scripts/trending_counterfactual.py",
+                    "--sweep-vol",
+                    "8",
+                    "--by-market",
+                ],
+            )
+        )
+    for name, cmd in cmds:
         code, stdout, stderr = _run_capture(cmd)
         codes[name] = code
         # gate prints status on stdout; others on stderr
@@ -79,7 +106,11 @@ def main() -> int:
         "churn": statuses.get("churn", {}),
         "schema": statuses.get("schema", {}),
         "paper_schema": statuses.get("paper_schema", {}),
-        "connectivity": statuses.get("connectivity", {}),
+        "connectivity": statuses.get(
+            "connectivity",
+            {"status": "SKIPPED"} if args.skip_connectivity else {},
+        ),
+        "counterfactual": statuses.get("counterfactual", {}),
         "gate": statuses.get("gate_full", statuses.get("gate", {})),
     }
     out = Path(args.out)
@@ -95,6 +126,7 @@ def main() -> int:
     psch = row["paper_schema"]
     conn = row["connectivity"]
     snap = row["snapshot"]
+    cf = row.get("counterfactual") or {}
     print(
         f"status=OK appended={out} runtime_h={g.get('runtime_hours')} "
         f"quotes={g.get('quotes_for_gate')} tier2={g.get('tier2_allowed')} "
@@ -107,7 +139,8 @@ def main() -> int:
         f"schema={sch.get('status')} paper_schema={psch.get('status')} "
         f"false_trending_frac={snap.get('false_trending_frac')} "
         f"false_trending_cancel_share={snap.get('false_trending_cancel_share')} "
-        f"vol_only_frac={snap.get('vol_only_frac')}",
+        f"vol_only_frac={snap.get('vol_only_frac')} "
+        f"counterfactual={cf.get('status') or cf.get('mode') or '-'}",
         file=sys.stderr,
     )
     # health returncode 1 = stale; still append evidence but surface non-zero

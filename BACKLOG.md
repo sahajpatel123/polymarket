@@ -362,6 +362,12 @@ done without evidence (script output / tests) from that cycle.
   `--skip-validate` allows outage-time packs without journal replay.
 - Evidence: skip-validate pack counterfactual both markets=1.0 at vol=8
 
+### T1-51 Await Polymarket recovery + fast cycle flags
+- Status: `done`
+- Done when: await_polymarket_recovery polls UP then optional collector
+  restart; append supports `--skip-connectivity` / `--with-counterfactual`.
+- Evidence: pytest once-path; outage >1h documented
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

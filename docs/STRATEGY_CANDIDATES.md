@@ -75,6 +75,9 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
 - **Update 2026-07-22T16:20Z:** evidence pack now embeds the counterfactual
   sweep (`c01_counterfactual`); outage-friendly `--skip-validate` path.
   Latest pack: both markets suppress_frac=1.0 at vol=8.
+- **Update 2026-07-22T16:30Z:** Polymarket outage open >1h (quotes still
+  5529 / ~8.7h). Use `await_polymarket_recovery.py` on recovery; cycle
+  append can `--skip-connectivity` meanwhile.
 
 ## C-02 Prefer higher-reward market weight (selection)
 
