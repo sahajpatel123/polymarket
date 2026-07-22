@@ -368,6 +368,12 @@ done without evidence (script output / tests) from that cycle.
   restart; append supports `--skip-connectivity` / `--with-counterfactual`.
 - Evidence: pytest once-path; outage >1h documented
 
+### T1-52 Gate runtime from requote span (ignore outage noise)
+- Status: `done`
+- Done when: paper_data_gate `runtime_hours` uses requote timestamps only;
+  still reports `runtime_hours_all_events` for transparency.
+- Evidence: live requote=8.37h vs all_events=9.66h during WS outage
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

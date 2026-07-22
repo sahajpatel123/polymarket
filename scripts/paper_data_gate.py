@@ -6,8 +6,9 @@ exit 2 if the log looks unreadable/corrupt.
 
 Quote threshold follows BACKLOG wording (≥500 *quotes*): prefers
 metrics-paper.jsonl `event=quote` counts when that sibling log exists, and
-still reports structlog requote lines for churn context. Runtime still comes
-from the paper structlog timeline.
+still reports structlog requote lines for churn context. Runtime comes from
+the **requote** timeline (not blind/WS-error noise that continues during
+outages — T1-52).
 
 Usage:
   uv run python scripts/paper_data_gate.py
@@ -102,7 +103,8 @@ def main() -> int:
     n_json = 0
     n_bad = 0
     n_requote = 0
-    times: list[float] = []
+    times_all: list[float] = []
+    times_requote: list[float] = []
     try:
         with path.open() as fh:
             for line in fh:
@@ -117,11 +119,14 @@ def main() -> int:
                     continue
                 n_json += 1
                 event = str(obj.get("event") or obj.get("msg") or obj.get("event_name") or "")
-                if event == "requote" or "requote" in event:
+                is_requote = event == "requote" or "requote" in event
+                if is_requote:
                     n_requote += 1
                 t = _ts(obj)
                 if t is not None:
-                    times.append(t)
+                    times_all.append(t)
+                    if is_requote:
+                        times_requote.append(t)
     except OSError as exc:
         print(f"status=CORRUPT err={exc}")
         return 2
@@ -130,11 +135,20 @@ def main() -> int:
         print(f"status=CORRUPT bad_lines={n_bad} json_lines=0")
         return 2
 
-    runtime_h = 0.0
-    if len(times) >= 2:
-        runtime_h = max(0.0, (max(times) - min(times)) / 3600.0)
-    elif len(times) == 1:
-        runtime_h = 0.0
+    def _span_h(times: list[float]) -> float:
+        if len(times) >= 2:
+            return max(0.0, (max(times) - min(times)) / 3600.0)
+        return 0.0
+
+    # Prefer requote span so outage noise (ws_dropped / get_full_book_failed)
+    # cannot pad toward the 24h Tier-2 gate (T1-52).
+    runtime_basis = "requote"
+    runtime_h = _span_h(times_requote)
+    runtime_h_all = _span_h(times_all)
+    if runtime_h <= 0.0 and runtime_h_all > 0.0:
+        # Legacy / empty-requote logs: fall back to full structlog span.
+        runtime_basis = "all_events"
+        runtime_h = runtime_h_all
 
     metrics_path = Path(args.metrics_log) if args.metrics_log else _sibling_metrics(path)
     quote_events = 0
@@ -155,7 +169,9 @@ def main() -> int:
     reason = " ".join(reason_parts) if reason_parts else "ok"
 
     print(f"status=OK lines={n_lines} json_lines={n_json} bad_lines={n_bad}")
+    print(f"runtime_basis={runtime_basis}")
     print(f"runtime_hours={runtime_h:.4f}")
+    print(f"runtime_hours_all_events={runtime_h_all:.4f}")
     print(f"quote_events={quote_events}")
     print(f"requote_lines={n_requote}")
     print(f"quotes_for_gate={quotes_for_gate}")

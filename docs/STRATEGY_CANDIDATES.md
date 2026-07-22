@@ -78,6 +78,9 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
 - **Update 2026-07-22T16:30Z:** Polymarket outage open >1h (quotes still
   5529 / ~8.7h). Use `await_polymarket_recovery.py` on recovery; cycle
   append can `--skip-connectivity` meanwhile.
+- **Update 2026-07-22T16:40Z:** gate runtime no longer pads on outage noise
+  (`get_full_book_failed` / `market_ws_dropped`). Live:
+  `runtime_hours(requote)=8.37` vs `all_events=9.66` (T1-52).
 
 ## C-02 Prefer higher-reward market weight (selection)
 

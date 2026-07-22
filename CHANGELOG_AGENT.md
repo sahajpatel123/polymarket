@@ -164,3 +164,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T16:20:00Z | Tier1 | T1-50 evidence pack embeds C-01 counterfactual + --skip-validate; both markets suppress=1.0 at vol=8; Polymarket still DOWN | pack OK; no Tier2 | merged
 
 2026-07-22T16:30:00Z | Tier1 | T1-51 await_polymarket_recovery + append --skip-connectivity/--with-counterfactual; outage >1h still DOWN | pytest pass; no Tier2 | merged
+
+2026-07-22T16:40:00Z | Tier1 | T1-52 paper_data_gate runtime from requote span only — stop outage noise padding toward 24h; live 8.37h vs all_events 9.66h | pytest pass; Polymarket still DOWN; no Tier2 | merged
