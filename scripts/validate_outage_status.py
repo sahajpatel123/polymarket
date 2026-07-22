@@ -43,6 +43,7 @@ RECOMMENDED_KEYS = (
     "ensure_status",
     "collector_pid",
     "deps_ok",
+    "n_cycles",
 )
 
 

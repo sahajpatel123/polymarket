@@ -30,6 +30,7 @@ def _full(**overrides):
         "ensure_status": "NEEDS_RESTART",
         "collector_pid": 78216,
         "deps_ok": True,
+        "n_cycles": 79,
     }
     base.update(overrides)
     return base

@@ -119,6 +119,9 @@ def _summarize_freeze_fields(sm: dict[str, Any]) -> dict[str, Any]:
     for key in ("tape_frozen", "eta_paused", "last_requote_age_s"):
         if key in sm and sm[key] not in (None, ""):
             out[key] = _coerce_status_value(str(sm[key]))
+    # Longitudinal trail length (T1-94).
+    if sm.get("cycles") not in (None, ""):
+        out["n_cycles"] = _coerce_status_value(str(sm["cycles"]))
     return out
 
 
@@ -363,6 +366,7 @@ def main() -> int:
         f"deps_ok={deps.get('ok')} deps_bumps={deps.get('bumps')} "
         f"health={health.get('status')} "
         f"ensure={ensure.get('status')} collector_pid={ensure.get('pids')} "
+        f"n_cycles={sm.get('cycles')} "
         f"last_requote_age_s={health.get('last_requote_age_s') or sm.get('last_requote_age_s')} "
         f"runtime_h={sm.get('runtime_h')} eta_paused={sm.get('eta_paused')} "
         f"tape_frozen={sm.get('tape_frozen')} "

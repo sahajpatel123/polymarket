@@ -59,7 +59,8 @@ Compact monitor snapshot written by `strategy_tick` / `outage_window_report`
 
 **Recommended** (warned if missing): `connectivity`, `tier2_allowed`,
 `gate_reason`, `runtime_basis`, `tape_frozen`, `eta_paused`,
-`last_requote_age_s`, `health`, `ensure_status`, `collector_pid`, `deps_ok`.
+`last_requote_age_s`, `health`, `ensure_status`, `collector_pid`, `deps_ok`,
+`n_cycles`.
 
 During a Polymarket outage expect `outage_open=true`, `health=STALE`,
 `ensure_status=NEEDS_RESTART` (collector alive; do **not** force-restart while

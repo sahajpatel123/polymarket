@@ -147,6 +147,7 @@ PRESERVE_STATUS_KEYS = (
     "ensure_status",
     "collector_pids",
     "collector_pid",
+    "n_cycles",
 )
 
 

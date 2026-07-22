@@ -37,11 +37,13 @@ def test_summarize_freeze_fields() -> None:
         "eta_paused": "True",
         "last_requote_age_s": "25225.3",
         "runtime_h": "8.37",
+        "cycles": "79",
     })
     assert fields == {
         "tape_frozen": True,
         "eta_paused": True,
         "last_requote_age_s": 25225.3,
+        "n_cycles": 79,
     }
 
 

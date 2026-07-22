@@ -134,6 +134,8 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
   100; quotes still 5529 / runtime 8.37h; no Tier-2 PR.
 - **Update 2026-07-22T23:40Z:** `outage_alert_prolonged` is now a required
   `outage_status` key. Still DOWN ~8.2h; no Tier-2 PR.
+- **Update 2026-07-22T23:50Z:** `outage_status` includes `n_cycles` from the
+  strategy cycle trail. Still DOWN ~8.3h; no Tier-2 PR.
 
 ## C-02 Prefer higher-reward market weight (selection)
 

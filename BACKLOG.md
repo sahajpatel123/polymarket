@@ -621,6 +621,12 @@ done without evidence (script output / tests) from that cycle.
   outage_alert_prolonged; docs updated; live validate OK; cycle trail stamped.
 - Evidence: live status=OK with prolonged=True; summarize last_outage_alert_prolonged=True
 
+### T1-94 Persist n_cycles in outage_status
+- Status: `done`
+- Done when: strategy_tick merges summarize cycles= into outage_status n_cycles;
+  weekly + validate recommended include n_cycles; status line shows n_cycles=.
+- Evidence: live n_cycles≥79 during ~8.3h Polymarket outage
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
