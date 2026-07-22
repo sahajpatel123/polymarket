@@ -110,7 +110,8 @@ print must be ≥ `event_sweep_mult · (base_size_usdc/price)` **and** ≥
 
 > **Gap:** `event_sweep_levels` is on `StrategyProfile` but unused — sweep
 > depth uses near-touch sizing via `event_sweep_frac` / `event_sweep_mult`
-> only. Confirm with `scripts/profile_knob_audit.py`.
+> only. Confirm with `scripts/profile_knob_audit.py` /
+> `scripts/unused_knob_toml_scan.py`.
 
 **Resolved markets:** `RegimeInputs.market_resolved` is never set by the
 engine. Closed / not-accepting markets are instead added to `Engine._halted`

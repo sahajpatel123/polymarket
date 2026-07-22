@@ -202,3 +202,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T19:40:00Z | Tier1 | T1-69 unused_knob_toml_scan for C-04; live n_set_unused=9 across 5 profiles (exit/taper/sweep inert) | Polymarket STILL_DOWN; no Tier2 | merged
 
 2026-07-22T19:50:00Z | Tier1 | T1-70 annotate livecfg C-04 dead knobs + unused_set on strategy_tick; live unused_set=9 outage~4.3h | Polymarket STILL_DOWN; no Tier2 | merged
+
+2026-07-22T20:00:00Z | Tier1 | T1-71 annotate config/strategy.toml C-04 unused knobs + strategy.md scan pointer; Polymarket STILL_DOWN ~4.5h | no Tier2 | merged

@@ -482,6 +482,12 @@ done without evidence (script output / tests) from that cycle.
   strategy_tick status surfaces unused_set.
 - Evidence: live unused_set=9; live-tiny comments present
 
+### T1-71 Annotate config/strategy.toml C-04 unused knobs
+- Status: `done`
+- Done when: config profiles comment exit_urgency_s / end_date_taper_days
+  as unused; strategy.md points at unused_knob_toml_scan.
+- Evidence: file header + inline comments on newsom/political/romania profiles
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
