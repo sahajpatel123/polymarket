@@ -19,6 +19,13 @@ from pathlib import Path
 from typing import Any
 
 
+from polymaker.metrics.log_discovery import (
+    DEFAULT_METRICS_CANDIDATES,
+    DEFAULT_PAPER_CANDIDATES,
+    pick_richest_log,
+)
+
+
 def _load_script_build_scorecard():
     import importlib.util
 
@@ -28,13 +35,6 @@ def _load_script_build_scorecard():
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod.build_scorecard
-
-
-def _first_existing(*paths: Path) -> Path | None:
-    for p in paths:
-        if p.exists():
-            return p
-    return None
 
 
 def _reward_decomposition(metrics: Path) -> dict[str, dict[str, float]]:
@@ -239,16 +239,15 @@ def main() -> int:
     ap.add_argument("--metrics", default=None)
     ap.add_argument("--paper-log", default=None)
     args = ap.parse_args()
-    db = Path(args.db) if args.db else _first_existing(
-        Path("livecfg/state.db"), Path("state.db")
+    db = Path(args.db) if args.db else next(
+        (p for p in (Path("livecfg/state.db"), Path("state.db")) if p.exists()),
+        Path("livecfg/state.db"),
     )
-    metrics = Path(args.metrics) if args.metrics else _first_existing(
-        Path("livecfg/logs/metrics-paper.jsonl"),
-        Path("logs/metrics-paper.jsonl"),
+    metrics = Path(args.metrics) if args.metrics else pick_richest_log(
+        DEFAULT_METRICS_CANDIDATES
     )
-    paper = Path(args.paper_log) if args.paper_log else _first_existing(
-        Path("livecfg/logs/paper.jsonl"),
-        Path("logs/paper.jsonl"),
+    paper = Path(args.paper_log) if args.paper_log else pick_richest_log(
+        DEFAULT_PAPER_CANDIDATES
     )
     if db is None or not db.exists():
         print("status=NO_DB", file=sys.stderr)

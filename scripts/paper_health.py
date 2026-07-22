@@ -18,11 +18,11 @@ from pathlib import Path
 from typing import Any
 
 
-def _first_existing(*paths: Path) -> Path | None:
-    for p in paths:
-        if p.exists():
-            return p
-    return None
+from polymaker.metrics.log_discovery import (
+    DEFAULT_METRICS_CANDIDATES,
+    DEFAULT_PAPER_CANDIDATES,
+    pick_richest_log,
+)
 
 
 def _parse_ts(obj: dict[str, Any]) -> float | None:
@@ -76,11 +76,11 @@ def main() -> int:
                     help="Fail if newest requote/quote is older than this (default 300s)")
     args = ap.parse_args()
 
-    paper = Path(args.paper_log) if args.paper_log else _first_existing(
-        Path("livecfg/logs/paper.jsonl"), Path("logs/paper.jsonl")
+    paper = Path(args.paper_log) if args.paper_log else pick_richest_log(
+        DEFAULT_PAPER_CANDIDATES
     )
-    metrics = Path(args.metrics_log) if args.metrics_log else _first_existing(
-        Path("livecfg/logs/metrics-paper.jsonl"), Path("logs/metrics-paper.jsonl")
+    metrics = Path(args.metrics_log) if args.metrics_log else pick_richest_log(
+        DEFAULT_METRICS_CANDIDATES
     )
     now = datetime.now(timezone.utc).timestamp()
     report: dict[str, Any] = {

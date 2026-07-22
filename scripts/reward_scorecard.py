@@ -18,13 +18,11 @@ from pathlib import Path
 from typing import Any
 
 from polymaker.metrics.analyze import analyze
-
-
-def _first_existing(*paths: Path) -> Path | None:
-    for p in paths:
-        if p.exists():
-            return p
-    return None
+from polymaker.metrics.log_discovery import (
+    DEFAULT_METRICS_CANDIDATES,
+    DEFAULT_PAPER_CANDIDATES,
+    pick_richest_log,
+)
 
 
 def _runtime_hours(metrics_path: Path) -> float:
@@ -128,13 +126,11 @@ def main() -> int:
     ap.add_argument("--metrics", default=None)
     ap.add_argument("--paper-log", default=None)
     args = ap.parse_args()
-    metrics = Path(args.metrics) if args.metrics else _first_existing(
-        Path("livecfg/logs/metrics-paper.jsonl"),
-        Path("logs/metrics-paper.jsonl"),
+    metrics = Path(args.metrics) if args.metrics else pick_richest_log(
+        DEFAULT_METRICS_CANDIDATES
     )
-    paper = Path(args.paper_log) if args.paper_log else _first_existing(
-        Path("livecfg/logs/paper.jsonl"),
-        Path("logs/paper.jsonl"),
+    paper = Path(args.paper_log) if args.paper_log else pick_richest_log(
+        DEFAULT_PAPER_CANDIDATES
     )
     if metrics is None or not metrics.exists():
         print("status=NO_METRICS", file=sys.stderr)

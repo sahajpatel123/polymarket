@@ -18,11 +18,7 @@ from pathlib import Path
 from typing import Any
 
 
-def _first_existing(*paths: Path) -> Path | None:
-    for p in paths:
-        if p.exists():
-            return p
-    return None
+from polymaker.metrics.log_discovery import DEFAULT_PAPER_CANDIDATES, pick_richest_log
 
 
 def analyze_paper_log(path: Path) -> dict[str, Any]:
@@ -101,10 +97,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--log", default=None)
     args = ap.parse_args()
-    path = Path(args.log) if args.log else _first_existing(
-        Path("livecfg/logs/paper.jsonl"),
-        Path("logs/paper.jsonl"),
-    )
+    path = Path(args.log) if args.log else pick_richest_log(DEFAULT_PAPER_CANDIDATES)
     if path is None or not path.exists():
         print("status=NO_LOG", file=sys.stderr)
         print(json.dumps({"status": "NO_LOG"}, indent=2))

@@ -19,6 +19,7 @@ from pathlib import Path
 from polymaker.config import Config
 from polymaker.domain import MarketMeta, TokenMeta
 from polymaker.metrics.analyze import analyze
+from polymaker.metrics.log_discovery import pick_richest_log
 from polymaker.replay.compare import compare_profiles, load_named_profile
 from polymaker.replay.synth import write_regime_journal
 
@@ -33,13 +34,6 @@ def _load_script_attr(module_file: str, attr: str):
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return getattr(mod, attr)
-
-
-def _first_existing(*paths: Path) -> Path | None:
-    for p in paths:
-        if p.exists():
-            return p
-    return None
 
 
 def _run_gate() -> dict:
@@ -67,15 +61,19 @@ def main() -> int:
     ap.add_argument("--candidate-profile", default="romania-pm")
     args = ap.parse_args()
 
-    metrics_path = _first_existing(
-        Path(args.config_dir) / "logs" / "metrics-paper.jsonl",
-        Path("livecfg/logs/metrics-paper.jsonl"),
-        Path("logs/metrics-paper.jsonl"),
+    metrics_path = pick_richest_log(
+        [
+            Path(args.config_dir) / "logs" / "metrics-paper.jsonl",
+            Path("livecfg/logs/metrics-paper.jsonl"),
+            Path("logs/metrics-paper.jsonl"),
+        ]
     )
-    paper_log = _first_existing(
-        Path(args.config_dir) / "logs" / "paper.jsonl",
-        Path("livecfg/logs/paper.jsonl"),
-        Path("logs/paper.jsonl"),
+    paper_log = pick_richest_log(
+        [
+            Path(args.config_dir) / "logs" / "paper.jsonl",
+            Path("livecfg/logs/paper.jsonl"),
+            Path("logs/paper.jsonl"),
+        ]
     )
     paper_metrics = None
     if metrics_path is not None:

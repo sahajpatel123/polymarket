@@ -247,6 +247,13 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: `src/polymaker/metrics/log_discovery.py`; gate restored to
   livecfg ~6.3h / 4200 quotes after preferring richest log
 
+### T1-33 Propagate richest-log discovery + weekly report refresh
+- Status: `done`
+- Done when: paper_health / regime / scorecard / rank / snapshot use
+  `pick_richest_log`; `WEEKLY_REPORT.md` overwritten with this-cycle script
+  stdout (paper ~6.5h collecting).
+- Evidence: scripts listed above; WEEKLY_REPORT generated 2026-07-22T13:30Z
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
