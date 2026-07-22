@@ -31,6 +31,8 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
   Scanner rank 1 = Newsom (~$8.9/h realized); realized rank 1 = Vance (~$12.8/h).
 - **Decomposition:** both markets stayed ~100% in-band; realized gap is almost
   pure `rewards_daily_rate` (308 vs 214). Scanner score still ranks Newsom
-  higher — likely over-penalizing extremity/liquidity relative to pool size.
-- **Status:** `watching` (needs multi-day window + T2-01 PR; do not retune
-  score_market on this tiny n=2 sample alone)
+  higher — driven by **rebate_potential** (93 vs 10 from volume_24hr), while
+  paper metrics currently accrue liquidity rewards only (0 fills → rebate not
+  realized). `reward_density` is nearly tied (0.044 vs 0.043).
+- **Status:** `watching` (needs multi-day window + fills before retuning
+  score_market; n=2 and paper-no-fill regime bias the comparison)

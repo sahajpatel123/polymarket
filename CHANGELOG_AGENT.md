@@ -70,3 +70,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T08:38:00Z | Tier1 | T1-20 scanner vs realized reward ranks; inverted on live pair (Tier2 gated) | rank_vs_realized status=OK spearman=-1.0 disagreements=2; pytest 3 passed; gate quotes=1069 need_hours>=24 | merged
 
 2026-07-22T08:48:00Z | Tier1 | T1-20b reward decomposition: in-band~100o rank invert = daily_rate gap (Tier2 gated) | rank_vs_realized daily 308 vs 214, in_band_frac=1.0 both; spearman=-1.0; gate quotes=1175 need_hours>=24 | merged
+
+2026-07-22T08:58:00Z | Tier1 | T1-22 scanner components: rebate_pot drives Newsom rank; paper realized is liquidity-reward only (Tier2 gated) | rebate 93 vs 10; daily_rate 214 vs 308; in_band_frac=1; spearman=-1; gate quotes=1281 need_hours>=24 | merged

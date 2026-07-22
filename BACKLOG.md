@@ -169,6 +169,13 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: both live markets in_band_frac≈1.0; daily_rate 308 vs 214 explains
   realized gap
 
+### T1-22 Scanner component breakdown in rank report
+- Status: `done`
+- Done when: rank report surfaces rebate_potential / reward_density / extremity
+  from score_json so inversions can be attributed to rebate-vs-liquidity-reward.
+- Evidence: Newsom rebate_pot≈93 vs Vance≈10; paper has 0 fills so realized
+  path is liquidity-reward only
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

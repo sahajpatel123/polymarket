@@ -106,6 +106,8 @@ def load_catalog_scores(db: Path) -> dict[str, dict[str, Any]]:
             "scanner_score": float(score or 0.0),
             "reward_density": detail.get("reward_density"),
             "rebate_potential": detail.get("rebate_potential"),
+            "scanner_spread": detail.get("spread"),
+            "scanner_extremity": detail.get("extremity"),
         }
     return out
 
@@ -161,6 +163,9 @@ def build_report(
             "slug": cat.get("slug"),
             "scanner_score": cat.get("scanner_score"),
             "reward_density": cat.get("reward_density"),
+            "rebate_potential": cat.get("rebate_potential"),
+            "scanner_spread": cat.get("scanner_spread"),
+            "scanner_extremity": cat.get("scanner_extremity"),
             "rewards_daily_rate": d.get("rewards_daily_rate"),
             "in_band_hours": d.get("in_band_hours"),
             "in_band_frac": d.get("in_band_frac"),
@@ -245,7 +250,9 @@ def main() -> int:
         print(
             f"market slug={m.get('slug')} scanner_rank={m.get('scanner_rank')} "
             f"realized_rank={m.get('realized_rank')} daily_rate={m.get('rewards_daily_rate')} "
-            f"in_band_frac={m.get('in_band_frac')} rph={m.get('realized_reward_per_hour')}",
+            f"in_band_frac={m.get('in_band_frac')} rebate_pot={m.get('rebate_potential')} "
+            f"reward_density={m.get('reward_density')} extremity={m.get('scanner_extremity')} "
+            f"rph={m.get('realized_reward_per_hour')}",
             file=sys.stderr,
         )
     return 0
