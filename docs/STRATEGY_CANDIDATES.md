@@ -1,5 +1,7 @@
 # Strategy candidates (Agent-1 scratchpad)
 
+Tooling index: [STRATEGY_AGENT_TOOLING.md](STRATEGY_AGENT_TOOLING.md).
+
 Evidence-backed ideas awaiting the Tier-2 paper gate (≥24h runtime).
 Do **not** merge pricing changes from this file without a PR + holdout proof.
 

@@ -80,3 +80,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T09:28:00Z | Tier1 | T1-25 paper_health staleness watchdog; collector fresh (Tier2 gated) | paper_health status=OK; append cycle includes health; pytest test_paper_health PASS; gate quotes=1611 need_hours>=24 | merged
 
 2026-07-22T09:38:00Z | Tier1 | T1-26 cycle summary ETA to 24h gate; paper healthy (Tier2 gated) | summarize_strategy_cycles status=OK; append health=OK; gate quotes=1725 need_hours>=24 | merged
+
+2026-07-22T09:48:00Z | Tier1 | T1-27 strategy agent tooling index; paper ~2.8h healthy (Tier2 gated) | docs/STRATEGY_AGENT_TOOLING.md; summarize eta_wall_h~21.1; health=OK quotes=1839 | merged

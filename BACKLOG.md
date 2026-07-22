@@ -201,6 +201,11 @@ done without evidence (script output / tests) from that cycle.
   wall-clock ETA to the Tier-2 runtime gate.
 - Evidence: `scripts/summarize_strategy_cycles.py`
 
+### T1-27 Strategy agent tooling index doc
+- Status: `done`
+- Done when: docs list the Agent-1 evidence scripts and point at open candidates.
+- Evidence: `docs/STRATEGY_AGENT_TOOLING.md`
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
