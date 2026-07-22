@@ -53,6 +53,7 @@ def main() -> int:
         ("churn", [py, "scripts/quote_churn_report.py"]),
         ("schema", [py, "scripts/verify_metrics_schema.py", "--tail", "50"]),
         ("paper_schema", [py, "scripts/verify_paper_schema.py", "--tail", "50"]),
+        ("connectivity", [py, "scripts/polymarket_connectivity.py", "--timeout-s", "5"]),
     ):
         code, stdout, stderr = _run_capture(cmd)
         codes[name] = code
@@ -78,6 +79,7 @@ def main() -> int:
         "churn": statuses.get("churn", {}),
         "schema": statuses.get("schema", {}),
         "paper_schema": statuses.get("paper_schema", {}),
+        "connectivity": statuses.get("connectivity", {}),
         "gate": statuses.get("gate_full", statuses.get("gate", {})),
     }
     out = Path(args.out)
@@ -91,11 +93,13 @@ def main() -> int:
     ch = row["churn"]
     sch = row["schema"]
     psch = row["paper_schema"]
+    conn = row["connectivity"]
     snap = row["snapshot"]
     print(
         f"status=OK appended={out} runtime_h={g.get('runtime_hours')} "
         f"quotes={g.get('quotes_for_gate')} tier2={g.get('tier2_allowed')} "
         f"spearman={row['rank'].get('spearman')} health={h.get('status')} "
+        f"connectivity={conn.get('status')} "
         f"shadow_lifetimes={sh.get('lifetimes')} "
         f"crossed_frac={sh.get('crossed_frac')} "
         f"markout_30s={sh.get('markout_30s')} "

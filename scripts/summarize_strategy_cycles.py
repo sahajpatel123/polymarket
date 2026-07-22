@@ -71,8 +71,15 @@ def main() -> int:
     quote_rate = None if dq is None else dq / wall_h
 
     remaining_h = None if h1 is None else max(0.0, args.min_hours - h1)
+    last_health = (last.get("health") or {}).get("status")
+    eta_paused = str(last_health or "").upper() == "STALE"
     eta_wall_h = None
-    if remaining_h is not None and runtime_rate and runtime_rate > 0:
+    if (
+        not eta_paused
+        and remaining_h is not None
+        and runtime_rate
+        and runtime_rate > 0
+    ):
         eta_wall_h = remaining_h / runtime_rate
 
     rep = {
@@ -89,7 +96,8 @@ def main() -> int:
         "min_hours_gate": args.min_hours,
         "hours_remaining": None if remaining_h is None else round(remaining_h, 4),
         "eta_wall_hours_to_gate": None if eta_wall_h is None else round(eta_wall_h, 4),
-        "last_health": (last.get("health") or {}).get("status"),
+        "eta_paused": eta_paused,
+        "last_health": last_health,
         "last_spearman": (last.get("rank") or {}).get("spearman"),
         "last_shadow_lifetimes": (last.get("shadow") or {}).get("lifetimes"),
         "last_crossed_frac": (last.get("shadow") or {}).get("crossed_frac"),
@@ -102,13 +110,15 @@ def main() -> int:
         ),
         "last_vol_only_frac": (last.get("snapshot") or {}).get("vol_only_frac"),
         "last_paper_schema": (last.get("paper_schema") or {}).get("status"),
+        "last_connectivity": (last.get("connectivity") or {}).get("status"),
     }
     print(json.dumps(rep, indent=2, sort_keys=True))
     print(
         f"status=OK cycles={rep['n_cycles']} runtime_h={h1} "
         f"hours_remaining={rep['hours_remaining']} "
-        f"eta_wall_h={rep['eta_wall_hours_to_gate']} "
+        f"eta_wall_h={rep['eta_wall_hours_to_gate']} eta_paused={eta_paused} "
         f"quotes_per_wall_h={rep['quotes_per_wall_hour']} health={rep['last_health']} "
+        f"connectivity={rep['last_connectivity']} "
         f"crossed_frac={rep['last_crossed_frac']} markout_30s={rep['last_markout_30s']} "
         f"false_trending_frac={rep['last_false_trending_frac']} "
         f"false_trending_cancel_share={rep['last_false_trending_cancel_share']} "

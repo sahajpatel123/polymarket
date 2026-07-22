@@ -152,3 +152,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T15:20:00Z | Tier1 | T1-44 freeze journal in evidence pack + holdout_base_nq; reject live-append OOS false positive | pytest pass; frozen pack still thin OOS; no Tier2 | merged
 
 2026-07-22T15:35:00Z | Tier1 | T1-45 ensure_paper_collector restart helper; live still STALE — Polymarket market WS handshake timeouts | pytest pass; collector restarted pid recorded; gate clock pauses until WS recovers | merged
+
+2026-07-22T15:40:00Z | Tier1 | T1-46 polymarket_connectivity probe + eta_paused when health STALE; live REST+WS DOWN | pytest pass; collector left running to reconnect; no Tier2 | merged

@@ -331,6 +331,12 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: pytest diagnose path; live WS handshake timeouts leave health
   STALE after restart (external outage, not strategy)
 
+### T1-46 Connectivity probe + pause ETA while collector STALE
+- Status: `done`
+- Done when: polymarket_connectivity probes REST+WS; cycle summarize sets
+  `eta_paused` when last health is STALE; append records connectivity.
+- Evidence: live status=DOWN (REST+WS timeout); ETA paused until recovery
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

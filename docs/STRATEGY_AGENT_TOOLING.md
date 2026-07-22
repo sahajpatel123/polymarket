@@ -10,6 +10,7 @@ uv run python scripts/append_strategy_cycle.py   # gate+snapshot+rank+health+sha
 uv run python scripts/summarize_strategy_cycles.py  # ETA to 24h gate (+ latest shadow AS)
 uv run python scripts/paper_health.py            # fail if quotes go stale
 uv run python scripts/ensure_paper_collector.py --restart  # relaunch if STALE
+uv run python scripts/polymarket_connectivity.py  # REST+WS upstream probe
 ```
 
 ## Evaluation / candidates
@@ -31,6 +32,7 @@ uv run python scripts/ensure_paper_collector.py --restart  # relaunch if STALE
 | `scripts/quote_churn_report.py` | Quote lifetime + requote-interval percentiles |
 | `scripts/verify_metrics_schema.py` | Fail if latest quotes lack required fields |
 | `scripts/ensure_paper_collector.py` | Diagnose STALE paper collector; optional `--restart` |
+| `scripts/polymarket_connectivity.py` | REST + market WS upstream probe (outage vs local) |
 
 ## Open candidates
 
