@@ -337,6 +337,12 @@ done without evidence (script output / tests) from that cycle.
   `eta_paused` when last health is STALE; append records connectivity.
 - Evidence: live status=DOWN (REST+WS timeout); ETA paused until recovery
 
+### T1-47 Outage window report from strategy cycles
+- Status: `done`
+- Done when: outage_window_report measures STALE/DOWN stretches; summarize
+  surfaces outage_open / outage_total_h.
+- Evidence: pytest; live open outage while Polymarket REST+WS down
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

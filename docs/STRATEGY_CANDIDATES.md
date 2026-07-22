@@ -59,6 +59,10 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
   `oos_replicated=false` / `thin_holdout=true` (holdout_base_nq≈6–7). A live
   append race briefly looked like OOS=true — packs now freeze the journal
   before validate (T1-44). **Do not promote.**
+- **Update 2026-07-22T15:50Z:** Polymarket REST+WS unreachable from collector
+  host (handshake/URL timeouts). Paper health STALE; quotes frozen ~5529 /
+  ~8.7h. Gate ETA paused (T1-46/T1-47). Not a strategy issue — wait for
+  upstream recovery before more C-01 live validates.
 
 ## C-02 Prefer higher-reward market weight (selection)
 

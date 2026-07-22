@@ -112,11 +112,22 @@ def main() -> int:
         "last_paper_schema": (last.get("paper_schema") or {}).get("status"),
         "last_connectivity": (last.get("connectivity") or {}).get("status"),
     }
+    # Attach compact outage summary when cycles include STALE/DOWN stretches.
+    try:
+        from scripts.outage_window_report import analyze_cycles
+
+        outage = analyze_cycles(rows)
+        rep["outage_open"] = outage.get("outage_open")
+        rep["outage_total_h"] = outage.get("outage_total_h")
+        rep["outage_current_duration_s"] = (outage.get("current") or {}).get("duration_s")
+    except Exception:  # noqa: BLE001
+        pass
     print(json.dumps(rep, indent=2, sort_keys=True))
     print(
         f"status=OK cycles={rep['n_cycles']} runtime_h={h1} "
         f"hours_remaining={rep['hours_remaining']} "
         f"eta_wall_h={rep['eta_wall_hours_to_gate']} eta_paused={eta_paused} "
+        f"outage_open={rep.get('outage_open')} outage_total_h={rep.get('outage_total_h')} "
         f"quotes_per_wall_h={rep['quotes_per_wall_hour']} health={rep['last_health']} "
         f"connectivity={rep['last_connectivity']} "
         f"crossed_frac={rep['last_crossed_frac']} markout_30s={rep['last_markout_30s']} "
