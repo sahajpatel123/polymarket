@@ -167,6 +167,11 @@ def main() -> int:
         if isinstance(regime_rep, dict)
         else None
     )
+    vol_only_frac = (
+        (regime_rep or {}).get("trending_vol_only_frac")
+        if isinstance(regime_rep, dict)
+        else None
+    )
     top_rph = None
     if isinstance(reward_card, dict) and reward_card.get("markets"):
         top_rph = reward_card["markets"][0].get("reward_per_hour_usdc")
@@ -175,6 +180,7 @@ def main() -> int:
         f"reward_accrual_sum={reward_sum} top_reward_per_hour={top_rph} "
         f"trending_frac={trending_frac} false_trending_frac={false_trending_frac} "
         f"false_trending_cancel_share={false_trending_cancel_share} "
+        f"vol_only_frac={vol_only_frac} "
         f"offline_dn_quote={d_quote}",
         file=sys.stderr,
     )

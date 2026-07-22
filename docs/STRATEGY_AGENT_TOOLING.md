@@ -29,6 +29,7 @@ uv run python scripts/paper_health.py            # fail if quotes go stale
 | `scripts/profile_knob_audit.py` | StrategyProfile fields used vs dead/unused |
 | `scripts/quote_churn_report.py` | Quote lifetime + requote-interval percentiles |
 | `scripts/verify_metrics_schema.py` | Fail if latest quotes lack required fields |
+| `scripts/verify_paper_schema.py` | Fail if latest requotes lack `vol_ratio` etc. |
 
 ## Open candidates
 

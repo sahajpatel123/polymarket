@@ -100,6 +100,8 @@ def main() -> int:
         "last_false_trending_cancel_share": (last.get("snapshot") or {}).get(
             "false_trending_cancel_share"
         ),
+        "last_vol_only_frac": (last.get("snapshot") or {}).get("vol_only_frac"),
+        "last_paper_schema": (last.get("paper_schema") or {}).get("status"),
     }
     print(json.dumps(rep, indent=2, sort_keys=True))
     print(
@@ -109,7 +111,9 @@ def main() -> int:
         f"quotes_per_wall_h={rep['quotes_per_wall_hour']} health={rep['last_health']} "
         f"crossed_frac={rep['last_crossed_frac']} markout_30s={rep['last_markout_30s']} "
         f"false_trending_frac={rep['last_false_trending_frac']} "
-        f"false_trending_cancel_share={rep['last_false_trending_cancel_share']}",
+        f"false_trending_cancel_share={rep['last_false_trending_cancel_share']} "
+        f"vol_only_frac={rep['last_vol_only_frac']} "
+        f"paper_schema={rep['last_paper_schema']}",
         file=sys.stderr,
     )
     return 0

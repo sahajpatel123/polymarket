@@ -52,6 +52,7 @@ def main() -> int:
         ("shadow", [py, "scripts/shadow_adverse_selection.py"]),
         ("churn", [py, "scripts/quote_churn_report.py"]),
         ("schema", [py, "scripts/verify_metrics_schema.py", "--tail", "50"]),
+        ("paper_schema", [py, "scripts/verify_paper_schema.py", "--tail", "50"]),
     ):
         code, stdout, stderr = _run_capture(cmd)
         codes[name] = code
@@ -76,6 +77,7 @@ def main() -> int:
         "shadow": statuses.get("shadow", {}),
         "churn": statuses.get("churn", {}),
         "schema": statuses.get("schema", {}),
+        "paper_schema": statuses.get("paper_schema", {}),
         "gate": statuses.get("gate_full", statuses.get("gate", {})),
     }
     out = Path(args.out)
@@ -88,6 +90,7 @@ def main() -> int:
     sh = row["shadow"]
     ch = row["churn"]
     sch = row["schema"]
+    psch = row["paper_schema"]
     snap = row["snapshot"]
     print(
         f"status=OK appended={out} runtime_h={g.get('runtime_hours')} "
@@ -97,9 +100,10 @@ def main() -> int:
         f"crossed_frac={sh.get('crossed_frac')} "
         f"markout_30s={sh.get('markout_30s')} "
         f"life_p50={ch.get('life_p50')} rq_p50={ch.get('rq_p50')} "
-        f"schema={sch.get('status')} "
+        f"schema={sch.get('status')} paper_schema={psch.get('status')} "
         f"false_trending_frac={snap.get('false_trending_frac')} "
-        f"false_trending_cancel_share={snap.get('false_trending_cancel_share')}",
+        f"false_trending_cancel_share={snap.get('false_trending_cancel_share')} "
+        f"vol_only_frac={snap.get('vol_only_frac')}",
         file=sys.stderr,
     )
     # health returncode 1 = stale; still append evidence but surface non-zero

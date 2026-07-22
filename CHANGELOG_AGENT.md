@@ -144,3 +144,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T14:40:00Z | Tier1 | T1-40 false_trending cancel/place share + cycle wiring — live cancel_share≈0.72 | pytest pass; C-01 refreshed thin OOS; no Tier2 | merged
 
 2026-07-22T14:50:00Z | Tier1 | T1-41 requote vol_ratio + dual-path TRENDING attribution (flow/vol/both) | pytest pass; restart paper collector for new field; no Tier2 | merged
+
+2026-07-22T15:00:00Z | Tier1 | T1-42 paper requote schema verifier + vol_only_frac in cycles; old collector SIGTERM expected after T1-41 restart | pytest pass; paper_schema catching_up/OK; no Tier2 | merged

@@ -100,6 +100,10 @@ Priority (highest first):
 | `TRENDING` | `\|flow_z\| ≥ trend_flow_z` or `vol_ratio ≥ trend_vol_ratio` | half size |
 | `QUIET` | default | full size; δ clamped into reward band |
 
+Paper requotes log both `flowz` and `vol_ratio` so
+`scripts/paper_regime_report.py` can attribute TRENDING as flow_only /
+vol_only / both (C-01 evidence). Thresholds themselves are unchanged.
+
 **Sweep detection** lives in `Engine._on_trade`, not in the regime module: a
 print must be ≥ `event_sweep_mult · (base_size_usdc/price)` **and** ≥
 `event_sweep_frac` of near-touch depth on the consumed side.

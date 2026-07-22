@@ -306,6 +306,12 @@ done without evidence (script output / tests) from that cycle.
   attributes TRENDING as flow_only / vol_only / both when present.
 - Evidence: pytest; collector restarted to emit field on new requotes
 
+### T1-42 Paper requote schema verifier + vol_only in cycles
+- Status: `done`
+- Done when: verify_paper_schema checks recent requotes for `vol_ratio`;
+  snapshot/append/summarize surface `vol_only_frac` + paper_schema status.
+- Evidence: pytest; live paper_schema OK/CATCHING_UP after T1-41 restart
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
