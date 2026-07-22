@@ -68,6 +68,10 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
   `trend_flow_z=1.2` would suppress **100%** (20/20, cancel_sum=24);
   threshold 5 suppresses 75%. Reinforces C-01 without needing live WS.
   Promotion still blocked on 24h gate + non-thin OOS replay.
+- **Update 2026-07-22T16:10Z (per-market sweep):** at flowz=1.2,
+  suppress_frac by `trend_vol_ratio` — Newsom `3→0.44, 5→0.81, 8→1.0`;
+  Vance `3→0.25, 5→0.50, 8→1.0`. Both markets fully clear vol-only TRENDING
+  at 8; 5 is partial. Still no Tier-2 merge (gate + OOS).
 
 ## C-02 Prefer higher-reward market weight (selection)
 

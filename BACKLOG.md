@@ -350,6 +350,12 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: live tape suppress_frac=1.0 at vol=8 / flowz=1.2 on attributed
   rows (20/20); works while Polymarket is DOWN
 
+### T1-49 Counterfactual vol sweep + per-market breakdown
+- Status: `done`
+- Done when: `--sweep-vol` and `--by-market` report suppress_frac grid for
+  C-01 threshold choice offline.
+- Evidence: Newsom 3/5/8 → 0.44/0.81/1.0; Vance → 0.25/0.50/1.0
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
