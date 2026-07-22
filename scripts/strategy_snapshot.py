@@ -22,8 +22,17 @@ from polymaker.metrics.analyze import analyze
 from polymaker.replay.compare import compare_profiles, load_named_profile
 from polymaker.replay.synth import write_regime_journal
 
-from scripts.paper_regime_report import analyze_paper_log
-from scripts.reward_scorecard import build_scorecard
+
+def _load_script_attr(module_file: str, attr: str):
+    """Load a helper from scripts/*.py without requiring scripts to be a package."""
+    import importlib.util
+
+    path = Path(__file__).resolve().parent / module_file
+    spec = importlib.util.spec_from_file_location(module_file.replace(".py", ""), path)
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return getattr(mod, attr)
 
 
 def _first_existing(*paths: Path) -> Path | None:
@@ -75,6 +84,7 @@ def main() -> int:
     reward_card = None
     if metrics_path is not None:
         try:
+            build_scorecard = _load_script_attr("reward_scorecard.py", "build_scorecard")
             reward_card = build_scorecard(metrics_path, paper_log)
         except Exception as exc:  # noqa: BLE001
             reward_card = {"error": str(exc)}
@@ -82,6 +92,7 @@ def main() -> int:
     regime_rep = None
     if paper_log is not None:
         try:
+            analyze_paper_log = _load_script_attr("paper_regime_report.py", "analyze_paper_log")
             regime_rep = analyze_paper_log(paper_log)
         except Exception as exc:  # noqa: BLE001
             regime_rep = {"error": str(exc)}
