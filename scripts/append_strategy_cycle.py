@@ -49,6 +49,7 @@ def main() -> int:
         ("rank", [py, "scripts/rank_vs_realized.py"]),
         ("gate", [py, "scripts/paper_data_gate.py"]),
         ("health", [py, "scripts/paper_health.py"]),
+        ("shadow", [py, "scripts/shadow_adverse_selection.py"]),
     ):
         code, stdout, stderr = _run_capture(cmd)
         codes[name] = code
@@ -70,6 +71,7 @@ def main() -> int:
         "snapshot": statuses.get("snapshot", {}),
         "rank": statuses.get("rank", {}),
         "health": statuses.get("health", {}),
+        "shadow": statuses.get("shadow", {}),
         "gate": statuses.get("gate_full", statuses.get("gate", {})),
     }
     out = Path(args.out)
@@ -79,10 +81,14 @@ def main() -> int:
     print(json.dumps(row, indent=2, sort_keys=True))
     g = row["gate"]
     h = row["health"]
+    sh = row["shadow"]
     print(
         f"status=OK appended={out} runtime_h={g.get('runtime_hours')} "
         f"quotes={g.get('quotes_for_gate')} tier2={g.get('tier2_allowed')} "
-        f"spearman={row['rank'].get('spearman')} health={h.get('status')}",
+        f"spearman={row['rank'].get('spearman')} health={h.get('status')} "
+        f"shadow_lifetimes={sh.get('lifetimes')} "
+        f"crossed_frac={sh.get('crossed_frac')} "
+        f"markout_30s={sh.get('markout_30s')}",
         file=sys.stderr,
     )
     # health returncode 1 = stale; still append evidence but surface non-zero

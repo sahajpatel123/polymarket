@@ -91,13 +91,17 @@ def main() -> int:
         "eta_wall_hours_to_gate": None if eta_wall_h is None else round(eta_wall_h, 4),
         "last_health": (last.get("health") or {}).get("status"),
         "last_spearman": (last.get("rank") or {}).get("spearman"),
+        "last_shadow_lifetimes": (last.get("shadow") or {}).get("lifetimes"),
+        "last_crossed_frac": (last.get("shadow") or {}).get("crossed_frac"),
+        "last_markout_30s": (last.get("shadow") or {}).get("markout_30s"),
     }
     print(json.dumps(rep, indent=2, sort_keys=True))
     print(
         f"status=OK cycles={rep['n_cycles']} runtime_h={h1} "
         f"hours_remaining={rep['hours_remaining']} "
         f"eta_wall_h={rep['eta_wall_hours_to_gate']} "
-        f"quotes_per_wall_h={rep['quotes_per_wall_hour']} health={rep['last_health']}",
+        f"quotes_per_wall_h={rep['quotes_per_wall_hour']} health={rep['last_health']} "
+        f"crossed_frac={rep['last_crossed_frac']} markout_30s={rep['last_markout_30s']}",
         file=sys.stderr,
     )
     return 0

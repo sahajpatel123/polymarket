@@ -51,3 +51,20 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
   matches realized ranks under zero-fill / full in-band — scanner is not wrong
   for rebate-inclusive ranking, but it is the wrong objective for current paper
   evidence (liquidity rewards only).
+
+## C-03 Multi-knob null screen (~6h tape, 2026-07-22T13:00Z)
+
+Offline `validate_knob_candidate` on both livecfg markets (events holdout 30%):
+
+| Knob | Best vs live-tiny | full Δn_quote | holdout | OOS |
+|------|-------------------|---------------|---------|-----|
+| `reprice_ticks` 1/2/4/8 | 1 | 0 / 0 | thin | fail |
+| `gamma` 0.4/0.8/1.2 | 0.4 | 0 / 0 | thin | fail |
+| `event_jump_ticks` 4/6/10 | 4 | 0 / 0 | thin | fail |
+| `c_tox` 1.5/3/6 | 1.5 | 0 | thin | fail |
+| `trend_flow_z` 0.8/1.2/2.0 | 0.8 | −8 / −45 | thin / +3 | fail |
+
+- **Takeaway:** on this quiet zero-fill window only regime-entry knobs
+  (`trend_vol_ratio` C-01, `trend_flow_z`) move quote counts; sticky-reprice /
+  skew / EVENT jump are inert. Do not invent Tier-2 PRs from null screens.
+- **Status:** `watching` (await denser adverse windows + fills)

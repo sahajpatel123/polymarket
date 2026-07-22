@@ -120,3 +120,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T12:48:00Z | Tier1 | skipped — waiting on 24h paper gate (collector healthy) | status=OK cycles=25 runtime_h=5.8056 hours_remaining=18.1944 eta_wall_h=18.17 quotes_per_wall_h=670.46 health=OK | skipped
 
 2026-07-22T12:55:00Z | Tier1 | T1-28 shadow adverse-selection + T1-29 evidence pack; C-01 still fails OOS on denser tape | pytest 163 passed; shadow lifetimes~3960 crossed_frac=0 markout_30s~0; C-01 full_dn_quote=-93/-14 oos=false thin_holdout | merged
+
+2026-07-22T13:02:00Z | Tier1 | T1-30 cycle history wires shadow AS; C-03 multi-knob null screen on ~6h tape | pytest summarize+shadow pass; trend_flow_z in-sample only (oos=false); reprice/gamma/event_jump/c_tox dn_quote=0 | merged

@@ -223,6 +223,13 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: `scripts/candidate_evidence_pack.py`; denser-tape C-01 still
   `oos_replicated=false` / `thin_holdout=true`
 
+### T1-30 Cycle history includes shadow AS
+- Status: `done`
+- Done when: append_strategy_cycle records shadow lifetimes / crossed_frac /
+  markout_30s each tick; summarize_strategy_cycles surfaces the latest values.
+- Evidence: `scripts/append_strategy_cycle.py`,
+  `scripts/summarize_strategy_cycles.py`; multi-knob null screen logged as C-03
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
