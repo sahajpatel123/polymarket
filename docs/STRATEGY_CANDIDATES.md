@@ -90,6 +90,9 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
   (max&lt;8). Still no merge.
 - **Update 2026-07-22T17:20Z:** checklist now surfaces `vol_context`
   (`boundary_tight=True`, quiet_max≈1.989, trend_min≈2.029). Still BLOCKED.
+- **Update 2026-07-22T17:40Z:** attributed false-TRENDING (vol-present only)
+  still 100%; informational `suggested_vol≈2.489` (quiet_max+0.5). Candidate
+  target remains 8 for full suppress; no Tier-2 PR while outage continues.
 
 ## C-02 Prefer higher-reward market weight (selection)
 

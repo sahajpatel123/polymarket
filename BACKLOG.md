@@ -398,6 +398,12 @@ done without evidence (script output / tests) from that cycle.
   vol_gap, and boundary_tight vs target threshold (informational only).
 - Evidence: live checklist vol_gap≈0.04 boundary_tight=True
 
+### T1-57 Attributed false-TRENDING + suggested_vol floor
+- Status: `done`
+- Done when: regime report separates legacy missing_vol from attributed
+  false-TRENDING, and suggests quiet_max+0.5 as informational C-01 floor.
+- Evidence: live attr_frac=1.0 on vol-present rows; suggested_vol≈2.489
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

@@ -112,6 +112,10 @@ def main() -> int:
         "last_vol_gap": (last.get("snapshot") or {}).get("vol_gap"),
         "last_quiet_vol_max": (last.get("snapshot") or {}).get("quiet_vol_max"),
         "last_trend_vol_min": (last.get("snapshot") or {}).get("trend_vol_min"),
+        "last_suggested_vol": (last.get("snapshot") or {}).get("suggested_vol"),
+        "last_false_trending_attr_frac": (last.get("snapshot") or {}).get(
+            "false_trending_attr_frac"
+        ),
         "last_paper_schema": (last.get("paper_schema") or {}).get("status"),
         "last_connectivity": (last.get("connectivity") or {}).get("status"),
     }
@@ -146,6 +150,8 @@ def main() -> int:
         f"vol_only_frac={rep['last_vol_only_frac']} "
         f"vol_gap={rep['last_vol_gap']} quiet_vol_max={rep['last_quiet_vol_max']} "
         f"trend_vol_min={rep['last_trend_vol_min']} "
+        f"suggested_vol={rep['last_suggested_vol']} "
+        f"false_trending_attr_frac={rep['last_false_trending_attr_frac']} "
         f"paper_schema={rep['last_paper_schema']}",
         file=sys.stderr,
     )

@@ -53,6 +53,8 @@ def test_analyze_paper_log_counts_regimes_and_transitions(tmp_path: Path) -> Non
     assert rep["place_sum"] == 9
     assert rep["false_trending_n"] == 1
     assert rep["false_trending_frac"] == 0.333333
+    assert rep["false_trending_attributed_n"] == 1
+    assert rep["false_trending_attributed_frac"] == 0.333333
     assert rep["false_trending_cancel_sum"] == 1
     assert abs(rep["false_trending_cancel_share"] - 0.25) < 1e-9
     assert rep["trending_path"] == {"vol_only": 1, "flow_only": 1, "both": 1}
@@ -92,6 +94,9 @@ def test_vol_ratio_quiet_trend_gap(tmp_path: Path) -> None:
     assert rep["quiet_vol_ratio"]["max"] == 1.5
     assert rep["trending_vol_ratio"]["min"] == 2.5
     assert rep["vol_ratio_quiet_trend_gap"] == 1.0
+    assert rep["suggested_trend_vol_ratio"] == 2.0
+    assert rep["false_trending_attributed_n"] == 1
+    assert rep["false_trending_attributed_frac"] == 1.0
 
 
 def test_trending_path_missing_vol_legacy(tmp_path: Path) -> None:
@@ -112,3 +117,7 @@ def test_trending_path_missing_vol_legacy(tmp_path: Path) -> None:
     rep = analyze_paper_log(path)
     assert rep["trending_path"] == {"missing_vol": 1}
     assert rep["trending_vol_only_frac"] is None
+    assert rep["false_trending_n"] == 1
+    assert rep["false_trending_attributed_n"] == 0
+    assert rep["false_trending_attributed_frac"] is None
+    assert rep["suggested_trend_vol_ratio"] is None

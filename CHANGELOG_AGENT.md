@@ -174,3 +174,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T17:10:00Z | Tier1 | T1-55 regime report vol_ratio percentiles + quiet/trend gap; live gap≈0.04 quiet_max≈1.99 trend_p50≈3.11 | pytest pass; Polymarket still DOWN; no Tier2 | merged
 
 2026-07-22T17:20:00Z | Tier1 | T1-56 wire vol_context into C-01 checklist + snapshot/cycles; live gap=0.04 boundary_tight | Polymarket DOWN; quotes frozen 5529; no Tier2 | merged
+
+2026-07-22T17:40:00Z | Tier1 | T1-57 attributed false-TRENDING + suggested_vol=quiet_max+0.5; live attr_frac=1.0 suggested=2.489 | Polymarket DOWN; quotes frozen; no Tier2 | merged

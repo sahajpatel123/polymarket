@@ -181,6 +181,16 @@ def main() -> int:
         if isinstance(regime_rep, dict)
         else None
     )
+    suggested_vol = (
+        (regime_rep or {}).get("suggested_trend_vol_ratio")
+        if isinstance(regime_rep, dict)
+        else None
+    )
+    false_trending_attr_frac = (
+        (regime_rep or {}).get("false_trending_attributed_frac")
+        if isinstance(regime_rep, dict)
+        else None
+    )
     quiet_vol_max = quiet_vol.get("max") if isinstance(quiet_vol, dict) else None
     quiet_vol_p90 = quiet_vol.get("p90") if isinstance(quiet_vol, dict) else None
     trend_vol_min = trend_vol.get("min") if isinstance(trend_vol, dict) else None
@@ -192,11 +202,12 @@ def main() -> int:
         f"status=OK gate={g_status} tier2={g_tier2} paper_quotes={nq} "
         f"reward_accrual_sum={reward_sum} top_reward_per_hour={top_rph} "
         f"trending_frac={trending_frac} false_trending_frac={false_trending_frac} "
+        f"false_trending_attr_frac={false_trending_attr_frac} "
         f"false_trending_cancel_share={false_trending_cancel_share} "
         f"vol_only_frac={vol_only_frac} "
         f"quiet_vol_max={quiet_vol_max} quiet_vol_p90={quiet_vol_p90} "
         f"trend_vol_min={trend_vol_min} trend_vol_p50={trend_vol_p50} "
-        f"vol_gap={vol_gap} "
+        f"vol_gap={vol_gap} suggested_vol={suggested_vol} "
         f"offline_dn_quote={d_quote}",
         file=sys.stderr,
     )

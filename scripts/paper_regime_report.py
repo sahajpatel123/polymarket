@@ -49,6 +49,7 @@ def analyze_paper_log(
     false_trending = 0
     false_cancel = 0
     false_place = 0
+    false_trending_attr = 0
     trend_cancel = 0
     trend_place = 0
     path_counts: Counter[str] = Counter()
@@ -107,6 +108,8 @@ def analyze_paper_log(
                         # Below both thresholds yet labeled TRENDING — stale/bug.
                         path_counts["neither"] += 1
                     trending_vol.append(volr)
+                    if abs(flowz) < flow_thresh:
+                        false_trending_attr += 1
                 elif flowz is not None:
                     path_counts["missing_vol"] += 1
                 else:
@@ -166,6 +169,10 @@ def analyze_paper_log(
     sep = None
     if quiet_vol_sum["max"] is not None and trend_vol_sum["min"] is not None:
         sep = round(float(trend_vol_sum["min"]) - float(quiet_vol_sum["max"]), 6)
+    # Informational C-01 floor: sit 0.5 above observed QUIET max (not a merge trigger).
+    suggested = None
+    if quiet_vol_sum["max"] is not None:
+        suggested = round(float(quiet_vol_sum["max"]) + 0.5, 3)
     return {
         "path": str(path),
         "n_lines": n_lines,
@@ -184,11 +191,17 @@ def analyze_paper_log(
         "quiet_vol_ratio": quiet_vol_sum,
         "trending_vol_ratio": trend_vol_sum,
         "vol_ratio_quiet_trend_gap": sep,
+        "suggested_trend_vol_ratio": suggested,
         "trending_frac": round(n_trend / n_requote, 6) if n_requote else 0.0,
         "trend_flow_z_threshold": flow_thresh,
         "trend_vol_ratio_threshold": vol_thresh,
         "false_trending_n": false_trending,
         "false_trending_frac": round(false_trending / n_trend, 6) if n_trend else 0.0,
+        # Post-T1-41 only: ignore missing_vol legacy TRENDING rows (T1-57).
+        "false_trending_attributed_n": false_trending_attr,
+        "false_trending_attributed_frac": (
+            round(false_trending_attr / n_attributed, 6) if n_attributed else None
+        ),
         # Share of all cancels/places that happened on false-TRENDING requotes —
         # upper-bound C-01 churn impact if those trips were suppressed (T1-40).
         "false_trending_cancel_sum": false_cancel,
@@ -240,6 +253,7 @@ def main() -> int:
     print(
         f"status=OK requotes={rep['n_requote']} trending_frac={rep['trending_frac']} "
         f"false_trending_frac={rep['false_trending_frac']} "
+        f"false_trending_attr_frac={rep['false_trending_attributed_frac']} "
         f"false_trending_cancel_share={rep['false_trending_cancel_share']} "
         f"false_trending_place_share={rep['false_trending_place_share']} "
         f"vol_only_frac={rep['trending_vol_only_frac']} "
@@ -248,6 +262,7 @@ def main() -> int:
         f"trend_vol_min={(rep.get('trending_vol_ratio') or {}).get('min')} "
         f"trend_vol_p50={(rep.get('trending_vol_ratio') or {}).get('p50')} "
         f"vol_gap={rep.get('vol_ratio_quiet_trend_gap')} "
+        f"suggested_vol={rep.get('suggested_trend_vol_ratio')} "
         f"path={rep['trending_path']} "
         f"cancel_per_place={rep['cancel_per_place']} "
         f"transitions={sum(rep['regime_transitions'].values())}",

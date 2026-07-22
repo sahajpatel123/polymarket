@@ -168,6 +168,8 @@ def main() -> int:
             "trend_vol_min": trend_min,
             "trend_vol_p50": _f("trend_vol_p50"),
             "vol_gap": vol_gap,
+            "suggested_trend_vol_ratio": _f("suggested_vol"),
+            "false_trending_attr_frac": _f("false_trending_attr_frac"),
             "target_trend_vol_ratio": args.target_vol,
             "target_above_quiet_max": target_above_quiet,
             "target_above_trend_min": target_above_trend_min,
@@ -194,6 +196,8 @@ def main() -> int:
         f"oos={any_oos if validate_present else None} "
         f"thin={thin_any if validate_present else None} "
         f"vol_gap={vol_gap} quiet_vol_max={quiet_max} trend_vol_min={trend_min} "
+        f"suggested_vol={_f('suggested_vol')} "
+        f"false_trending_attr_frac={_f('false_trending_attr_frac')} "
         f"boundary_tight={boundary_tight}",
         file=sys.stderr,
     )
