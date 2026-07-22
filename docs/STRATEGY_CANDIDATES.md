@@ -116,6 +116,8 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
   strategy_tick reports `outage_status=OK`. Still DOWN ~6.5h; no Tier-2 PR.
 - **Update 2026-07-22T22:10Z:** every `strategy_tick` runs `deps_audit`
   (`deps_ok` / bumps into outage_status). Still DOWN ~6.7h; no Tier-2 PR.
+- **Update 2026-07-22T22:20Z:** docs corrected — `political-longdated` /
+  `political-hot` are present in `config/strategy.toml`. Still DOWN ~6.8h.
 
 ## C-02 Prefer higher-reward market weight (selection)
 

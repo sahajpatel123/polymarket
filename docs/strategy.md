@@ -129,6 +129,6 @@ Every quoter knob is a field on `StrategyProfile` (`config.py`). Named
 profiles live in `config/strategy.toml`. Per-market TOML extras on a
 `[[markets]]` entry become overrides via `MarketEntry.overrides`.
 
-Shipped profiles today: `newsom-mm`, `romania-pm` (under `config/`), and
-`live-tiny` (under `livecfg/`). There is no `political-longdated` /
-`political-hot` profile in-repo — create one before using those names.
+Shipped profiles today: `newsom-mm`, `political-longdated`, `political-hot`,
+`romania-pm` (under `config/`), and `live-tiny` (under `livecfg/`). The CLI
+default (`--profile political-longdated`) resolves to the in-repo profile.

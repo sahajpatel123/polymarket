@@ -92,8 +92,8 @@ deposit-wallet merges. Template: `.env.example`.
 
 **`config/strategy.toml`** — named `StrategyProfile`s. Every quoter knob is a
 field on `StrategyProfile` in `config.py` (`extra="forbid"`). Shipped:
-`newsom-mm`, `romania-pm`. CLI default profile name `political-longdated` is
-**not** defined in-repo — add a profile or pass `--profile newsom-mm` (etc.).
+`newsom-mm`, `political-longdated`, `political-hot`, `romania-pm`. CLI default
+profile name is `political-longdated`.
 
 **`config/markets.toml`** — trade list: `slug`, `profile`, `enabled`, plus any
 extra keys as per-market profile overrides.
@@ -163,15 +163,13 @@ Call these out before relying on them in strategy work:
 4. **`market_resolved` never set** — closed markets use `_halted` + blind path.
 5. **Hot reload unfinished** — `Config.reload_markets` + `watchfiles` dep;
    engine does not watch `markets.toml`.
-6. **README/CLI profile names** — `political-longdated` / `political-hot` are
-   documented/defaulted but absent from `strategy.toml`.
-7. **Exposure comments vs code** — `config.toml` comment mentions open buy
+6. **Exposure comments vs code** — `config.toml` comment mentions open buy
    notional in total exposure; `_total_exposure` / `_market_notional` count
    **filled inventory only** (intentionally, to avoid self-churn).
-8. **Paper ≠ simulation** — see above; easy to over-read paper logs.
-9. **Merge for deposit wallets** needs builder API creds; without them,
+7. **Paper ≠ simulation** — see above; easy to over-read paper logs.
+8. **Merge for deposit wallets** needs builder API creds; without them,
    exits are limit sells. Merge is skipped entirely in paper.
-10. **Scanner score ≠ earned income** — ranking heuristic only
+9. **Scanner score ≠ earned income** — ranking heuristic only
     ([docs/market-selection.md](docs/market-selection.md)).
 
 ## Common commands
