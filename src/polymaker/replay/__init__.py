@@ -395,12 +395,13 @@ def run_replay(
     )
 
 
-# silence unused TradePrint import warning via re-export for tests
+# silence unused TradePrint/Side import warning via re-export for tests
 __all__ = [
     "run_replay",
     "load_journal",
     "ReplayResult",
     "TradePrint",
+    "Side",
     "infer_yes_no_tokens",
     "discover_condition_ids",
 ]

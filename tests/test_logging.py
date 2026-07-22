@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 
-from polymaker.loggrep import grep_logs
 from polymaker.logging import configure, get_logger, required_json_fields
+from polymaker.loggrep import grep_logs
 
 
 def test_configure_writes_rotated_json_with_required_fields(tmp_path: Path) -> None:
@@ -36,15 +36,15 @@ def test_configure_writes_rotated_json_with_required_fields(tmp_path: Path) -> N
 
 def test_grep_logs_by_market_and_time(tmp_path: Path) -> None:
     path = tmp_path / "paper.jsonl"
-    t0 = datetime(2026, 7, 21, 12, 0, tzinfo=timezone.utc).timestamp()
+    t0 = datetime(2026, 7, 21, 12, 0, tzinfo=UTC).timestamp()
     rows = [
-        {"timestamp": datetime.fromtimestamp(t0, tz=timezone.utc).isoformat().replace("+00:00", "Z"),
+        {"timestamp": datetime.fromtimestamp(t0, tz=UTC).isoformat().replace("+00:00", "Z"),
          "level": "info", "logger": "engine", "event": "requote",
          "condition_id": "0xaaa", "cid": "0xaaa"},
-        {"timestamp": datetime.fromtimestamp(t0 + 3600, tz=timezone.utc).isoformat().replace("+00:00", "Z"),
+        {"timestamp": datetime.fromtimestamp(t0 + 3600, tz=UTC).isoformat().replace("+00:00", "Z"),
          "level": "info", "logger": "engine", "event": "requote",
          "condition_id": "0xbbb", "cid": "0xbbb"},
-        {"timestamp": datetime.fromtimestamp(t0 + 7200, tz=timezone.utc).isoformat().replace("+00:00", "Z"),
+        {"timestamp": datetime.fromtimestamp(t0 + 7200, tz=UTC).isoformat().replace("+00:00", "Z"),
          "level": "info", "logger": "engine", "event": "requote",
          "condition_id": "0xaaa", "cid": "0xaaa"},
     ]

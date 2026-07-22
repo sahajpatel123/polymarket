@@ -113,7 +113,7 @@ def analyze_quote_churn(path: Path) -> ChurnReport:
     intervals_by_cid: dict[str, list[float]] = {}
     for cid, stamps in quote_ts_by_cid.items():
         stamps = sorted(stamps)
-        for a, b in zip(stamps, stamps[1:]):
+        for a, b in zip(stamps, stamps[1:], strict=False):
             dt = b - a
             if dt > 0:
                 intervals.append(dt)

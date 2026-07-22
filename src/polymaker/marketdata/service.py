@@ -22,7 +22,6 @@ import websockets
 from polymaker.journal import Journal
 from polymaker.logging import get_logger
 from polymaker.marketdata.orderbook import BookView, OrderBook
-from polymaker.marketdata.orderbook import BookView
 from polymaker.marketdata.parse import (
     TradePrint,
     parse_book,

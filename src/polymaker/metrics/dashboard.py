@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import html
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -15,7 +15,7 @@ def _esc(v: Any) -> str:
 
 
 def render_dashboard(report: MetricsReport, *, title: str = "polymaker metrics") -> str:
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
     markouts = report.markout
     markout_n = report.markout_n
     markets = sorted(report.markets) or ["—"]

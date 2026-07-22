@@ -7,9 +7,9 @@ Prefer the richest existing paper/metrics JSONL so a tiny accidental
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from collections.abc import Iterable
+from datetime import datetime
 from pathlib import Path
-from typing import Iterable
 
 
 def _ts(obj: dict) -> float | None:

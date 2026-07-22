@@ -19,7 +19,6 @@ from polymaker.domain import MarketMeta
 from polymaker.metrics.analyze import MetricsReport, analyze
 from polymaker.replay import ReplayResult, filter_rows_for_tokens, load_journal, run_replay
 
-
 METRIC_KEYS = (
     "realized_spread_usdc",
     "inventory_drift_abs_peak",

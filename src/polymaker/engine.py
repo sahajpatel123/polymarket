@@ -27,6 +27,7 @@ from polymaker.alerts import (
     Alerter,
 )
 from polymaker.catalog.gamma import GammaClient, fetch_reward_rates, parse_market
+from polymaker.catalog.scoring import score_market
 from polymaker.catalog.store import CatalogStore
 from polymaker.config import Config, StrategyProfile
 from polymaker.domain import Fill, MarketMeta, Regime, Side
@@ -34,11 +35,10 @@ from polymaker.execution.gateway import ExecutionGateway
 from polymaker.execution.reconciler import reconcile
 from polymaker.journal import Journal
 from polymaker.logging import get_logger
+from polymaker.marketdata.orderbook import BookView
 from polymaker.marketdata.parse import TradePrint
 from polymaker.marketdata.service import MarketDataService
 from polymaker.merge import Merger
-from polymaker.catalog.scoring import score_market
-from polymaker.marketdata.orderbook import BookView
 from polymaker.metrics import MetricsLogger, inventory_fields
 from polymaker.risk.manager import RiskManager
 from polymaker.state.store import StateStore

@@ -192,10 +192,8 @@ class OrderBook:
         ba = self._nth_ask(0, min_size)
         sb = self._nth_bid(1, min_size)
         sa = self._nth_ask(1, min_size)
-        mid = None
         bid_depth = ask_depth = 0.0
         if bb is not None and ba is not None:
-            mid = (bb.price + ba.price) / 2.0
             # Same invariant as fast path: depth band only contains the best level.
             bid_depth = bb.size
             ask_depth = ba.size

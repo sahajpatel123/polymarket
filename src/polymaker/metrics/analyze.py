@@ -11,7 +11,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-
 MARKOUT_HORIZONS_S = (30.0, 120.0, 300.0)
 
 
@@ -210,7 +209,7 @@ def analyze(path: Path) -> MetricsReport:
             continue
         samples = sorted(samples)
         in_band_s = 0.0
-        for (t0, b0), (t1, _) in zip(samples, samples[1:]):
+        for (t0, b0), (t1, _) in zip(samples, samples[1:], strict=False):
             if b0:
                 in_band_s += max(0.0, t1 - t0)
         rep.reward_accrual_usdc[cid] = daily * (in_band_s / 86400.0)

@@ -55,9 +55,7 @@ def market_matches(row_market_id: str, needle: str) -> bool:
         return True
     if needle in row_market_id:
         return True
-    if len(needle) >= 8 and needle[:8] in row_market_id:
-        return True
-    return False
+    return len(needle) >= 8 and needle[:8] in row_market_id
 
 
 def grep_logs(

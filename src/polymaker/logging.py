@@ -14,7 +14,6 @@ from typing import Any
 
 import structlog
 
-
 _REQUIRED_JSON_FIELDS = ("timestamp", "level", "event", "logger")
 
 

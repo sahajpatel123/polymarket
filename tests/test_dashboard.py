@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from polymaker.metrics.dashboard import render_dashboard, write_dashboard
 from polymaker.metrics.analyze import analyze
+from polymaker.metrics.dashboard import render_dashboard, write_dashboard
 
 
 def _fixture(path: Path) -> None:

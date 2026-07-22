@@ -9,7 +9,6 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-
 POST_INSTALL_HINTS = (
     "cmdclass",
     "install_requires",  # alone not suspicious; used with context
@@ -107,10 +106,7 @@ def _has_artifact_hash(pkg: dict[str, Any]) -> bool:
     sdist = pkg.get("sdist") or {}
     if sdist.get("hash"):
         return True
-    for w in pkg.get("wheels") or []:
-        if w.get("hash"):
-            return True
-    return False
+    return any(w.get("hash") for w in pkg.get("wheels") or [])
 
 
 def lock_snapshot(lock_path: Path) -> dict[str, dict[str, str]]:

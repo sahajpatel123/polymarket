@@ -11,6 +11,7 @@ from scripts.bench_latency import (
     bench_replay,
     generate_synthetic_journal,
 )
+
 from polymaker.config import StrategyProfile
 
 
