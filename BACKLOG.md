@@ -125,6 +125,14 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: `scripts/paper_data_gate.py`, `tests/test_paper_data_gate.py`;
   live quotes_for_gate=531, tier2 blocked only on need_hours>=24.0
 
+### T1-16 Per-market reward/churn scorecard
+- Status: `done`
+- Done when: a script ranks live paper markets by reward_per_hour with regime
+  mix and cancel churn (T2-01 evidence surface).
+- Evidence: `scripts/reward_scorecard.py`, `tests/test_reward_scorecard.py`;
+  live top market ~12.8 USDC/h reward accrual; trend_vol_ratio live sweep
+  2→8 dn_quote=-24 (candidate for later T2-04, not merged)
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
