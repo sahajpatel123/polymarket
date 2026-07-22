@@ -118,7 +118,8 @@ def generate_regime_journal(
         ts += 1.0
 
     for i in range(quiet_steps):
-        wobble = 0.001 * ((i % 3) - 1)
+        # 1-tick micro-jitter: sticky reprice_ticks should ignore these flaps.
+        wobble = tick * ((i % 3) - 1)
         emit_two_sided(bid + wobble, ask + wobble, trade_size=15.0 if i % 2 == 0 else None)
 
     # Toxic jump: large print + book displaces by jump_ticks

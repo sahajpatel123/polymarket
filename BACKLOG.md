@@ -104,6 +104,13 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: `scripts/paper_regime_report.py`, `tests/test_paper_regime_report.py`;
   live: trending_frac≈0.067 with trending_flowz_mean=0.0 (vol-ratio trips)
 
+### T1-13 Offline StrategyProfile knob sweep
+- Status: `done`
+- Done when: a script sweeps one profile knob across values on a fixed journal
+  and prints T1-01 metric deltas vs baseline (prep for Tier-2 PRs).
+- Evidence: `scripts/sweep_profile_knob.py`, `tests/test_sweep_profile_knob.py`;
+  reprice_ticks sweep on regime fixture: 1→dn_quote=+3, 5→dn_quote=-1
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

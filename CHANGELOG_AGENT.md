@@ -50,3 +50,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T07:08:00Z | Tier1 | T1-11 strategy_snapshot + paper_metrics livecfg path; paper collecting (Tier2 gated) | strategy_snapshot status=OK; pytest green; reward_accrual on live paper | merged
 
 2026-07-22T07:18:00Z | Tier1 | T1-12 paper regime/churn report; paper ~18m (Tier2 gated) | paper_regime_report status=OK requotes=104 trending_frac=0.067 cancel_per_place=0.05 transitions=8 trending_flowz_mean=0.0; pytest test_paper_regime_report PASS | merged
+
+2026-07-22T07:28:00Z | Tier1 | T1-13 knob sweep harness; synth micro-jitter; paper ~28m (Tier2 gated) | sweep reprice_ticks 1:+3q/c 5:-1q/c; pytest sweep+compare 6 passed; snapshot quotes=298 reward~10.09 | merged
