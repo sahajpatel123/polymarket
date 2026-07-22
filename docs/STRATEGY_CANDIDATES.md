@@ -130,6 +130,8 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
   `ensure_status` + `collector_pid` (alive but STALE). Still DOWN ~7.7h.
 - **Update 2026-07-22T23:20Z:** documented `outage_status` field contract;
   validator recommends health/ensure/deps/tape keys. Still DOWN ~7.8h.
+- **Update 2026-07-22T23:30Z:** `outage_alert_prolonged=True` (≥8h). Loop tick
+  100; quotes still 5529 / runtime 8.37h; no Tier-2 PR.
 
 ## C-02 Prefer higher-reward market weight (selection)
 

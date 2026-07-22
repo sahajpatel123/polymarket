@@ -219,6 +219,11 @@ def main() -> int:
             if outage.get("total_h") in (None, "")
             else float(str(outage.get("total_h")).split()[0]) >= 5.0
         ),
+        "outage_alert_prolonged": (
+            None
+            if outage.get("total_h") in (None, "")
+            else float(str(outage.get("total_h")).split()[0]) >= 8.0
+        ),
         "counterfactual_line": next(
             (ln for ln in cf_err.splitlines() if ln.startswith("status=")), None
         ),
@@ -261,6 +266,7 @@ def main() -> int:
         f"outage_open={outage_open} outage_total_h={outage.get('total_h')} "
         f"outage_alert={report['outage_alert']} "
         f"outage_alert_severe={report['outage_alert_severe']} "
+        f"outage_alert_prolonged={report['outage_alert_prolonged']} "
         f"oos={any_oos if validate_present else None} "
         f"thin={thin_any if validate_present else None} "
         f"vol_gap={vol_gap} quiet_vol_max={quiet_max} trend_vol_min={trend_min} "

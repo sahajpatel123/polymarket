@@ -609,6 +609,12 @@ done without evidence (script output / tests) from that cycle.
   live validate reports recommended_missing=-.
 - Evidence: live validate status=OK recommended_missing=- during ~7.8h DOWN
 
+### T1-92 Prolonged outage alert at ≥8h
+- Status: `done`
+- Done when: compact_status + c01 checklist set outage_alert_prolonged when
+  outage_total_h≥8; strategy_tick/summarize/append/weekly surface it.
+- Evidence: live outage_alert_prolonged=True at ~8.0h DOWN (loop tick 100)
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

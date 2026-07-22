@@ -41,6 +41,7 @@ def test_compact_status_alert_thresholds() -> None:
     mild = compact_status({"outage_open": True, "outage_total_h": 3.5, "n_outage_windows": 1, "current": {}})
     assert mild["outage_alert"] is True
     assert mild["outage_alert_severe"] is False
+    assert mild["outage_alert_prolonged"] is False
     assert mild["hours_to_tier2_gate"] is None
     severe = compact_status({
         "outage_open": True,
@@ -49,8 +50,16 @@ def test_compact_status_alert_thresholds() -> None:
         "current": {"runtime_hours_end": 8.37, "quotes_end": 5529},
     })
     assert severe["outage_alert_severe"] is True
+    assert severe["outage_alert_prolonged"] is False
     assert severe["hours_to_tier2_gate"] == 15.63
     assert severe["quotes"] == 5529
+    prolonged = compact_status({
+        "outage_open": True,
+        "outage_total_h": 8.01,
+        "n_outage_windows": 1,
+        "current": {"runtime_hours_end": 8.37, "quotes_end": 5529},
+    })
+    assert prolonged["outage_alert_prolonged"] is True
     gated = compact_status({
         "outage_open": False,
         "outage_total_h": 0.0,

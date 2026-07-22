@@ -57,6 +57,8 @@ Compact monitor snapshot written by `strategy_tick` / `outage_window_report`
 `outage_alert` (≥3h), `outage_alert_severe` (≥5h), `hours_to_tier2_gate`,
 `runtime_h`, `quotes`.
 
+Also emitted: `outage_alert_prolonged` (≥8h).
+
 **Recommended** (warned if missing): `connectivity`, `tier2_allowed`,
 `gate_reason`, `runtime_basis`, `tape_frozen`, `eta_paused`,
 `last_requote_age_s`, `health`, `ensure_status`, `collector_pid`, `deps_ok`.

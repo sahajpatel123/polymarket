@@ -177,6 +177,7 @@ def compact_status(rep: dict[str, Any]) -> dict[str, Any]:
         "outage_total_h": rep.get("outage_total_h"),
         "outage_alert": total_h >= 3.0,
         "outage_alert_severe": total_h >= 5.0,
+        "outage_alert_prolonged": total_h >= 8.0,
         "current_duration_s": cur.get("duration_s"),
         "runtime_h": runtime_h,
         "hours_to_tier2_gate": _hours_to_tier2_gate(runtime_h),
@@ -228,6 +229,7 @@ def main() -> int:
         f"hours_to_tier2_gate={status['hours_to_tier2_gate']} "
         f"outage_alert={status['outage_alert']} "
         f"outage_alert_severe={status['outage_alert_severe']} "
+        f"outage_alert_prolonged={status['outage_alert_prolonged']} "
         f"status_out={args.status_out or '-'}",
         file=sys.stderr,
     )

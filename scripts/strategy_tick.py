@@ -353,6 +353,7 @@ def main() -> int:
         f"c01={c01.get('status')} blockers={c01.get('blockers')} "
         f"outage_alert={c01.get('outage_alert') or outage.get('outage_alert')} "
         f"outage_alert_severe={c01.get('outage_alert_severe') or outage.get('outage_alert_severe')} "
+        f"outage_alert_prolonged={c01.get('outage_alert_prolonged') or outage.get('outage_alert_prolonged')} "
         f"outage_total_h={outage.get('total_h')} "
         f"hours_to_tier2_gate={outage.get('hours_to_tier2_gate')} "
         f"quotes={outage.get('quotes')} "
