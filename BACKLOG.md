@@ -230,6 +230,15 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: `scripts/append_strategy_cycle.py`,
   `scripts/summarize_strategy_cycles.py`; multi-knob null screen logged as C-03
 
+### T1-31 StrategyProfile knob usage audit
+- Status: `done`
+- Done when: a script lists StrategyProfile fields referenced by
+  strategy/engine/reconciler/replay vs never referenced; documents
+  `exit_urgency_s`, `end_date_taper_days`, `event_sweep_levels` as unused.
+- Evidence: `src/polymaker/strategy/knob_audit.py`,
+  `scripts/profile_knob_audit.py`, `tests/test_profile_knob_audit.py`;
+  status n_unused=3
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

@@ -104,12 +104,19 @@ Priority (highest first):
 print must be ≥ `event_sweep_mult · (base_size_usdc/price)` **and** ≥
 `event_sweep_frac` of near-touch depth on the consumed side.
 
+> **Gap:** `event_sweep_levels` is on `StrategyProfile` but unused — sweep
+> depth uses near-touch sizing via `event_sweep_frac` / `event_sweep_mult`
+> only. Confirm with `scripts/profile_knob_audit.py`.
+
 **Resolved markets:** `RegimeInputs.market_resolved` is never set by the
 engine. Closed / not-accepting markets are instead added to `Engine._halted`
 via metadata refresh, which feeds the blind/HALTED path.
 
 > **Gap:** `end_date_taper_days` is on `StrategyProfile` but unused. Lifecycle
 > tapering uses only `reduce_only_hours` and `halt_before_hours`.
+
+> **Dead store (engine):** `Engine._last_quote_fv` is written each requote with
+> a comment about "requote suppression" but never read.
 
 ## Profile knobs (strategy.toml)
 
