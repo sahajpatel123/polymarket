@@ -280,6 +280,13 @@ done without evidence (script output / tests) from that cycle.
   STRATEGY_CANDIDATES updated with ~7.1h C-01 evidence + C-04 unused-knob list.
 - Evidence: schema=OK on live collector; C-01 still oos=false thin_holdout
 
+### T1-38 Dense multi-cycle regime synth (non-thin OOS)
+- Status: `done`
+- Done when: synth journals support `--cycles` / `--dense`; offline validate
+  holdout can clear `thin_holdout` (≥20 baseline quotes).
+- Evidence: `fixtures/regime_dense.jsonl` (712 events, 8 cycles);
+  `trend_vol_ratio` validate thin_holdout=false (oos still false)
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

@@ -34,6 +34,11 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
 - **Update 2026-07-22T14:08Z (~7.1h tape):** evidence pack still
   `oos_replicated=false` / `thin_holdout=true` (full_dn_quote=-111 / -14).
   Holdout remains too thin to promote despite larger in-sample churn cut.
+- **Update 2026-07-22T14:20Z (dense synth offline):**
+  `fixtures/regime_dense.jsonl` (8 cycles) clears `thin_holdout` for
+  `trend_vol_ratio` validate, but `oos_replicated` still false
+  (holdout_dn_quote=0). Confirms the idea needs adverse windows that
+  actually replicate — not just more events.
 
 ## C-02 Prefer higher-reward market weight (selection)
 

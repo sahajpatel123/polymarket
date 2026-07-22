@@ -77,16 +77,21 @@ def generate_regime_journal(
     quiet_steps: int = 8,
     jump_ticks: int = 10,
     recovery_steps: int = 6,
+    cycles: int = 1,
 ) -> list[dict[str, Any]]:
-    """Build a quiet → toxic jump → recovery journal.
+    """Build quiet → toxic jump → recovery journal(s).
 
     Quiet: tight 0.48/0.52 book, small prints.
     Jump: bid/ask gap up by jump_ticks with a large aggressor print (EVENT-like).
     Recovery: book walks back toward mid with moderate flow.
+
+    cycles>1 repeats the pattern so offline OOS holdouts are not quote-thin
+    (T1-38 dense synth for C-01-style validators).
     """
     rows: list[dict[str, Any]] = []
     bid, ask = 0.48, 0.52
     ts = t0
+    n_cycles = max(1, int(cycles))
 
     def emit_two_sided(b: float, a: float, trade_size: float | None = None) -> None:
         nonlocal ts
@@ -117,21 +122,27 @@ def generate_regime_journal(
             )
         ts += 1.0
 
-    for i in range(quiet_steps):
-        # 1-tick micro-jitter: sticky reprice_ticks should ignore these flaps.
-        wobble = tick * ((i % 3) - 1)
-        emit_two_sided(bid + wobble, ask + wobble, trade_size=15.0 if i % 2 == 0 else None)
+    for _ in range(n_cycles):
+        for i in range(quiet_steps):
+            # 1-tick micro-jitter: sticky reprice_ticks should ignore these flaps.
+            wobble = tick * ((i % 3) - 1)
+            emit_two_sided(
+                bid + wobble, ask + wobble, trade_size=15.0 if i % 2 == 0 else None
+            )
 
-    # Toxic jump: large print + book displaces by jump_ticks
-    jump = jump_ticks * tick
-    bid_j, ask_j = bid + jump, ask + jump
-    emit_two_sided(bid_j, ask_j, trade_size=800.0)
+        # Toxic jump: large print + book displaces by jump_ticks
+        jump = jump_ticks * tick
+        bid_j, ask_j = bid + jump, ask + jump
+        emit_two_sided(bid_j, ask_j, trade_size=800.0)
 
-    for i in range(recovery_steps):
-        frac = (i + 1) / max(recovery_steps, 1)
-        b = bid_j - jump * frac * 0.7
-        a = ask_j - jump * frac * 0.7
-        emit_two_sided(b, a, trade_size=40.0)
+        for i in range(recovery_steps):
+            frac = (i + 1) / max(recovery_steps, 1)
+            b = bid_j - jump * frac * 0.7
+            a = ask_j - jump * frac * 0.7
+            emit_two_sided(b, a, trade_size=40.0)
+
+        # Settle back near start mid between cycles
+        bid, ask = 0.48, 0.52
 
     return rows
 

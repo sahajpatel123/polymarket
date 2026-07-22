@@ -19,7 +19,7 @@ uv run python scripts/paper_health.py            # fail if quotes go stale
 | `scripts/sweep_profile_knob.py` | Sweep one StrategyProfile knob |
 | `scripts/validate_knob_candidate.py` | Full vs OOS holdout; flags non-replication |
 | `scripts/replay_livecfg.py` | Replay livecfg journal with token auto-detect |
-| `scripts/synth_regime_journal.py` | Quiet→jump→recovery synthetic tape |
+| `scripts/synth_regime_journal.py` | Quiet→jump→recovery synthetic tape (`--dense`) |
 | `scripts/rank_vs_realized.py` | Scanner vs realized vs liquidity-oracle ranks |
 | `scripts/reward_scorecard.py` | Per-market reward/hour + regime mix |
 | `scripts/paper_regime_report.py` | TRENDING/QUIET mix and cancel churn |
