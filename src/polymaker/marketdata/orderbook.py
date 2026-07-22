@@ -10,6 +10,7 @@ apply_* mutators. Nothing here does I/O; the WS layer drives it.
 
 from __future__ import annotations
 
+import itertools
 import time
 from dataclasses import dataclass
 
@@ -157,8 +158,10 @@ class OrderBook:
     def depth_within(self, side: Side, lo: float, hi: float) -> float:
         """Sum of sizes with price in [lo, hi] on the given side."""
         book = self.bids if side is Side.BUY else self.asks
-        # SortedDict.irange gives keys in [lo, hi]
-        return float(sum(book[p] for p in book.irange(lo, hi)))
+        total = 0.0
+        for p in book.irange(lo, hi):
+            total += book[p]
+        return total
 
     def view(self, band_frac: float = 0.05, min_size: float = 0.0) -> BookView:
         """Resolved YES-side view with best/second and in-band depth."""
@@ -185,6 +188,20 @@ class OrderBook:
 
     # ── internals ───────────────────────────────────────────────────────
     def _nth_bid(self, n: int, min_size: float) -> BookLevel | None:
+        if min_size <= 0.0:
+            # Fast path: all levels in the book have size > 0 (apply_delta
+            # removes zero-size levels), so no size filter is needed.
+            # Use O(1) peekitem for the common n=0/n=1 cases.
+            if n == 0:
+                return self.best_bid()
+            if n == 1 and len(self.bids) >= 2:
+                p = self.bids.peekitem(-2)  # second-highest bid
+                return BookLevel(p[0], p[1])
+            items = list(reversed(self.bids.items()))
+            if n < len(items):
+                p, s = items[n]
+                return BookLevel(p, s)
+            return None
         count = 0
         for price in reversed(self.bids):
             if self.bids[price] > min_size:
@@ -194,6 +211,17 @@ class OrderBook:
         return None
 
     def _nth_ask(self, n: int, min_size: float) -> BookLevel | None:
+        if min_size <= 0.0:
+            if n == 0:
+                return self.best_ask()
+            if n == 1 and len(self.asks) >= 2:
+                p = self.asks.peekitem(1)  # second-lowest ask
+                return BookLevel(p[0], p[1])
+            items = list(self.asks.items())
+            if n < len(items):
+                p, s = items[n]
+                return BookLevel(p, s)
+            return None
         count = 0
         for price in self.asks:
             if self.asks[price] > min_size:
@@ -204,8 +232,8 @@ class OrderBook:
 
     @staticmethod
     def _top_size(book: SortedDict[float, float], levels: int, *, from_high: bool) -> float:
-        keys = list(reversed(book)) if from_high else list(book)
-        return float(sum(book[k] for k in keys[:levels]))
+        it = reversed(book) if from_high else iter(book)
+        return float(sum(book[k] for k in itertools.islice(it, levels)))
 
 
 def to_no_price(yes_price: float) -> float:

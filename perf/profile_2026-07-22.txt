@@ -1,0 +1,51 @@
+=== cProfile of bench_replay (5000 events, seed=42) ===
+Total: 1,175,726 function calls in 0.434s
+
+--- Top by cumulative time ---
+1. _recompute (replay/__init__.py:98)        cumtime=0.367s  (84.6% of total)
+2. OrderBook.view (orderbook.py:163)          cumtime=0.083s  (19.1%)
+3. MetricsLogger.emit (metrics/__init__.py:26) cumtime=0.077s  (17.7%)
+4. construct_quotes (quoting.py:61)           cumtime=0.068s  (15.7%)
+5. apply_journal_event (replay/__init__.py:210) cumtime=0.056s  (12.9%)
+6. json.dumps/loads                           cumtime=0.032s  (7.4%)
+
+--- Top by internal time (tottime) ---
+1. TextIOWrapper.write (metrics I/O)          tottime=0.052s  (12.0%)
+2. _recompute itself                          tottime=0.028s  (6.5%)
+3. reconcile (reconciler.py:29)               tottime=0.018s  (4.2%)
+4. construct_quotes (quoting.py:61)             tottime=0.016s  (3.7%)
+5. irange (sortedcontainers)                  tottime=0.012s  (2.8%)
+6. _add_layers (quoting.py:163)               tottime=0.011s  (2.5%)
+7. OrderBook.view (orderbook.py:163)          tottime=0.010s  (2.3%)
+8. round() builtin                            tottime=0.010s  (2.3%)
+9. json.encoder.iterencode                    tottime=0.010s  (2.3%)
+10. max() builtin                             tottime=0.010s  (2.3%)
+11. apply_journal_event                       tottime=0.009s  (2.1%)
+12. _nth_bid (orderbook.py:187)               tottime=0.008s  (1.9%)
+13. _nth_ask (orderbook.py:196)               tottime=0.007s  (1.6%)
+14. depth_within (orderbook.py:157)           tottime=0.006s  (1.4%)
+15. parse_price_changes (parse.py:94)         tottime=0.006s  (1.4%)
+
+=== Analysis ===
+
+Top 3 actual bottlenecks (by cumulative time in the hot path):
+
+1. OrderBook.view() — 0.083s cumulative (19.1%)
+   - Calls _nth_bid/_nth_ask 4x per call (12286 calls each)
+   - Calls depth_within 2x per call (12286 calls)
+   - depth_within uses irange + generator sum (0.033s cumulative)
+   - _nth_bid/_nth_ask iterate over entire SortedDict even for n=0
+   - Called twice per recompute (YES + NO books)
+
+2. construct_quotes() — 0.068s cumulative (15.7%)
+   - _add_layers is 0.024s cumulative (5.5%)
+   - round() called 39943 times (0.010s)
+   - round_to_tick called 6144 times (0.007s)
+
+3. reconcile() — 0.031s cumulative (7.1%)
+   - 0.018s internal time
+   - defaultdict construction + set lookups
+
+Note: MetricsLogger.emit (0.077s) is I/O, not strategy logic.
+In production this is side-effect logging, not decision latency.
+In the benchmark it's measured because _recompute calls emit().

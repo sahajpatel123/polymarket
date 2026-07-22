@@ -41,3 +41,6 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T04:50:00Z | Tier1 | skipped — no new data (Tier1 complete; Tier2 gated NO_LOG)
 2026-07-22T05:05:00Z | Tier1 | skipped — no new data (Tier1 complete; Tier2 gated NO_LOG)
 2026-07-22T06:30:00Z | Tier1 | skipped — no new data (catch-up after tick gap; Tier2 gated NO_LOG)
+2026-07-22T06:50:00Z | perf-agent | P1-01 latency/throughput benchmark harness | scripts/bench_latency.py + tests/test_bench_latency.py (5 tests); baseline: replay p50=41.5us p95=71.2us p99=115.4us (26842 eps); pure p50=12.4us p95=16.4us p99=16.7us (77584 ops/s) | merged
+2026-07-22T07:00:00Z | perf-agent | P1-02 profile hot path (cProfile) | perf/profile_2026-07-22.txt; top 3: OrderBook.view() 19.1%, construct_quotes() 15.7%, reconcile() 7.1% | merged
+2026-07-22T07:15:00Z | perf-agent | P1-03 optimize OrderBook.view() | _nth_bid/_nth_ask fast path (peekitem n=0/n=1), _top_size (islice), depth_within (direct loop); golden-output PASS (byte-identical); 142 tests pass; pure p95 16.4→13.2us (-19.5%) | merged
