@@ -6,6 +6,7 @@ accumulates toward the 24h Tier-2 gate. **None of these change pricing math.**
 ## Every-tick commands
 
 ```bash
+uv run python scripts/write_weekly_report.py     # overwrite WEEKLY_REPORT.md from live scripts
 uv run python scripts/strategy_tick.py           # connectivity + C-01 + summarize + unused-knob scan
 uv run python scripts/strategy_tick.py --append --skip-connectivity
 uv run python scripts/append_strategy_cycle.py   # gate+snapshot+rank+health+shadow+c01+outage → JSONL
@@ -40,6 +41,7 @@ uv run python scripts/c01_promotion_checklist.py          # C-01 Tier-2 PR block
 | `scripts/polymarket_connectivity.py` | REST + market WS upstream probe (outage vs local) |
 | `scripts/outage_window_report.py` | STALE/DOWN window durations from strategy_cycles |
 | `scripts/await_polymarket_recovery.py` | Poll until REST+WS UP; collector restart + cycle append |
+| `scripts/write_weekly_report.py` | Overwrite WEEKLY_REPORT.md from gate/metrics/C-01/summarize/deps |
 | `scripts/unused_knob_toml_scan.py` | Flag unused StrategyProfile knobs still set in TOML (C-04) |
 | `scripts/strategy_tick.py` | One-shot tick: connectivity + C-01 + summarize (+ optional append) |
 | `scripts/c01_promotion_checklist.py` | C-01 Tier-2 PR readiness: READY vs blockers |

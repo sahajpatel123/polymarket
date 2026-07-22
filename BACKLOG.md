@@ -500,6 +500,12 @@ done without evidence (script output / tests) from that cycle.
   regime/checklist/summarize/deps reflecting ~4.85h STALE outage.
 - Evidence: Generated 2026-07-22T20:20Z; unused_set=9; deps bumps=0
 
+### T1-74 Automate WEEKLY_REPORT generation script
+- Status: `done`
+- Done when: write_weekly_report.py gathers gate/metrics/shadow/regime/c01/
+  summarize/deps and overwrites WEEKLY_REPORT.md; unit tests for helpers.
+- Evidence: live status=OK wrote=WEEKLY_REPORT.md during ~5h outage
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

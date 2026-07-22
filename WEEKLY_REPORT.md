@@ -5,43 +5,35 @@ autonomous loop. Not an action request.
 
 ## Week of 2026-07-22 (UTC)
 
-Generated: `2026-07-22T20:20:00Z`
+Generated: `2026-07-22T20:28:48Z` (via `scripts/write_weekly_report.py`)
 
 ### System
 
 | Item | Status |
 |------|--------|
-| Branch | `strategy-pricing` / `main` @ `dd7c27d` (T1-72 unused_set trail) |
-| Paper trading | **collector alive** (PID 78216) but **STALE** — Polymarket REST+WS DOWN ~4.85h; quotes frozen at 5529; `tape_frozen=true` |
-| Loop | 10m Agent-1 strategy-pricing cadence; Tier-2 gated on hours; ETA paused |
-
-### Tier-1 completed (this build-out window)
-
-T1-01 … T1-72 `done` (metrics, replay, compare/synth, gate, shadow AS, knob
-audit, richest-log, cycle history, C-01 checklist/CF/vol context, outage
-tooling, recovery append, tape_frozen, strategy_tick, deps baseline,
-unused-knob scan + annotations, unused_set in trail).
+| Branch | `git log -1` → `a2e2d0a Refresh WEEKLY_REPORT for the extended Polymarket outage (T1-73).` |
+| Paper trading | `78216 /Users/sahajpatel/Code/polymarket/.venv/bin/python3 /Users/sahajpatel/Code/polymarket/.venv/bin/polymaker run --paper --config-dir livecfg` |
+| Loop | 10m Agent-1 strategy-pricing cadence; Tier-2 gated on hours |
 
 ### Tier-2 PRs
 
 | Opened | Still pending |
 |--------|----------------|
-| 0 | 0 (`PENDING_REVIEW.md` empty) |
+| 0 | see `PENDING_REVIEW.md` |
 
-Open candidates (not promoted): C-01 `trend_vol_ratio`, C-02 scanner vs
-realized, C-03 multi-knob null screen, C-04 unused knobs — see
-`docs/STRATEGY_CANDIDATES.md`.
+Open candidates: `docs/STRATEGY_CANDIDATES.md` (C-01…C-04).
 
 ### Paper P&L / risk metrics (literal script output)
 
 `uv run python scripts/paper_data_gate.py`:
 
 ```
-log_path=.../livecfg/logs/paper.jsonl
-status=OK
+log_path=/Users/sahajpatel/Code/polymarket/livecfg/logs/paper.jsonl
+metrics_path=/Users/sahajpatel/Code/polymarket/livecfg/logs/metrics-paper.jsonl
+status=OK lines=4946 json_lines=4946 bad_lines=0
 runtime_basis=requote
 runtime_hours=8.3700
-runtime_hours_all_events=13.3167
+runtime_hours_all_events=13.4834
 quote_events=5529
 requote_lines=2843
 quotes_for_gate=5529
@@ -63,24 +55,19 @@ status=OK lifetimes=5529 crossed_frac=0.0000 mean_edge=0.002509 markout_30s=0.00
 `uv run python scripts/paper_regime_report.py`:
 
 ```
-status=OK requotes=2843 trending_frac=0.042912 false_trending_attr_frac=1.0
-vol_only_frac=1.0 quiet_vol_max=1.989 trend_vol_min=2.029 vol_gap=0.04
-suggested_vol=2.489 path={'missing_vol': 102, 'vol_only': 20}
+status=OK requotes=2843 trending_frac=0.042912 false_trending_frac=1.0 false_trending_attr_frac=1.0 false_trending_cancel_share=0.718563 false_trending_place_share=0.021927 vol_only_frac=1.0 quiet_vol_max=1.989 quiet_vol_p90=1.2196 trend_vol_min=2.029 trend_vol_p50=3.1075 vol_gap=0.04 suggested_vol=2.489 path={'missing_vol': 102, 'vol_only': 20} cancel_per_place=0.030014 transitions=148
 ```
 
 `uv run python scripts/c01_promotion_checklist.py`:
 
 ```
-status=BLOCKED blockers=hours_ok,health_ok,outage_closed,oos_replicated,holdout_not_thin
-runtime_h=8.3700 quotes=5529 health=STALE outage_alert=True outage_total_h≈4.85
-suppress_2=0.0 suppress_suggested=0.1875 suppress_target=1.0
+status=BLOCKED blockers=hours_ok,health_ok,outage_closed,oos_replicated,holdout_not_thin runtime_h=8.3700 quotes=5529 health=STALE last_requote_age_s=18414.199 outage_open=True outage_total_h=5.0159 outage_alert=True oos=False thin=True vol_gap=0.04 quiet_vol_max=1.989 trend_vol_min=2.029 suggested_vol=2.489 suppress_2=0.0 suppress_suggested=0.1875 suppress_target=1.0 false_trending_attr_frac=1.0 boundary_tight=True
 ```
 
 `uv run python scripts/summarize_strategy_cycles.py`:
 
 ```
-status=OK cycles=68 runtime_h=8.37 hours_remaining=15.63 eta_paused=True
-outage_open=True outage_total_h≈4.85 tape_frozen=True unused_set=9 c01=BLOCKED
+status=OK cycles=69 runtime_h=8.37 hours_remaining=15.63 eta_wall_h=None eta_paused=True outage_open=True outage_total_h=5.0159 quotes_per_wall_h=365.15 health=STALE last_requote_age_s=18383.25 tape_frozen=True connectivity=SKIPPED crossed_frac=0.0000 markout_30s=0.000006 false_trending_frac=1.0 false_trending_cancel_share=0.718563 vol_only_frac=1.0 vol_gap=0.04 quiet_vol_max=1.989 trend_vol_min=2.029 suggested_vol=2.489 false_trending_attr_frac=1.0 c01=BLOCKED c01_blockers=hours_ok,health_ok,outage_closed,oos_replicated,holdout_not_thin suppress_2=0.0 suppress_suggested=0.1875 suppress_target=1.0 unused_set=9 paper_schema=OK
 ```
 
 ### Dependency / security audit
@@ -89,27 +76,17 @@ outage_open=True outage_total_h≈4.85 tape_frozen=True unused_set=9 c01=BLOCKED
 
 ```
 status=OK packages=83 flagged=21 bumps=0
+ok=True
 ```
-
-Most flags are informational `unpinned_direct` ranges. Baseline drift cleared
-(T1-68); `ok=true`.
 
 ### Credentials / certificates
 
 No expiry tracker in-repo. `.env` is gitignored; operator must rotate
-`PK` / builder creds outside this loop. No cert files managed by polymaker.
+`PK` / builder creds outside this loop.
 
 ### Blockers (informational)
 
-- **Polymarket REST+WS outage** (~4.85h open): paper health STALE; requote
-  runtime frozen at 8.37h; do not restart collector until UP
-  (`SKIPPED_UPSTREAM_DOWN`). Recovery:
-  `await_polymarket_recovery.py` (restarts + appends cycle).
-- Tier-2 pricing/selection merges still need ≥24h **requote** runtime
-  **and** OOS replication on a non-thin holdout. ETA paused while STALE.
-- C-01 offline: suppress@2=0 / @suggested≈0.19 / @8=1.0 — still no PR
-  while outage + thin holdout.
-- C-04: `unused_set=9` inert knobs remain in TOML (annotated; do not tune).
-- Paper mode still has **0 fills** — reward path is liquidity-accrual only;
-  classic markouts empty; shadow AS on frozen tape is not live signal.
-- Live capital / size increases remain human-only (protocol boundary).
+- Parse C-01 / summarize lines above for outage_alert, tape_frozen, ETA pause,
+  and promotion blockers. Do not promote Tier-2 while health is STALE or
+  holdouts are thin.
+- Live capital / size increases remain human-only (`ESCALATE.md`).
