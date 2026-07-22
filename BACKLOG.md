@@ -111,6 +111,13 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: `scripts/sweep_profile_knob.py`, `tests/test_sweep_profile_knob.py`;
   reprice_ticks sweep on regime fixture: 1→dn_quote=+3, 5→dn_quote=-1
 
+### T1-14 Livecfg journal replay with token auto-detect
+- Status: `done`
+- Done when: a script infers YES/NO tokens from metrics-paper.jsonl and replays
+  livecfg/journal/paper.jsonl per market; optional named-profile A/B on that tape.
+- Evidence: `scripts/replay_livecfg.py`, `tests/test_replay_livecfg.py`;
+  live-tiny vs newsom-mm dn_quote=+27/+22 on two live markets
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
