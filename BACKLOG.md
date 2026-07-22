@@ -267,6 +267,13 @@ done without evidence (script output / tests) from that cycle.
   prefers `fv_yes` over nearest-mark heuristic for NO-token remap.
 - Evidence: `engine.py` / `replay` quote emit; `tests/test_shadow_adverse_selection.py`
 
+### T1-36 Metrics quote flush + schema verifier
+- Status: `done`
+- Done when: MetricsLogger flushes quote/cancel/fill immediately (not stuck
+  behind 256-mark batch); verifier flags stale collectors missing `fv_yes`.
+- Evidence: `src/polymaker/metrics/__init__.py`,
+  `scripts/verify_metrics_schema.py`, tests; live quotes now include `fv_yes`
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

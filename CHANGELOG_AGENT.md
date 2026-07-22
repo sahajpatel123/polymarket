@@ -132,3 +132,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T13:40:00Z | Tier1 | T1-34 quote lifetime/requote churn report (T2-05 evidence) | pytest pass; live life_p50/rq_p50 on ~6.6h tape; wired into cycle append | merged
 
 2026-07-22T13:50:00Z | Tier1 | T1-35 quote metrics emit fv_yes; shadow AS prefers it over mark heuristic | pytest shadow+metrics+replay 10 passed; paper ~6.8h/4500q collecting | merged
+
+2026-07-22T14:02:00Z | Tier1 | T1-36 flush quote metrics immediately + schema verifier; restarted paper collector | pytest metrics+schema pass; live quotes now have fv_yes; gate ~7.0h/4626q | merged

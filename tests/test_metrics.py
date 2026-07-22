@@ -27,6 +27,21 @@ def test_metrics_logger_writes_jsonl(tmp_path: Path) -> None:
     assert json.loads(lines[1])["event"] == "cancel"
 
 
+def test_metrics_logger_flushes_quotes_immediately(tmp_path: Path) -> None:
+    """Quotes must hit disk without waiting for the mark batch threshold."""
+    path = tmp_path / "m.jsonl"
+    ml = MetricsLogger(path)
+    ml.emit("mark", condition_id="c1", fv=0.5)
+    assert path.read_text().strip() == ""  # marks stay buffered
+    ml.emit("quote", condition_id="c1", token_id="t", side="BUY", price=0.4, size=1.0,
+            mid=0.41, fv_yes=0.41, **inventory_fields(0, 0))
+    lines = path.read_text().strip().splitlines()
+    assert len(lines) == 2  # mark + quote flushed together
+    assert json.loads(lines[1])["event"] == "quote"
+    assert json.loads(lines[1])["fv_yes"] == 0.41
+    ml.close()
+
+
 def test_analyze_computes_spread_markout_inventory_reward(tmp_path: Path) -> None:
     path = tmp_path / "m.jsonl"
     t0 = 1_000_000.0

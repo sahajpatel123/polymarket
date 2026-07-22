@@ -23,6 +23,9 @@ class MetricsLogger:
     """
 
     _BATCH_SIZE = 256
+    # Always flush these — paper/evidence tooling and gate freshness depend on
+    # quote/cancel/fill landing promptly; marks can stay batched.
+    _FLUSH_EVENTS = frozenset({"quote", "cancel", "fill", "market_meta"})
 
     def __init__(self, path: str | Path | None, *, enabled: bool = True) -> None:
         self.enabled = enabled and path is not None
@@ -38,13 +41,14 @@ class MetricsLogger:
             return
         row = {"ts": fields.pop("ts", time.time()), "event": event, **fields}
         self._buffer.append(json.dumps(row, default=str))
-        if len(self._buffer) >= self._BATCH_SIZE:
+        if event in self._FLUSH_EVENTS or len(self._buffer) >= self._BATCH_SIZE:
             self._flush()
 
     def _flush(self) -> None:
         if self._buffer:
             self._fh.write("\n".join(self._buffer) + "\n")
             self._buffer.clear()
+            self._fh.flush()
 
     def close(self) -> None:
         if self._fh is not None:
