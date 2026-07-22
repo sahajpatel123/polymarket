@@ -6,6 +6,9 @@ Tier-1 ops for long outages (REST/WS DOWN). Does not change strategy math.
 On recovery (default): restart the paper collector, then append one strategy
 cycle so the longitudinal trail timestamps the outage→UP transition.
 
+Also refreshes ``logs/outage_status.json`` on each probe (STILL_DOWN or
+RECOVERED) so monitors stay current without a full strategy_tick.
+
 Usage:
   uv run python scripts/await_polymarket_recovery.py --once
   uv run python scripts/await_polymarket_recovery.py --interval-s 60 --max-wait-s 3600
@@ -19,6 +22,7 @@ import subprocess
 import sys
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 
 def _run(cmd: list[str]) -> tuple[int, str, str]:
@@ -31,6 +35,37 @@ def _status_line(stderr: str, stdout: str = "") -> str:
         if line.startswith("status="):
             return line
     return "status=UNKNOWN"
+
+
+def _refresh_outage_status(py: str, status_out: str) -> str:
+    code, out, err = _run([
+        py,
+        "scripts/outage_window_report.py",
+        "--status-out",
+        status_out,
+    ])
+    return _status_line(err, out)
+
+
+def _mark_recovered(status_out: str, *, connectivity: str, waited_s: float) -> None:
+    path = Path(status_out)
+    data: dict = {}
+    if path.exists():
+        try:
+            data = json.loads(path.read_text())
+        except json.JSONDecodeError:
+            data = {}
+    data.update({
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "recovered": True,
+        "outage_open": False,
+        "outage_alert": False,
+        "outage_alert_severe": False,
+        "connectivity": connectivity,
+        "waited_s": waited_s,
+    })
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
 
 
 def main() -> int:
@@ -49,11 +84,17 @@ def main() -> int:
         action="store_true",
         help="Skip append_strategy_cycle after a successful recovery",
     )
+    ap.add_argument(
+        "--status-out",
+        default="logs/outage_status.json",
+        help="Compact outage status JSON path (empty string disables)",
+    )
     ap.add_argument("--wait-s", type=float, default=45.0,
                     help="ensure_paper_collector post-restart health wait")
     args = ap.parse_args()
     restart = not args.no_restart_on_recover
     append_cycle = not args.no_append_cycle_on_recover
+    status_out = (args.status_out or "").strip()
 
     py = sys.executable
     t0 = time.time()
@@ -99,11 +140,19 @@ def main() -> int:
                 ])
                 report["append_rc"] = acode
                 report["append"] = _status_line(aerr, aout)
+            if status_out:
+                report["outage_status"] = _refresh_outage_status(py, status_out)
+                _mark_recovered(
+                    status_out,
+                    connectivity=line,
+                    waited_s=float(report["waited_s"]),
+                )
             print(json.dumps(report, indent=2, sort_keys=True))
             print(
                 f"status=RECOVERED waited_s={report['waited_s']} "
                 f"ensure={report.get('ensure', 'skipped')} "
-                f"append={report.get('append', 'skipped')}",
+                f"append={report.get('append', 'skipped')} "
+                f"status_out={status_out or '-'}",
                 file=sys.stderr,
             )
             ok = True
@@ -113,13 +162,20 @@ def main() -> int:
                 ok = False
             return 0 if ok else 1
 
+        if status_out:
+            _refresh_outage_status(py, status_out)
+
         if args.once:
-            print(f"status=STILL_DOWN {line}", file=sys.stderr)
+            print(
+                f"status=STILL_DOWN {line} status_out={status_out or '-'}",
+                file=sys.stderr,
+            )
             return 1
 
         if args.max_wait_s > 0 and (time.time() - t0) >= args.max_wait_s:
             print(
-                f"status=TIMEOUT waited_s={round(time.time() - t0, 1)} {line}",
+                f"status=TIMEOUT waited_s={round(time.time() - t0, 1)} {line} "
+                f"status_out={status_out or '-'}",
                 file=sys.stderr,
             )
             return 1

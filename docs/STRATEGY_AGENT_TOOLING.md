@@ -40,7 +40,7 @@ uv run python scripts/c01_promotion_checklist.py          # C-01 Tier-2 PR block
 | `scripts/ensure_paper_collector.py` | Diagnose STALE paper collector; optional `--restart` (refuses while upstream DOWN) |
 | `scripts/polymarket_connectivity.py` | REST + market WS upstream probe (outage vs local) |
 | `scripts/outage_window_report.py` | STALE/DOWN window durations; optional `--status-out` JSON |
-| `scripts/await_polymarket_recovery.py` | Poll until REST+WS UP; collector restart + cycle append |
+| `scripts/await_polymarket_recovery.py` | Poll until REST+WS UP; collector restart + cycle append; refreshes `logs/outage_status.json` |
 | `scripts/write_weekly_report.py` | Overwrite WEEKLY_REPORT.md from gate/metrics/C-01/summarize/deps |
 | `scripts/unused_knob_toml_scan.py` | Flag unused StrategyProfile knobs still set in TOML (C-04) |
 | `scripts/strategy_tick.py` | One-shot tick: connectivity + C-01 + summarize (+ optional append) |
@@ -56,7 +56,8 @@ pricing/selection changes until `paper_data_gate` reports `tier2_allowed=true`
 
 1. `uv run python scripts/await_polymarket_recovery.py --once`
    — if UP: restarts collector + appends a cycle (disable with
-   `--no-restart-on-recover` / `--no-append-cycle-on-recover`).
+   `--no-restart-on-recover` / `--no-append-cycle-on-recover`); always
+   refreshes `logs/outage_status.json` (disable with `--status-out ''`).
 2. Confirm `paper_health` is OK (not STALE) and `tape_frozen=false` on the
    latest cycle line.
 3. Re-run `c01_promotion_checklist.py` once quotes advance; do not promote

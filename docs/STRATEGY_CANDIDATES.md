@@ -99,6 +99,9 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
 - **Update 2026-07-22T20:55Z:** Polymarket outage now **~5.5h**
   (`outage_alert_severe=True`). Quotes still frozen at 5529 / runtime 8.37h.
   Compact status at `logs/outage_status.json`. Still no Tier-2 PR.
+- **Update 2026-07-22T21:10Z:** `await_polymarket_recovery` now refreshes
+  `outage_status.json` on each probe (STILL_DOWN) and marks `recovered` on UP.
+  Still no Tier-2 PR while UP is DOWN.
 
 ## C-02 Prefer higher-reward market weight (selection)
 

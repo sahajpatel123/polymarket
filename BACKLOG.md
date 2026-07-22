@@ -524,6 +524,12 @@ done without evidence (script output / tests) from that cycle.
   strategy_tick updates logs/outage_status.json each tick.
 - Evidence: live status_out with outage_alert_severe=True (~5.5h)
 
+### T1-78 await_recovery refreshes outage_status.json
+- Status: `done`
+- Done when: await_polymarket_recovery --once refreshes logs/outage_status.json
+  on STILL_DOWN; on RECOVERED marks recovered=True / outage_open=False.
+- Evidence: unit tests for STILL_DOWN + RECOVERED status_out paths
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
