@@ -156,3 +156,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T15:40:00Z | Tier1 | T1-46 polymarket_connectivity probe + eta_paused when health STALE; live REST+WS DOWN | pytest pass; collector left running to reconnect; no Tier2 | merged
 
 2026-07-22T15:50:00Z | Tier1 | T1-47 outage_window_report + summarize outage_open; Polymarket still DOWN / paper STALE | pytest pass; quotes frozen ~5529; no Tier2 | merged
+
+2026-07-22T16:00:00Z | Tier1 | T1-48 offline TRENDING counterfactual for C-01; suppress_frac=1.0 at vol=8 on attributed rows; Polymarket still DOWN | pytest pass; no Tier2 | merged

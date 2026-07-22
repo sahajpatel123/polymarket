@@ -343,6 +343,13 @@ done without evidence (script output / tests) from that cycle.
   surfaces outage_open / outage_total_h.
 - Evidence: pytest; live open outage while Polymarket REST+WS down
 
+### T1-48 Offline TRENDING counterfactual (C-01, no network)
+- Status: `done`
+- Done when: trending_counterfactual estimates suppressible TRENDING rows
+  from logged flowz+vol_ratio under candidate thresholds.
+- Evidence: live tape suppress_frac=1.0 at vol=8 / flowz=1.2 on attributed
+  rows (20/20); works while Polymarket is DOWN
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

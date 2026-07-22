@@ -35,6 +35,7 @@ uv run python scripts/outage_window_report.py     # STALE/DOWN duration from cyc
 | `scripts/ensure_paper_collector.py` | Diagnose STALE paper collector; optional `--restart` |
 | `scripts/polymarket_connectivity.py` | REST + market WS upstream probe (outage vs local) |
 | `scripts/outage_window_report.py` | STALE/DOWN window durations from strategy_cycles |
+| `scripts/trending_counterfactual.py` | Offline C-01 TRENDING suppress estimate from logs |
 
 ## Open candidates
 

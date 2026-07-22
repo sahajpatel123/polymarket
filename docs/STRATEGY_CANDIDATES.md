@@ -63,6 +63,11 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
   host (handshake/URL timeouts). Paper health STALE; quotes frozen ~5529 /
   ~8.7h. Gate ETA paused (T1-46/T1-47). Not a strategy issue — wait for
   upstream recovery before more C-01 live validates.
+- **Update 2026-07-22T16:00Z (offline counterfactual, outage):** on attributed
+  TRENDING requotes (`vol_ratio` present), `trend_vol_ratio=8` +
+  `trend_flow_z=1.2` would suppress **100%** (20/20, cancel_sum=24);
+  threshold 5 suppresses 75%. Reinforces C-01 without needing live WS.
+  Promotion still blocked on 24h gate + non-thin OOS replay.
 
 ## C-02 Prefer higher-reward market weight (selection)
 
