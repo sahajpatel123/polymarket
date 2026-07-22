@@ -176,6 +176,13 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: Newsom rebate_pot≈93 vs Vance≈10; paper has 0 fills so realized
   path is liquidity-reward only
 
+### T1-23 Strategy cycle history appender
+- Status: `done`
+- Done when: one command appends gate+snapshot+rank status into a JSONL history
+  file for longitudinal Agent-1 evidence while waiting on 24h.
+- Evidence: `scripts/append_strategy_cycle.py`; C-01 recheck full_dn_quote=-42
+  still fails OOS
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

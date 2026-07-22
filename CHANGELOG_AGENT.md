@@ -72,3 +72,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T08:48:00Z | Tier1 | T1-20b reward decomposition: in-band~100o rank invert = daily_rate gap (Tier2 gated) | rank_vs_realized daily 308 vs 214, in_band_frac=1.0 both; spearman=-1.0; gate quotes=1175 need_hours>=24 | merged
 
 2026-07-22T08:58:00Z | Tier1 | T1-22 scanner components: rebate_pot drives Newsom rank; paper realized is liquidity-reward only (Tier2 gated) | rebate 93 vs 10; daily_rate 214 vs 308; in_band_frac=1; spearman=-1; gate quotes=1281 need_hours>=24 | merged
+
+2026-07-22T09:08:00Z | Tier1 | T1-23 cycle history appender; C-01 still fails OOS at 2.1h (Tier2 gated) | append_strategy_cycle status=OK; validate full_dn_quote=-42 holdout=0 oos=false; gate quotes=1384 need_hours>=24 | merged

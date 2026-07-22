@@ -20,6 +20,8 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
 - **Update 2026-07-22T08:27Z:** TRENDING still fires late in session (~84m)
   with `flow_z≈-0.08` — vol-ratio path remains the smoking gun, but OOS
   promotion still blocked.
+- **Update 2026-07-22T09:08Z (~2.1h tape):** validate events-split still
+  `oos_replicated=false` (full_dn_quote=-42, holdout_dn_quote=0, thin_holdout).
 
 ## C-02 Prefer higher-reward market weight (selection)
 
