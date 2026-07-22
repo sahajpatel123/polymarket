@@ -24,6 +24,8 @@ uv run python scripts/paper_health.py            # fail if quotes go stale
 | `scripts/reward_scorecard.py` | Per-market reward/hour + regime mix |
 | `scripts/paper_regime_report.py` | TRENDING/QUIET mix and cancel churn |
 | `scripts/strategy_snapshot.py` | One-shot gate+metrics+reward+regime+synth A/B |
+| `scripts/shadow_adverse_selection.py` | Fill-independent quote-lifetime AS proxy |
+| `scripts/candidate_evidence_pack.py` | C-01 validate + shadow AS + regime JSON pack |
 
 ## Open candidates
 

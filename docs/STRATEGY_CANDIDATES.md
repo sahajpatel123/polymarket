@@ -24,6 +24,13 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
   promotion still blocked.
 - **Update 2026-07-22T09:08Z (~2.1h tape):** validate events-split still
   `oos_replicated=false` (full_dn_quote=-42, holdout_dn_quote=0, thin_holdout).
+- **Update 2026-07-22T12:55Z (~5.9h tape, evidence pack):** per-market
+  `trend_vol_ratio` 2→8 still cuts churn in-sample (`full_dn_quote=-93` /
+  `-14`) but holdouts remain thin (`thin_holdout=true`,
+  `oos_replicated=false`). **Do not promote.** Shadow AS (YES-space):
+  `crossed_frac≈0`, `markout_30s≈0` on ~3960 quote lifetimes — resting
+  post-only quotes are not being mid-crossed in this quiet window; churn
+  reduction is the only in-sample signal so far.
 
 ## C-02 Prefer higher-reward market weight (selection)
 

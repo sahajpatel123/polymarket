@@ -206,6 +206,23 @@ done without evidence (script output / tests) from that cycle.
 - Done when: docs list the Agent-1 evidence scripts and point at open candidates.
 - Evidence: `docs/STRATEGY_AGENT_TOOLING.md`
 
+### T1-28 Shadow adverse-selection from quote lifetimes
+- Status: `done`
+- Done when: a script measures fill-independent mid/FV markouts and mid-cross
+  rates over resting quote lifetimes from metrics-paper.jsonl (YES-space remap
+  for NO-token quotes), so zero-fill paper still yields adverse-selection
+  evidence for T2-02/T2-04.
+- Evidence: `src/polymaker/metrics/shadow_as.py`,
+  `scripts/shadow_adverse_selection.py`, `tests/test_shadow_adverse_selection.py`
+
+### T1-29 Candidate evidence pack (C-01 + shadow AS + regime)
+- Status: `done`
+- Done when: one command re-validates trend_vol_ratio on livecfg journals
+  (token auto-infer), runs shadow AS + regime/scorecard/gate, and writes a
+  JSON pack for STRATEGY_CANDIDATES updates — no pricing merges.
+- Evidence: `scripts/candidate_evidence_pack.py`; denser-tape C-01 still
+  `oos_replicated=false` / `thin_holdout=true`
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
