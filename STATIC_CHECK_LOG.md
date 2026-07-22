@@ -212,3 +212,97 @@ configured to compare against. See ESCALATE.md entry #7 (updated).
 | 7 | Agent API spend | FAIL | FAIL (partial progress — can now check spend, but no budget) |
 
 **Cycle 2: 4 failures, 3 passes.** Same as cycle 1. All failures persist.
+
+---
+
+## Cycle 3 — 2026-07-22T08:16:49Z
+
+### 1. GitHub branch protection on main
+
+Same as cycles 1 and 2. No change.
+
+| Rule | Status |
+|------|--------|
+| Status checks required (pytest, strict) | ✅ active |
+| PR review required | ❌ NOT configured |
+| Enforce admins | ❌ false |
+| Allow force pushes | ✅ blocked |
+| Allow deletions | ✅ blocked |
+
+**Result: FAIL** — Same as cycles 1 and 2.
+
+### 2. API key scope and wallet balance
+
+Same as cycles 1 and 2. No `.env` file exists. No Polymarket API keys configured.
+
+**Result: FAIL** — Same as cycles 1 and 2.
+
+### 3. Dependency audit
+
+Ran `uv run python scripts/deps_audit.py --fail-on-flags`.
+
+```
+status=OK packages=81 flagged=20 bumps=0
+```
+
+Same as cycles 1 and 2. No change. 0 baseline bumps, no post-install scripts.
+
+**Result: PASS** — Same as cycles 1 and 2.
+
+### 4. Alert fire-drill (monthly)
+
+Same as cycles 1 and 2. No `.env` file, no `ALERT_WEBHOOK_URL` configured.
+No record of a previous fire-drill.
+
+**Result: FAIL** — Same as cycles 1 and 2. Cannot perform fire-drill.
+
+### 5. Polymarket terms of service
+
+Attempted to fetch `https://polymarket.com/legal/terms-of-service` via
+`curl` — exit code 28 (timeout). Same as cycles 1 and 2.
+
+No previous ToS snapshot exists to diff against.
+
+**Result: FAIL** — Same as cycles 1 and 2. Cannot fetch ToS.
+
+### 6. Credential/certificate expiry
+
+Same as cycles 1 and 2. No `.env` file, no custom certificates, no GPG keys,
+no `~/.ssl` directory.
+
+**Result: PASS** — Same as cycles 1 and 2. No credentials to expire.
+
+### 7. Agent API spend
+
+`ANTHROPIC_API_KEY` is set in the environment (OpenRouter). Queried the
+OpenRouter credits endpoint:
+
+```json
+{"data":{"total_credits":18.75,"total_usage":7.62539204}}
+```
+
+- Total credits: $18.75
+- Total usage: $7.63 (unchanged from cycle 2)
+- Remaining: $11.12
+- Usage: 40.7% of total credits
+
+No monthly budget configured. Cannot determine if spend is within bounds.
+
+**Result: FAIL** — Same as cycle 2. Can check spend but no budget configured.
+
+---
+
+## Summary
+
+| # | Check | Cycle 1 | Cycle 2 | Cycle 3 |
+|---|-------|---------|---------|---------|
+| 1 | Branch protection | FAIL | FAIL | FAIL |
+| 2 | API key scope / wallet balance | FAIL | FAIL | FAIL |
+| 3 | Dependency audit | PASS | PASS | PASS |
+| 4 | Alert fire-drill | FAIL | FAIL | FAIL |
+| 5 | Polymarket ToS | FAIL | FAIL | FAIL |
+| 6 | Credential/certificate expiry | PASS | PASS | PASS |
+| 7 | Agent API spend | FAIL | FAIL | FAIL |
+
+**Cycle 3: 4 failures, 3 passes.** Same as cycles 1 and 2. All failures persist
+with no changes. API spend unchanged at $7.63/$18.75 (40.7%).
