@@ -172,3 +172,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T17:00:00Z | Tier1 | T1-54 C-01 promotion checklist (READY vs blockers); live BLOCKED hours/health/outage/oos/thin; quotes OK | pytest pass; evidence pack refreshed; no Tier2 | merged
 
 2026-07-22T17:10:00Z | Tier1 | T1-55 regime report vol_ratio percentiles + quiet/trend gap; live gap≈0.04 quiet_max≈1.99 trend_p50≈3.11 | pytest pass; Polymarket still DOWN; no Tier2 | merged
+
+2026-07-22T17:20:00Z | Tier1 | T1-56 wire vol_context into C-01 checklist + snapshot/cycles; live gap=0.04 boundary_tight | Polymarket DOWN; quotes frozen 5529; no Tier2 | merged

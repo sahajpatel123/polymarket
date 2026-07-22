@@ -27,3 +27,13 @@ def test_parse_status_line_outage() -> None:
     )
     assert kv["status"] == "OK"
     assert kv["open"] == "True"
+
+
+def test_parse_status_line_vol_context() -> None:
+    kv = chk._parse_status_line(
+        "status=OK quiet_vol_max=1.99 trend_vol_min=2.03 vol_gap=0.04 "
+        "quiet_vol_p90=1.22 trend_vol_p50=3.11"
+    )
+    assert kv["quiet_vol_max"] == "1.99"
+    assert kv["trend_vol_min"] == "2.03"
+    assert kv["vol_gap"] == "0.04"

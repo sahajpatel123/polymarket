@@ -83,6 +83,9 @@ def main() -> int:
     ])
     cf = _parse_status_line(cf_err)
 
+    _, _, regime_err = _run([py, "scripts/paper_regime_report.py"])
+    regime = _parse_status_line(regime_err)
+
     pack = _load_json(Path(args.evidence_pack))
     c01 = (pack or {}).get("c01_trend_vol_ratio") or {}
     markets = c01.get("markets") or []
@@ -106,6 +109,27 @@ def main() -> int:
     health_ok = health.get("status") == "OK"
     outage_open = str(outage.get("open", "")).lower() == "true"
     cf_ok = cf.get("status") == "OK"
+
+    def _f(key: str) -> float | None:
+        raw = regime.get(key)
+        if raw is None or raw in ("", "None", "null"):
+            return None
+        try:
+            return float(raw)
+        except ValueError:
+            return None
+
+    quiet_max = _f("quiet_vol_max")
+    trend_min = _f("trend_vol_min")
+    vol_gap = _f("vol_gap")
+    target_above_quiet = (
+        None if quiet_max is None else args.target_vol > quiet_max
+    )
+    target_above_trend_min = (
+        None if trend_min is None else args.target_vol > trend_min
+    )
+    # Gap under 0.25 means default 2.0 sits near the QUIET/TRENDING boundary.
+    boundary_tight = None if vol_gap is None else abs(vol_gap) < 0.25
 
     checks = {
         "hours_ok": hours_ok,
@@ -138,6 +162,17 @@ def main() -> int:
         "counterfactual_line": next(
             (ln for ln in cf_err.splitlines() if ln.startswith("status=")), None
         ),
+        "vol_context": {
+            "quiet_vol_max": quiet_max,
+            "quiet_vol_p90": _f("quiet_vol_p90"),
+            "trend_vol_min": trend_min,
+            "trend_vol_p50": _f("trend_vol_p50"),
+            "vol_gap": vol_gap,
+            "target_trend_vol_ratio": args.target_vol,
+            "target_above_quiet_max": target_above_quiet,
+            "target_above_trend_min": target_above_trend_min,
+            "boundary_tight": boundary_tight,
+        },
         "evidence_pack": {
             "path": args.evidence_pack if pack else None,
             "any_oos_replicated": any_oos if validate_present else None,
@@ -157,7 +192,9 @@ def main() -> int:
         f"runtime_h={gate.get('runtime_hours')} quotes={gate.get('quotes_for_gate')} "
         f"health={health.get('status')} outage_open={outage_open} "
         f"oos={any_oos if validate_present else None} "
-        f"thin={thin_any if validate_present else None}",
+        f"thin={thin_any if validate_present else None} "
+        f"vol_gap={vol_gap} quiet_vol_max={quiet_max} trend_vol_min={trend_min} "
+        f"boundary_tight={boundary_tight}",
         file=sys.stderr,
     )
     return 0 if ready else 1

@@ -88,6 +88,8 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
   p90≈1.22 / max≈1.99; TRENDING p50≈3.11 / max≈7.58; quiet→trend gap≈0.04.
   Default threshold 2.0 sits on the boundary; 8 clears all current TRENDING
   (max&lt;8). Still no merge.
+- **Update 2026-07-22T17:20Z:** checklist now surfaces `vol_context`
+  (`boundary_tight=True`, quiet_max≈1.989, trend_min≈2.029). Still BLOCKED.
 
 ## C-02 Prefer higher-reward market weight (selection)
 

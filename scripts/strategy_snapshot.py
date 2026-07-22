@@ -172,6 +172,19 @@ def main() -> int:
         if isinstance(regime_rep, dict)
         else None
     )
+    quiet_vol = (regime_rep or {}).get("quiet_vol_ratio") if isinstance(regime_rep, dict) else None
+    trend_vol = (
+        (regime_rep or {}).get("trending_vol_ratio") if isinstance(regime_rep, dict) else None
+    )
+    vol_gap = (
+        (regime_rep or {}).get("vol_ratio_quiet_trend_gap")
+        if isinstance(regime_rep, dict)
+        else None
+    )
+    quiet_vol_max = quiet_vol.get("max") if isinstance(quiet_vol, dict) else None
+    quiet_vol_p90 = quiet_vol.get("p90") if isinstance(quiet_vol, dict) else None
+    trend_vol_min = trend_vol.get("min") if isinstance(trend_vol, dict) else None
+    trend_vol_p50 = trend_vol.get("p50") if isinstance(trend_vol, dict) else None
     top_rph = None
     if isinstance(reward_card, dict) and reward_card.get("markets"):
         top_rph = reward_card["markets"][0].get("reward_per_hour_usdc")
@@ -181,6 +194,9 @@ def main() -> int:
         f"trending_frac={trending_frac} false_trending_frac={false_trending_frac} "
         f"false_trending_cancel_share={false_trending_cancel_share} "
         f"vol_only_frac={vol_only_frac} "
+        f"quiet_vol_max={quiet_vol_max} quiet_vol_p90={quiet_vol_p90} "
+        f"trend_vol_min={trend_vol_min} trend_vol_p50={trend_vol_p50} "
+        f"vol_gap={vol_gap} "
         f"offline_dn_quote={d_quote}",
         file=sys.stderr,
     )

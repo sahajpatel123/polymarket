@@ -392,6 +392,12 @@ done without evidence (script output / tests) from that cycle.
   min/p50/p90/max and quiet→trend gap for C-01 threshold choice.
 - Evidence: live quiet max≈1.99 vs trend min≈2.03 (gap≈0.04)
 
+### T1-56 Wire vol_context into C-01 checklist + cycle trail
+- Status: `done`
+- Done when: checklist/snapshot/cycles expose quiet_vol_max, trend_vol_min,
+  vol_gap, and boundary_tight vs target threshold (informational only).
+- Evidence: live checklist vol_gap≈0.04 boundary_tight=True
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

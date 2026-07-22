@@ -140,6 +140,8 @@ def main() -> int:
         f"false_trending_frac={snap.get('false_trending_frac')} "
         f"false_trending_cancel_share={snap.get('false_trending_cancel_share')} "
         f"vol_only_frac={snap.get('vol_only_frac')} "
+        f"vol_gap={snap.get('vol_gap')} quiet_vol_max={snap.get('quiet_vol_max')} "
+        f"trend_vol_min={snap.get('trend_vol_min')} "
         f"counterfactual={cf.get('status') or cf.get('mode') or '-'}",
         file=sys.stderr,
     )
