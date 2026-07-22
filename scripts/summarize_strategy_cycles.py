@@ -114,12 +114,19 @@ def main() -> int:
     }
     # Attach compact outage summary when cycles include STALE/DOWN stretches.
     try:
-        from scripts.outage_window_report import analyze_cycles
+        import importlib.util
 
-        outage = analyze_cycles(rows)
-        rep["outage_open"] = outage.get("outage_open")
-        rep["outage_total_h"] = outage.get("outage_total_h")
-        rep["outage_current_duration_s"] = (outage.get("current") or {}).get("duration_s")
+        path_mod = Path(__file__).resolve().parent / "outage_window_report.py"
+        spec = importlib.util.spec_from_file_location("outage_window_report", path_mod)
+        if spec is not None and spec.loader is not None:
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            outage = mod.analyze_cycles(rows)
+            rep["outage_open"] = outage.get("outage_open")
+            rep["outage_total_h"] = outage.get("outage_total_h")
+            rep["outage_current_duration_s"] = (outage.get("current") or {}).get(
+                "duration_s"
+            )
     except Exception:  # noqa: BLE001
         pass
     print(json.dumps(rep, indent=2, sort_keys=True))
