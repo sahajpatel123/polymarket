@@ -566,6 +566,12 @@ done without evidence (script output / tests) from that cycle.
   merges deps_* into outage_status; weekly report shows deps fields.
 - Evidence: live deps_ok=True bumps=0 during ~6.7h Polymarket outage
 
+### T1-85 Correct stale political profile docs
+- Status: `done`
+- Done when: docs/strategy.md + CLAUDE.md list political-longdated/hot as
+  shipped in config/strategy.toml; remove "absent" gap; profiles validate.
+- Evidence: StrategyProfile.model_validate OK for all 4 config profiles
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
