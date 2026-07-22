@@ -191,6 +191,21 @@ def main() -> int:
     if merge_fields:
         _merge_outage_status(status_path, merge_fields)
 
+    code, vout, verr = _run([
+        py,
+        "scripts/validate_outage_status.py",
+        "--path",
+        str(status_path),
+        "--max-age-s",
+        "900",
+    ])
+    line = _status_line(verr, vout)
+    report["steps"]["outage_status_validate"] = {
+        "rc": code,
+        "status_line": line,
+        **_parse_kv(line),
+    }
+
     if args.append:
         cmd = [py, "scripts/append_strategy_cycle.py"]
         if args.skip_connectivity:
@@ -213,6 +228,7 @@ def main() -> int:
     unused = report["steps"].get("unused_knobs") or {}
     outage = report["steps"].get("outage") or {}
     gate = report["steps"].get("gate") or {}
+    ost_val = report["steps"].get("outage_status_validate") or {}
     ap_step = report["steps"].get("append") or {}
     weekly = report["steps"].get("weekly") or {}
     conn_line = str(conn.get("status_line") or "")
@@ -233,6 +249,7 @@ def main() -> int:
         f"quotes={outage.get('quotes')} "
         f"tier2_allowed={gate.get('tier2_allowed')} "
         f"gate_reason={gate.get('gate_reason')} "
+        f"outage_status={ost_val.get('status')} "
         f"runtime_h={sm.get('runtime_h')} eta_paused={sm.get('eta_paused')} "
         f"tape_frozen={sm.get('tape_frozen')} "
         f"unused_set={unused.get('n_set_unused')} "
@@ -251,6 +268,8 @@ def main() -> int:
     if report["steps"]["outage"]["rc"] not in (0, 2):
         bad = True
     if report["steps"]["gate"]["rc"] not in (0, 1):
+        bad = True
+    if report["steps"]["outage_status_validate"]["rc"] not in (0, 1, 2):
         bad = True
     if args.append and report["steps"]["append"]["rc"] != 0:
         bad = True
