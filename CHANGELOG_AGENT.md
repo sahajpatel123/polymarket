@@ -41,3 +41,4 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T04:50:00Z | Tier1 | skipped — no new data (Tier1 complete; Tier2 gated NO_LOG)
 2026-07-22T05:05:00Z | Tier1 | skipped — no new data (Tier1 complete; Tier2 gated NO_LOG)
 2026-07-22T06:30:00Z | Tier1 | skipped — no new data (catch-up after tick gap; Tier2 gated NO_LOG)
+2026-07-22T06:50:00Z | Tier1 | T1-09 strategy A/B compare harness + holdout slice (Tier2 gated NO_LOG) | `uv run pytest` → 140 passed, 2 skipped; `compare_strategies.py` status=OK window=full dn_quote=0.0 | merged

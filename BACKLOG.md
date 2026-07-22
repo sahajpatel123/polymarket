@@ -73,6 +73,15 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: `scripts/metrics_dashboard.py` → `logs/dashboard.html`;
   `polymaker dashboard`; `tests/test_dashboard.py`
 
+### T1-09 Strategy A/B compare harness (eval infra for Tier-2)
+- Status: `done`
+- Done when: a script replays one journal through baseline vs candidate
+  StrategyProfile overrides, prints T1-01 metric deltas (spread, markout,
+  inventory drift, reward accrual, quote/cancel counts), and supports a
+  timestamp holdout slice for OOS scoring. No strategy math changes.
+- Evidence: `src/polymaker/replay/compare.py`, `scripts/compare_strategies.py`,
+  `tests/test_compare_strategies.py`
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
