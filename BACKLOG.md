@@ -488,6 +488,12 @@ done without evidence (script output / tests) from that cycle.
   as unused; strategy.md points at unused_knob_toml_scan.
 - Evidence: file header + inline comments on newsom/political/romania profiles
 
+### T1-72 Record unused_set in strategy cycle trail
+- Status: `done`
+- Done when: append stores unused_knobs status; summarize surfaces
+  last_unused_set.
+- Evidence: live unused_set=9 on cycle append during outage
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

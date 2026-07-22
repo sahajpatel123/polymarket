@@ -65,6 +65,7 @@ def main() -> int:
         ("paper_schema", [py, "scripts/verify_paper_schema.py", "--tail", "50"]),
         ("c01", [py, "scripts/c01_promotion_checklist.py"]),
         ("outage", [py, "scripts/outage_window_report.py"]),
+        ("unused_knobs", [py, "scripts/unused_knob_toml_scan.py"]),
     ]
     if not args.skip_connectivity:
         cmds.append(
@@ -110,6 +111,7 @@ def main() -> int:
         "paper_schema": statuses.get("paper_schema", {}),
         "c01": statuses.get("c01", {}),
         "outage": statuses.get("outage", {}),
+        "unused_knobs": statuses.get("unused_knobs", {}),
         "connectivity": statuses.get(
             "connectivity",
             {"status": "SKIPPED"} if args.skip_connectivity else {},
@@ -137,6 +139,7 @@ def main() -> int:
     cf = row.get("counterfactual") or {}
     c01 = row.get("c01") or {}
     outage = row.get("outage") or {}
+    unused = row.get("unused_knobs") or {}
     tape_frozen = bool(row.get("tape_frozen"))
     print(
         f"status=OK appended={out} runtime_h={g.get('runtime_hours')} "
@@ -163,6 +166,7 @@ def main() -> int:
         f"suppress_target={c01.get('suppress_target')} "
         f"outage_open={outage.get('open')} outage_total_h={outage.get('total_h')} "
         f"outage_alert={c01.get('outage_alert')} "
+        f"unused_set={unused.get('n_set_unused')} "
         f"counterfactual={cf.get('status') or cf.get('mode') or '-'}",
         file=sys.stderr,
     )
