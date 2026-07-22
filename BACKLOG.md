@@ -458,6 +458,12 @@ done without evidence (script output / tests) from that cycle.
   regime/checklist/summarize/deps output reflecting STALE + outage_alert.
 - Evidence: report Generated 2026-07-22T19:10Z; outage ~3.7h documented
 
+### T1-67 Consolidated strategy_tick ops script
+- Status: `done`
+- Done when: strategy_tick.py runs connectivity + C-01 + summarize in one
+  shot; optional --append; unit tests for status parsing.
+- Evidence: live status=OK with c01=BLOCKED outage_alert=True
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
