@@ -54,3 +54,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T07:28:00Z | Tier1 | T1-13 knob sweep harness; synth micro-jitter; paper ~28m (Tier2 gated) | sweep reprice_ticks 1:+3q/c 5:-1q/c; pytest sweep+compare 6 passed; snapshot quotes=298 reward~10.09 | merged
 
 2026-07-22T07:38:00Z | Tier1 | T1-14 replay_livecfg token auto-detect + live-tape A/B; paper ~38m (Tier2 gated) | replay_livecfg status=OK markets=2 replay_quotes=23; live-tiny vs newsom-mm dn_quote=+27/+22; pytest test_replay_livecfg PASS | merged
+
+2026-07-22T07:49:00Z | Tier1 | T1-15 paper_data_gate counts metrics quotes; paper ~0.82h (Tier2 gated on hours only) | gate quote_events=531 quotes_for_gate=531 reason=need_hours>=24.0; test_paper_data_gate PASS; reward_accrual_sum~17.5 | merged

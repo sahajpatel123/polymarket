@@ -118,6 +118,13 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: `scripts/replay_livecfg.py`, `tests/test_replay_livecfg.py`;
   live-tiny vs newsom-mm dn_quote=+27/+22 on two live markets
 
+### T1-15 Paper gate counts metrics quotes (BACKLOG-aligned)
+- Status: `done`
+- Done when: paper_data_gate uses metrics-paper.jsonl `event=quote` counts for the
+  ≥500 quote threshold (requotes still reported); 24h runtime unchanged.
+- Evidence: `scripts/paper_data_gate.py`, `tests/test_paper_data_gate.py`;
+  live quotes_for_gate=531, tier2 blocked only on need_hours>=24.0
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

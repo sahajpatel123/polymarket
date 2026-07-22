@@ -4,6 +4,11 @@
 Prints literal counts/windows. Exit 0 always when the check runs cleanly;
 exit 2 if the log looks unreadable/corrupt.
 
+Quote threshold follows BACKLOG wording (≥500 *quotes*): prefers
+metrics-paper.jsonl `event=quote` counts when that sibling log exists, and
+still reports structlog requote lines for churn context. Runtime still comes
+from the paper structlog timeline.
+
 Usage:
   uv run python scripts/paper_data_gate.py
   uv run python scripts/paper_data_gate.py --log logs/paper.jsonl
@@ -34,11 +39,40 @@ def _ts(obj: dict) -> float | None:
     return None
 
 
+def _sibling_metrics(paper_log: Path) -> Path | None:
+    """livecfg/logs/paper.jsonl → livecfg/logs/metrics-paper.jsonl, etc."""
+    cand = paper_log.with_name("metrics-paper.jsonl")
+    if cand.exists():
+        return cand
+    for p in (Path("livecfg/logs/metrics-paper.jsonl"), Path("logs/metrics-paper.jsonl")):
+        if p.exists():
+            return p
+    return None
+
+
+def _count_metric_quotes(path: Path) -> int:
+    n = 0
+    with path.open() as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(obj, dict) and obj.get("event") == "quote":
+                n += 1
+    return n
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--log", default=None,
                     help="Paper JSONL (default: first existing among "
                          "logs/paper.jsonl, livecfg/logs/paper.jsonl)")
+    ap.add_argument("--metrics-log", default=None,
+                    help="Optional metrics JSONL for quote event counts")
     ap.add_argument("--min-hours", type=float, default=24.0)
     ap.add_argument("--min-quotes", type=int, default=500)
     args = ap.parse_args()
@@ -100,11 +134,30 @@ def main() -> int:
     elif len(times) == 1:
         runtime_h = 0.0
 
-    allowed = runtime_h >= args.min_hours and n_requote >= args.min_quotes
+    metrics_path = Path(args.metrics_log) if args.metrics_log else _sibling_metrics(path)
+    quote_events = 0
+    if metrics_path is not None and metrics_path.exists():
+        quote_events = _count_metric_quotes(metrics_path)
+        print(f"metrics_path={metrics_path.resolve()}")
+    # BACKLOG: ≥500 quotes. Prefer metrics quote events; fall back to requotes.
+    quotes_for_gate = quote_events if quote_events > 0 else n_requote
+
+    hours_ok = runtime_h >= args.min_hours
+    quotes_ok = quotes_for_gate >= args.min_quotes
+    allowed = hours_ok and quotes_ok
+    reason_parts = []
+    if not hours_ok:
+        reason_parts.append(f"need_hours>={args.min_hours}")
+    if not quotes_ok:
+        reason_parts.append(f"need_quotes>={args.min_quotes}")
+    reason = " ".join(reason_parts) if reason_parts else "ok"
+
     print(f"status=OK lines={n_lines} json_lines={n_json} bad_lines={n_bad}")
     print(f"runtime_hours={runtime_h:.4f}")
+    print(f"quote_events={quote_events}")
     print(f"requote_lines={n_requote}")
-    print(f"tier2_allowed={str(allowed).lower()} need_hours>={args.min_hours} need_quotes>={args.min_quotes}")
+    print(f"quotes_for_gate={quotes_for_gate}")
+    print(f"tier2_allowed={str(allowed).lower()} reason={reason}")
     return 0
 
 

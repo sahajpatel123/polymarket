@@ -24,27 +24,6 @@ from polymaker.domain import MarketMeta, TokenMeta
 from polymaker.replay.compare import compare_profiles, load_named_profile, profile_from_overrides
 
 
-def _meta(tick: float = 0.01) -> MarketMeta:
-    return MarketMeta(
-        condition_id="0xreplay",
-        question="sweep",
-        slug="sweep",
-        tokens=(TokenMeta("yes-token", "Yes"), TokenMeta("no-token", "No")),
-        tick_size=tick,
-        neg_risk=False,
-        min_order_size=5.0,
-        rewards_min_size=10.0,
-        rewards_max_spread=3.0,
-        rewards_daily_rate=50.0,
-        maker_fee_bps=0,
-        taker_fee_bps=100,
-        fees_enabled=True,
-        end_date_iso=None,
-        event_id=None,
-        rebate_rate=0.25,
-    )
-
-
 def _parse_values(raw: str, knob: str) -> list[Any]:
     out: list[Any] = []
     for part in raw.split(","):
@@ -73,6 +52,9 @@ def main() -> int:
     ap.add_argument("--tick-size", type=float, default=0.01)
     ap.add_argument("--holdout-frac", type=float, default=0.0)
     ap.add_argument("--use-holdout", action="store_true")
+    ap.add_argument("--yes-token", default="yes-token")
+    ap.add_argument("--no-token", default="no-token")
+    ap.add_argument("--condition-id", default="0xreplay")
     args = ap.parse_args()
 
     journal = Path(args.journal)
@@ -90,6 +72,25 @@ def main() -> int:
     base_val = getattr(baseline, args.knob)
     values = _parse_values(args.values, args.knob)
 
+    meta = MarketMeta(
+        condition_id=args.condition_id,
+        question="sweep",
+        slug="sweep",
+        tokens=(TokenMeta(args.yes_token, "Yes"), TokenMeta(args.no_token, "No")),
+        tick_size=args.tick_size,
+        neg_risk=False,
+        min_order_size=5.0,
+        rewards_min_size=10.0,
+        rewards_max_spread=3.0,
+        rewards_daily_rate=50.0,
+        maker_fee_bps=0,
+        taker_fee_bps=100,
+        fees_enabled=True,
+        end_date_iso=None,
+        event_id=None,
+        rebate_rate=0.25,
+    )
+
     rows: list[dict[str, Any]] = []
     with tempfile.TemporaryDirectory(prefix="sweep_") as td:
         out_root = Path(td)
@@ -97,7 +98,7 @@ def main() -> int:
             cand = profile_from_overrides(baseline, {args.knob: val})
             result = compare_profiles(
                 journal,
-                _meta(args.tick_size),
+                meta,
                 baseline,
                 cand,
                 out_root / f"v{i}",
