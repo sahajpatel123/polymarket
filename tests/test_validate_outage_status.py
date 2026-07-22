@@ -15,6 +15,7 @@ def _full(**overrides):
         "outage_total_h": 6.5,
         "outage_alert": True,
         "outage_alert_severe": True,
+        "outage_alert_prolonged": False,
         "hours_to_tier2_gate": 15.63,
         "runtime_h": 8.37,
         "quotes": 5529,

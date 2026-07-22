@@ -132,6 +132,8 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
   validator recommends health/ensure/deps/tape keys. Still DOWN ~7.8h.
 - **Update 2026-07-22T23:30Z:** `outage_alert_prolonged=True` (≥8h). Loop tick
   100; quotes still 5529 / runtime 8.37h; no Tier-2 PR.
+- **Update 2026-07-22T23:40Z:** `outage_alert_prolonged` is now a required
+  `outage_status` key. Still DOWN ~8.2h; no Tier-2 PR.
 
 ## C-02 Prefer higher-reward market weight (selection)
 

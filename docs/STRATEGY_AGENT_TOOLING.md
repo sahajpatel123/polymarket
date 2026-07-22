@@ -54,10 +54,8 @@ Compact monitor snapshot written by `strategy_tick` / `outage_window_report`
 / `await_polymarket_recovery`. Validated by `validate_outage_status.py`.
 
 **Required** (fail if missing): `ts`, `outage_open`, `outage_total_h`,
-`outage_alert` (≥3h), `outage_alert_severe` (≥5h), `hours_to_tier2_gate`,
-`runtime_h`, `quotes`.
-
-Also emitted: `outage_alert_prolonged` (≥8h).
+`outage_alert` (≥3h), `outage_alert_severe` (≥5h), `outage_alert_prolonged`
+(≥8h), `hours_to_tier2_gate`, `runtime_h`, `quotes`.
 
 **Recommended** (warned if missing): `connectivity`, `tier2_allowed`,
 `gate_reason`, `runtime_basis`, `tape_frozen`, `eta_paused`,

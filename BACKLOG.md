@@ -615,6 +615,12 @@ done without evidence (script output / tests) from that cycle.
   outage_total_h≥8; strategy_tick/summarize/append/weekly surface it.
 - Evidence: live outage_alert_prolonged=True at ~8.0h DOWN (loop tick 100)
 
+### T1-93 Require outage_alert_prolonged in status validation
+- Status: `done`
+- Done when: validate_outage_status REQUIRED_KEYS includes
+  outage_alert_prolonged; docs updated; live validate OK; cycle trail stamped.
+- Evidence: live status=OK with prolonged=True; summarize last_outage_alert_prolonged=True
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
