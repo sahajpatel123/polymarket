@@ -155,6 +155,13 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: `scripts/strategy_snapshot.py` status line with top_reward_per_hour
   + trending_frac
 
+### T1-20 Scanner rank vs realized reward/hour
+- Status: `done`
+- Done when: a script joins catalog scanner scores with paper reward_per_hour
+  and reports Spearman ρ + rank disagreements (T2-01 evidence).
+- Evidence: `scripts/rank_vs_realized.py`; live spearman=-1.0 disagreements=2
+  (Vance wins realized, Newsom wins scanner)
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

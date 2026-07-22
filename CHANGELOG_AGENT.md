@@ -66,3 +66,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T08:28:00Z | Tier1 | T1-19 snapshot adds reward+regime; C-01 still watching (Tier2 gated on hours) | strategy_snapshot status=OK; TRENDING at t+84m with flowz~0; gate quotes=951 need_hours>=24 | merged
 
 2026-07-22T08:29:00Z | Tier1 | T1-19 follow-up: land strategy_snapshot reward+regime code | snapshot status includes top_reward_per_hour+trending_frac | merged
+
+2026-07-22T08:38:00Z | Tier1 | T1-20 scanner vs realized reward ranks; inverted on live pair (Tier2 gated) | rank_vs_realized status=OK spearman=-1.0 disagreements=2; pytest 3 passed; gate quotes=1069 need_hours>=24 | merged

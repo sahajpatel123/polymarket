@@ -26,5 +26,8 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
 - **Hypothesis:** live scorecard shows one market earning ~2× reward/hour of
   the other under the same `live-tiny` profile — ranking should weight
   realized reward accrual, not only scanner density.
-- **Evidence:** `reward_scorecard.py` top ~$12.8/h vs lower sibling.
-- **Status:** `watching` (needs multi-day window + T2-01 PR)
+- **Evidence (2026-07-22 ~1.6h paper):** `rank_vs_realized.py` →
+  `spearman_scanner_vs_realized=-1.0`, disagreements=2.
+  Scanner rank 1 = Newsom (~$8.9/h realized); realized rank 1 = Vance (~$12.8/h).
+- **Status:** `watching` (needs multi-day window + T2-01 PR; do not retune
+  score_market on this tiny n=2 sample alone)
