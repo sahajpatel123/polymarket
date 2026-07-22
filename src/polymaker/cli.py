@@ -181,7 +181,25 @@ def export_csv(
 
 
 @app.command()
-def doctor(config_dir: str = typer.Option("config", help="config directory")) -> None:
+def dashboard(
+    config_dir: str = typer.Option("config", help="config directory"),
+    paper: bool = typer.Option(True, "--paper/--live", help="which metrics log to render"),
+    out: str = typer.Option("logs/dashboard.html", help="HTML output path"),
+) -> None:
+    """Render a local HTML metrics dashboard from the metrics JSONL log."""
+    from polymaker.metrics.dashboard import write_dashboard
+
+    cfg = Config.load(config_dir)
+    log_name = "metrics-paper.jsonl" if paper else "metrics-live.jsonl"
+    log_path = Path(cfg.paths.log_dir) / log_name
+    out_path = Path(out)
+    rep = write_dashboard(log_path, out_path)
+    console.print(
+        f"[green]Wrote[/green] {out_path}  "
+        f"(quotes={rep.n_quote} fills={rep.n_fill} "
+        f"spread={rep.realized_spread_usdc:.4f})"
+    )
+
     """Preflight checks: config, wallet auth, balance/allowance, WS reachability."""
     from polymaker.doctor import run_doctor
 

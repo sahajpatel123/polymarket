@@ -92,7 +92,15 @@ uv run polymaker run
 # ops
 uv run polymaker status        # positions / open orders from SQLite
 uv run polymaker pnl           # latest equity / daily PnL snapshot
+uv run polymaker dashboard     # HTML health view from metrics log
 uv run polymaker cancel-all    # panic button
+```
+
+Glance metrics without reading JSONL:
+
+```bash
+uv run python scripts/metrics_dashboard.py   # writes logs/dashboard.html
+open logs/dashboard.html
 ```
 
 ### Paper mode details
@@ -140,6 +148,11 @@ POLYMAKER_LIVE=1 uv run pytest tests/test_live_marketdata.py   # live WS
 uv run ruff check src tests
 uv run mypy src
 ```
+
+GitHub Actions runs `uv run pytest -q` on every push and pull request to
+`main` (see [`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Enable the
+`pytest` check as a required status check in branch protection so merges cannot
+land without a green suite.
 
 ## Status
 

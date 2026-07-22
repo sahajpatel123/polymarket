@@ -35,33 +35,176 @@ done without evidence (script output / tests) from that cycle.
   `tests/test_alerts.py`
 
 ### T1-04 Structured logging
-- Status: `todo`
+- Status: `done`
 - Done when: all logs are JSON with consistent fields, rotated, and greppable
   by market ID and time range. (Partial: structlog JSON file exists; rotation
   and market-ID greppability still incomplete.)
+- Evidence: TimedRotatingFileHandler + required fields in `logging.py`;
+  `scripts/grep_logs.py` / `polymaker.loggrep`; `tests/test_logging.py`
 
 ### T1-05 Test suite for deterministic components
-- Status: `todo`
+- Status: `done`
 - Done when: order reconciliation, quote-generation math, and config parsing
   each have unit tests covering documented edge cases (zero inventory, max
   inventory, missing market data, disconnect mid-quote). (Partial suite exists;
   edge-case matrix not fully documented/covered.)
+- Evidence: `docs/EDGE_CASES.md`; `tests/test_config.py`; quoting/reconcile
+  edge tests; disconnect covered by hardening cancel-failure test
 
 ### T1-06 CI pipeline
-- Status: `todo`
+- Status: `done`
 - Done when: every commit automatically runs the full test suite and reports
   pass/fail before merge is possible.
+- Evidence: `.github/workflows/ci.yml` (pytest on push/PR to main); README notes
+  required status check for merge gating
 
 ### T1-07 Dependency audit script
-- Status: `todo`
+- Status: `done`
 - Done when: a script checks every dependency against pinned versions/hashes
   and flags anything with post-install scripts or unexplained version bumps.
+- Evidence: `scripts/deps_audit.py`, `deps/baseline.json`, `tests/test_deps_audit.py`;
+  CI runs `--fail-on-flags`
 
 ### T1-08 Local metrics dashboard
-- Status: `todo`
+- Status: `done`
 - Done when: the metrics from T1-01 are visualized simply enough that a human
   glancing at it once or twice a day can assess system health without reading
   raw logs.
+- Evidence: `scripts/metrics_dashboard.py` → `logs/dashboard.html`;
+  `polymaker dashboard`; `tests/test_dashboard.py`
+
+### T1-09 Strategy A/B compare harness (eval infra for Tier-2)
+- Status: `done`
+- Done when: a script replays one journal through baseline vs candidate
+  StrategyProfile overrides, prints T1-01 metric deltas (spread, markout,
+  inventory drift, reward accrual, quote/cancel counts), and supports a
+  timestamp holdout slice for OOS scoring. No strategy math changes.
+- Evidence: `src/polymaker/replay/compare.py`, `scripts/compare_strategies.py`,
+  `tests/test_compare_strategies.py`
+
+### T1-10 Multi-regime synth journal + named-profile compare
+- Status: `done`
+- Done when: a deterministic quiet→jump→recovery journal can be generated and
+  compared across named strategy.toml profiles (e.g. newsom-mm vs romania-pm)
+  via the T1-09 harness; paper_data_gate discovers `livecfg/logs/paper.jsonl`.
+- Evidence: `src/polymaker/replay/synth.py`, `scripts/synth_regime_journal.py`,
+  `fixtures/regime_jump.jsonl`; compare status=OK dn_quote=-4.0
+
+### T1-11 Strategy-loop snapshot script
+- Status: `done`
+- Done when: one command prints paper_data_gate + live paper metrics + offline
+  named-profile compare on the synth regime tape; paper_metrics auto-finds
+  livecfg logs.
+- Evidence: `scripts/strategy_snapshot.py`; status=OK with paper_quotes + reward_accrual_sum
+
+### T1-12 Paper regime/churn report
+- Status: `done`
+- Done when: a script summarizes requote regime mix, transitions, and
+  cancel/place churn from paper.jsonl (evidence surface for T2-04/T2-05).
+- Evidence: `scripts/paper_regime_report.py`, `tests/test_paper_regime_report.py`;
+  live: trending_frac≈0.067 with trending_flowz_mean=0.0 (vol-ratio trips)
+
+### T1-13 Offline StrategyProfile knob sweep
+- Status: `done`
+- Done when: a script sweeps one profile knob across values on a fixed journal
+  and prints T1-01 metric deltas vs baseline (prep for Tier-2 PRs).
+- Evidence: `scripts/sweep_profile_knob.py`, `tests/test_sweep_profile_knob.py`;
+  reprice_ticks sweep on regime fixture: 1→dn_quote=+3, 5→dn_quote=-1
+
+### T1-14 Livecfg journal replay with token auto-detect
+- Status: `done`
+- Done when: a script infers YES/NO tokens from metrics-paper.jsonl and replays
+  livecfg/journal/paper.jsonl per market; optional named-profile A/B on that tape.
+- Evidence: `scripts/replay_livecfg.py`, `tests/test_replay_livecfg.py`;
+  live-tiny vs newsom-mm dn_quote=+27/+22 on two live markets
+
+### T1-15 Paper gate counts metrics quotes (BACKLOG-aligned)
+- Status: `done`
+- Done when: paper_data_gate uses metrics-paper.jsonl `event=quote` counts for the
+  ≥500 quote threshold (requotes still reported); 24h runtime unchanged.
+- Evidence: `scripts/paper_data_gate.py`, `tests/test_paper_data_gate.py`;
+  live quotes_for_gate=531, tier2 blocked only on need_hours>=24.0
+
+### T1-16 Per-market reward/churn scorecard
+- Status: `done`
+- Done when: a script ranks live paper markets by reward_per_hour with regime
+  mix and cancel churn (T2-01 evidence surface).
+- Evidence: `scripts/reward_scorecard.py`, `tests/test_reward_scorecard.py`;
+  live top market ~12.8 USDC/h reward accrual; trend_vol_ratio live sweep
+  2→8 dn_quote=-24 (candidate for later T2-04, not merged)
+
+### T1-17 Knob candidate OOS validator + candidates doc
+- Status: `done`
+- Done when: a script compares full-window vs holdout metric deltas for a knob
+  and flags non-replicated / thin-holdout results; candidates tracked in
+  docs/STRATEGY_CANDIDATES.md.
+- Evidence: `scripts/validate_knob_candidate.py`; live trend_vol_ratio
+  full_dn_quote=-24 holdout_dn_quote=0 oos_replicated=false thin_holdout=true
+
+### T1-18 Event-count holdout + market-token journal filter
+- Status: `done`
+- Done when: holdout splits can cut by event count; compare/validate filter
+  multi-market journals to the target YES/NO tokens before slicing.
+- Evidence: `slice_journal_rows(split=events)`, `filter_rows_for_tokens`;
+  C-01 still oos_replicated=false after market-filtered event holdout
+
+### T1-19 Strategy snapshot includes reward + regime
+- Status: `done`
+- Done when: strategy_snapshot.py prints gate, reward scorecard, and regime
+  report alongside offline compare in one command.
+- Evidence: `scripts/strategy_snapshot.py` status line with top_reward_per_hour
+  + trending_frac
+
+### T1-20 Scanner rank vs realized reward/hour
+- Status: `done`
+- Done when: a script joins catalog scanner scores with paper reward_per_hour
+  and reports Spearman ρ + rank disagreements (T2-01 evidence).
+- Evidence: `scripts/rank_vs_realized.py`; live spearman=-1.0 disagreements=2
+  (Vance wins realized, Newsom wins scanner)
+
+### T1-21 Reward accrual decomposition in rank report
+- Status: `done`
+- Done when: rank_vs_realized also prints rewards_daily_rate, in_band_hours,
+  in_band_frac so rank inversions can be attributed to pool size vs uptime.
+- Evidence: both live markets in_band_frac≈1.0; daily_rate 308 vs 214 explains
+  realized gap
+
+### T1-22 Scanner component breakdown in rank report
+- Status: `done`
+- Done when: rank report surfaces rebate_potential / reward_density / extremity
+  from score_json so inversions can be attributed to rebate-vs-liquidity-reward.
+- Evidence: Newsom rebate_pot≈93 vs Vance≈10; paper has 0 fills so realized
+  path is liquidity-reward only
+
+### T1-23 Strategy cycle history appender
+- Status: `done`
+- Done when: one command appends gate+snapshot+rank status into a JSONL history
+  file for longitudinal Agent-1 evidence while waiting on 24h.
+- Evidence: `scripts/append_strategy_cycle.py`; C-01 recheck full_dn_quote=-42
+  still fails OOS
+
+### T1-24 Liquidity-reward oracle rank in rank report
+- Status: `done`
+- Done when: rank_vs_realized also ranks by rewards_daily_rate (oracle for
+  zero-fill / full in-band paper) and reports Spearman vs scanner.
+- Evidence: live spearman_scanner_vs_liquidity_oracle=-1.0 (same inversion)
+
+### T1-25 Paper collector staleness watchdog
+- Status: `done`
+- Done when: a script fails if newest requote/quote is older than N seconds;
+  wired into append_strategy_cycle.
+- Evidence: `scripts/paper_health.py`; live status=OK fresh ages
+
+### T1-26 Strategy cycle summary + ETA to 24h gate
+- Status: `done`
+- Done when: a script summarizes strategy_cycles.jsonl with hours remaining and
+  wall-clock ETA to the Tier-2 runtime gate.
+- Evidence: `scripts/summarize_strategy_cycles.py`
+
+### T1-27 Strategy agent tooling index doc
+- Status: `done`
+- Done when: docs list the Agent-1 evidence scripts and point at open candidates.
+- Evidence: `docs/STRATEGY_AGENT_TOOLING.md`
 
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 

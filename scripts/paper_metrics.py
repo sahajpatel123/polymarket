@@ -20,9 +20,21 @@ from polymaker.metrics.analyze import analyze
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--log", default="logs/metrics-paper.jsonl")
+    ap.add_argument(
+        "--log",
+        default=None,
+        help="Metrics JSONL (default: first existing among "
+             "livecfg/logs/metrics-paper.jsonl, logs/metrics-paper.jsonl)",
+    )
     args = ap.parse_args()
-    path = Path(args.log)
+    if args.log:
+        path = Path(args.log)
+    else:
+        candidates = [
+            Path("livecfg/logs/metrics-paper.jsonl"),
+            Path("logs/metrics-paper.jsonl"),
+        ]
+        path = next((p for p in candidates if p.exists()), candidates[-1])
     rep = analyze(path)
     print(json.dumps(rep.as_dict(), indent=2, sort_keys=True))
     if not path.exists():

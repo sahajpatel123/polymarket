@@ -44,3 +44,80 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T06:50:00Z | perf-agent | P1-01 latency/throughput benchmark harness | scripts/bench_latency.py + tests/test_bench_latency.py (5 tests); baseline: replay p50=41.5us p95=71.2us p99=115.4us (26842 eps); pure p50=12.4us p95=16.4us p99=16.7us (77584 ops/s) | merged
 2026-07-22T07:00:00Z | perf-agent | P1-02 profile hot path (cProfile) | perf/profile_2026-07-22.txt; top 3: OrderBook.view() 19.1%, construct_quotes() 15.7%, reconcile() 7.1% | merged
 2026-07-22T07:15:00Z | perf-agent | P1-03 optimize OrderBook.view() | _nth_bid/_nth_ask fast path (peekitem n=0/n=1), _top_size (islice), depth_within (direct loop); golden-output PASS (byte-identical); 142 tests pass; pure p95 16.4→13.2us (-19.5%) | merged
+<<<<<<< perf-bench
+=======
+2026-07-22T07:20:00Z | Tier1 | T1-09 strategy A/B compare harness + holdout slice (Tier2 gated NO_LOG) | `uv run pytest` → 140 passed, 2 skipped; `compare_strategies.py` status=OK window=full dn_quote=0.0 | merged
+2026-07-22T07:01:00Z | Tier1 | T1-10 synth regime journal + named-profile compare; paper gate finds livecfg logs; paper collector started | pytest 147 passed, 2 skipped; compare newsom-mm vs romania-pm dn_quote=-4.0; paper_data_gate status=OK requote_lines growing | merged
+
+2026-07-22T07:08:00Z | Tier1 | T1-11 strategy_snapshot + paper_metrics livecfg path; paper collecting (Tier2 gated) | strategy_snapshot status=OK; pytest green; reward_accrual on live paper | merged
+
+2026-07-22T07:18:00Z | Tier1 | T1-12 paper regime/churn report; paper ~18m (Tier2 gated) | paper_regime_report status=OK requotes=104 trending_frac=0.067 cancel_per_place=0.05 transitions=8 trending_flowz_mean=0.0; pytest test_paper_regime_report PASS | merged
+
+2026-07-22T07:28:00Z | Tier1 | T1-13 knob sweep harness; synth micro-jitter; paper ~28m (Tier2 gated) | sweep reprice_ticks 1:+3q/c 5:-1q/c; pytest sweep+compare 6 passed; snapshot quotes=298 reward~10.09 | merged
+
+2026-07-22T07:38:00Z | Tier1 | T1-14 replay_livecfg token auto-detect + live-tape A/B; paper ~38m (Tier2 gated) | replay_livecfg status=OK markets=2 replay_quotes=23; live-tiny vs newsom-mm dn_quote=+27/+22; pytest test_replay_livecfg PASS | merged
+
+2026-07-22T07:49:00Z | Tier1 | T1-15 paper_data_gate counts metrics quotes; paper ~0.82h (Tier2 gated on hours only) | gate quote_events=531 quotes_for_gate=531 reason=need_hours>=24.0; test_paper_data_gate PASS; reward_accrual_sum~17.5 | merged
+
+2026-07-22T07:58:00Z | Tier1 | T1-16 reward scorecard; live trend_vol_ratio sweep evidence (Tier2 gated on hours) | scorecard status=OK reward_sum~21.3 top_rph~12.8; sweep trend_vol_ratio 8:dn_quote=-24; pytest test_reward_scorecard PASS; gate quotes=627 need_hours>=24 | merged
+
+2026-07-22T08:08:00Z | Tier1 | T1-17 OOS knob validator; trend_vol_ratio candidate NOT replicated on thin holdout (Tier2 gated) | validate status=OK full_dn_quote=-24 holdout_dn_quote=0 oos_replicated=false thin_holdout=true; docs/STRATEGY_CANDIDATES.md; gate quotes=737 need_hours>=24 | merged
+
+2026-07-22T08:18:00Z | Tier1 | T1-18 event holdout + market token filter; C-01 still fails OOS (Tier2 gated) | validate events split full_dn_quote=-27 holdout_dn_quote=0 oos_replicated=false; pytest compare+validate 9 passed; gate quotes=845 need_hours>=24 | merged
+
+2026-07-22T08:28:00Z | Tier1 | T1-19 snapshot adds reward+regime; C-01 still watching (Tier2 gated on hours) | strategy_snapshot status=OK; TRENDING at t+84m with flowz~0; gate quotes=951 need_hours>=24 | merged
+
+2026-07-22T08:29:00Z | Tier1 | T1-19 follow-up: land strategy_snapshot reward+regime code | snapshot status includes top_reward_per_hour+trending_frac | merged
+
+2026-07-22T08:38:00Z | Tier1 | T1-20 scanner vs realized reward ranks; inverted on live pair (Tier2 gated) | rank_vs_realized status=OK spearman=-1.0 disagreements=2; pytest 3 passed; gate quotes=1069 need_hours>=24 | merged
+
+2026-07-22T08:48:00Z | Tier1 | T1-20b reward decomposition: in-band~100o rank invert = daily_rate gap (Tier2 gated) | rank_vs_realized daily 308 vs 214, in_band_frac=1.0 both; spearman=-1.0; gate quotes=1175 need_hours>=24 | merged
+
+2026-07-22T08:58:00Z | Tier1 | T1-22 scanner components: rebate_pot drives Newsom rank; paper realized is liquidity-reward only (Tier2 gated) | rebate 93 vs 10; daily_rate 214 vs 308; in_band_frac=1; spearman=-1; gate quotes=1281 need_hours>=24 | merged
+
+2026-07-22T09:08:00Z | Tier1 | T1-23 cycle history appender; C-01 still fails OOS at 2.1h (Tier2 gated) | append_strategy_cycle status=OK; validate full_dn_quote=-42 holdout=0 oos=false; gate quotes=1384 need_hours>=24 | merged
+
+2026-07-22T09:18:00Z | Tier1 | T1-24 liquidity-oracle rank; scanner vs oracle spearman=-1 under zero-fill paper (Tier2 gated) | rank_vs_realized spearman_vs_oracle=-1.0; pytest pass; gate quotes=1496 need_hours>=24 | merged
+
+2026-07-22T09:28:00Z | Tier1 | T1-25 paper_health staleness watchdog; collector fresh (Tier2 gated) | paper_health status=OK; append cycle includes health; pytest test_paper_health PASS; gate quotes=1611 need_hours>=24 | merged
+
+2026-07-22T09:38:00Z | Tier1 | T1-26 cycle summary ETA to 24h gate; paper healthy (Tier2 gated) | summarize_strategy_cycles status=OK; append health=OK; gate quotes=1725 need_hours>=24 | merged
+
+2026-07-22T09:48:00Z | Tier1 | T1-27 strategy agent tooling index; paper ~2.8h healthy (Tier2 gated) | docs/STRATEGY_AGENT_TOOLING.md; summarize eta_wall_h~21.1; health=OK quotes=1839 | merged
+
+2026-07-22T09:58:00Z | Tier1 | skipped — no new Tier1; paper collecting toward 24h (Tier2 gated) | append health=OK runtime_h=2.97 quotes=1950; summarize hours_remaining=21.03 eta_wall_h~20.9; spearman=-1.0 | skipped
+
+2026-07-22T10:08:00Z | Tier1 | skipped — waiting on 24h paper gate (collector healthy) | runtime_h=3.14 quotes=2067 health=OK hours_remaining=20.86 eta_wall_h~20.9 spearman=-1.0 | skipped
+
+2026-07-22T10:18:00Z | Tier1 | skipped — waiting on 24h paper gate (collector healthy) | runtime_h=3.31 quotes=2173 health=OK hours_remaining=20.69 eta_wall_h~20.6 | skipped
+
+2026-07-22T10:28:00Z | Tier1 | skipped — waiting on 24h paper gate (collector healthy) | runtime_h=3.4726 quotes=2285 health=OK | skipped
+
+2026-07-22T10:38:00Z | Tier1 | skipped — waiting on 24h paper gate (collector healthy) | status=OK cycles=12 runtime_h=3.6404 hours_remaining=20.3596 eta_wall_h=20.3035 quotes_per_wall_h=672.58 health=OK | skipped
+
+2026-07-22T10:48:00Z | Tier1 | skipped — waiting on 24h paper gate (collector healthy) | status=OK cycles=13 runtime_h=3.8075 hours_remaining=20.1925 eta_wall_h=20.1317 quotes_per_wall_h=676.32 health=OK | skipped
+
+2026-07-22T10:58:00Z | Tier1 | skipped — waiting on 24h paper gate (collector healthy) | status=OK cycles=14 runtime_h=3.9726 hours_remaining=20.0274 eta_wall_h=19.9819 quotes_per_wall_h=676.74 health=OK | skipped
+
+2026-07-22T11:08:00Z | Tier1 | skipped — waiting on 24h paper gate (collector healthy) | status=OK cycles=15 runtime_h=4.1392 hours_remaining=19.8608 eta_wall_h=19.814 quotes_per_wall_h=677.05 health=OK | skipped
+
+2026-07-22T11:18:00Z | Tier1 | skipped — waiting on 24h paper gate (collector healthy) | status=OK cycles=16 runtime_h=4.3064 hours_remaining=19.6936 eta_wall_h=19.6543 quotes_per_wall_h=680.09 health=OK | skipped
+
+2026-07-22T11:28:00Z | Tier1 | skipped — waiting on 24h paper gate (collector healthy) | status=OK cycles=17 runtime_h=4.4732 hours_remaining=19.5268 eta_wall_h=19.4872 quotes_per_wall_h=680.02 health=OK | skipped
+
+2026-07-22T11:38:00Z | Tier1 | skipped — waiting on 24h paper gate (collector healthy) | status=OK cycles=18 runtime_h=4.6395 hours_remaining=19.3605 eta_wall_h=19.3242 quotes_per_wall_h=674.75 health=OK | skipped
+
+2026-07-22T11:48:00Z | Tier1 | skipped — waiting on 24h paper gate (collector healthy) | status=OK cycles=19 runtime_h=4.8048 hours_remaining=19.1952 eta_wall_h=19.1714 quotes_per_wall_h=673.82 health=OK | skipped
+
+2026-07-22T11:58:00Z | Tier1 | skipped — waiting on 24h paper gate (collector healthy) | status=OK cycles=20 runtime_h=4.9722 hours_remaining=19.0278 eta_wall_h=18.9956 quotes_per_wall_h=672.47 health=OK | skipped
+
+2026-07-22T12:08:00Z | Tier1 | skipped — waiting on 24h paper gate (collector healthy) | status=OK cycles=21 runtime_h=5.1369 hours_remaining=18.8631 eta_wall_h=18.8427 quotes_per_wall_h=671.87 health=OK | skipped
+
+2026-07-22T12:18:00Z | Tier1 | skipped — waiting on 24h paper gate (collector healthy) | status=OK cycles=22 runtime_h=5.3064 hours_remaining=18.6936 eta_wall_h=18.671 quotes_per_wall_h=672.67 health=OK | skipped
+
+2026-07-22T12:28:00Z | Tier1 | skipped — waiting on 24h paper gate (collector healthy) | status=OK cycles=23 runtime_h=5.469 hours_remaining=18.531 eta_wall_h=18.5204 quotes_per_wall_h=670.06 health=OK | skipped
+
+2026-07-22T12:38:00Z | Tier1 | skipped — waiting on 24h paper gate (collector healthy) | status=OK cycles=24 runtime_h=5.6346 hours_remaining=18.3654 eta_wall_h=18.3635 quotes_per_wall_h=668.91 health=OK | skipped
+>>>>>>> main
+
+2026-07-22T09:18:00Z | Tier1 | T1-24 liquidity-oracle rank; scanner vs oracle spearman=-1 under zero-fill paper (Tier2 gated) | rank_vs_realized spearman_vs_oracle=-1.0; pytest pass; gate quotes=1496 need_hours>=24 | merged

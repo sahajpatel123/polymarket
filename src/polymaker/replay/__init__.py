@@ -89,6 +89,99 @@ def load_journal(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def filter_rows_for_tokens(
+    rows: list[dict[str, Any]],
+    *,
+    yes_token: str,
+    no_token: str,
+) -> list[dict[str, Any]]:
+    """Keep journal rows that touch the given YES/NO token ids.
+
+    Multi-market journals otherwise poison time/event holdout splits: the last
+    30% of rows may be almost entirely a different market.
+    """
+    wanted = {yes_token, no_token}
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        kind = str(row.get("kind") or "")
+        data = row.get("data")
+        if kind == "book" and isinstance(data, dict):
+            if str(data.get("asset_id") or "") in wanted:
+                out.append(row)
+            continue
+        if kind == "last_trade_price" and isinstance(data, dict):
+            if str(data.get("asset_id") or "") in wanted:
+                out.append(row)
+            continue
+        if kind == "tick_size_change" and isinstance(data, dict):
+            if str(data.get("asset_id") or "") in wanted:
+                out.append(row)
+            continue
+        if kind == "price_change" and isinstance(data, dict):
+            changes = data.get("price_changes") or []
+            if any(str(ch.get("asset_id") or "") in wanted for ch in changes if isinstance(ch, dict)):
+                # Keep row; apply_journal_event ignores non-matching assets.
+                out.append(row)
+            continue
+        # drop orders_out / unknown
+    return out
+
+
+def infer_yes_no_tokens(
+    metrics_path: Path,
+    condition_id: str,
+) -> tuple[str, str] | None:
+    """Infer YES/NO token ids from metrics quote prices (lower mean px = YES)."""
+    means: dict[str, list[float]] = {}
+    if not metrics_path.exists():
+        return None
+    with metrics_path.open() as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if obj.get("event") != "quote":
+                continue
+            if str(obj.get("condition_id") or "") != condition_id:
+                continue
+            tid = str(obj.get("token_id") or "")
+            try:
+                px = float(obj.get("price"))
+            except (TypeError, ValueError):
+                continue
+            if not tid:
+                continue
+            means.setdefault(tid, []).append(px)
+    if len(means) < 2:
+        return None
+    ranked = sorted(
+        ((tid, sum(xs) / len(xs)) for tid, xs in means.items()),
+        key=lambda kv: kv[1],
+    )
+    return ranked[0][0], ranked[1][0]
+
+
+def discover_condition_ids(metrics_path: Path) -> list[str]:
+    ids: set[str] = set()
+    if not metrics_path.exists():
+        return []
+    with metrics_path.open() as fh:
+        for line in fh:
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if obj.get("event") in ("quote", "market_meta", "mark"):
+                cid = obj.get("condition_id")
+                if cid:
+                    ids.add(str(cid))
+    return sorted(ids)
+
+
 def _empty_view():
     from polymaker.marketdata.orderbook import BookView
 
@@ -302,4 +395,11 @@ def run_replay(
 
 
 # silence unused TradePrint import warning via re-export for tests
-__all__ = ["run_replay", "load_journal", "ReplayResult", "TradePrint"]
+__all__ = [
+    "run_replay",
+    "load_journal",
+    "ReplayResult",
+    "TradePrint",
+    "infer_yes_no_tokens",
+    "discover_condition_ids",
+]
