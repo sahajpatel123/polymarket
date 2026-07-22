@@ -113,6 +113,45 @@ def test_shadow_as_replace_closes_prior_life(tmp_path: Path) -> None:
     assert rep.n_quote_lifetimes == 2
 
 
+def test_shadow_as_uses_fv_yes_when_present(tmp_path: Path) -> None:
+    """Explicit fv_yes beats nearest-mark heuristic for YES-space remap."""
+    cid = "0xabc"
+    t0 = 1_700_000_000.0
+    rows = [
+        # Misleading mark far from quote — fv_yes on the quote must win.
+        {"ts": t0, "event": "mark", "condition_id": cid, "fv": 0.90, "regime": "QUIET"},
+        {
+            "ts": t0,
+            "event": "quote",
+            "condition_id": cid,
+            "token_id": "no",
+            "side": "BUY",
+            "price": 0.79,
+            "size": 10.0,
+            "order_id": "n1",
+            "mid": 0.80,
+            "fv_yes": 0.20,
+        },
+        {"ts": t0 + 35, "event": "mark", "condition_id": cid, "fv": 0.23, "regime": "QUIET"},
+        {
+            "ts": t0 + 40,
+            "event": "cancel",
+            "condition_id": cid,
+            "token_id": "no",
+            "side": "BUY",
+            "price": 0.79,
+            "size": 10.0,
+            "order_id": "n1",
+        },
+    ]
+    path = tmp_path / "m.jsonl"
+    _write(path, rows)
+    rep = analyze_shadow_as(path)
+    assert rep.n_quote_lifetimes == 1
+    assert abs(rep.mean_edge_at_place - 0.01) < 1e-9
+    assert abs(rep.markout_mean["30s"] - (-0.03)) < 1e-9
+
+
 def test_shadow_as_no_token_remapped_to_yes_space(tmp_path: Path) -> None:
     """NO-token mid~0.8 must not be compared raw against YES mark fv~0.2."""
     cid = "0xabc"
@@ -147,7 +186,6 @@ def test_shadow_as_no_token_remapped_to_yes_space(tmp_path: Path) -> None:
     _write(path, rows)
     rep = analyze_shadow_as(path)
     assert rep.n_quote_lifetimes == 1
-    assert abs(rep.mean_edge_at_place - 0.01) < 1e-9  # yes_mid 0.20 - yes_price 0.21... wait
     # BUY NO @ 0.79 → yes_side=SELL, yes_price=0.21, yes_mid=0.20
     # edge for SELL = price - mid = 0.21 - 0.20 = 0.01
     assert abs(rep.mean_edge_at_place - 0.01) < 1e-9

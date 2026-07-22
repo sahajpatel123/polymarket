@@ -2,6 +2,9 @@
 
 Separate from the raw Journal (WS replay substrate). This log is the contract
 for `scripts/paper_metrics.py`: quote / cancel / fill / mark / market_meta.
+
+Quote events include token-local `mid` and, since T1-35, market YES-space
+`fv_yes` so offline shadow AS does not rely on nearest-mark heuristics.
 """
 
 from __future__ import annotations

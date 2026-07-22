@@ -261,6 +261,12 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: `src/polymaker/metrics/churn.py`, `scripts/quote_churn_report.py`,
   `tests/test_quote_churn_report.py`
 
+### T1-35 Quote metrics include `fv_yes`
+- Status: `done`
+- Done when: engine + replay emit YES-space FV on each quote event; shadow AS
+  prefers `fv_yes` over nearest-mark heuristic for NO-token remap.
+- Evidence: `engine.py` / `replay` quote emit; `tests/test_shadow_adverse_selection.py`
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

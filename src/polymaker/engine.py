@@ -594,6 +594,7 @@ class Engine:
                         size=o.size,
                         order_id=o.order_id,
                         mid=mid_tok,
+                        fv_yes=fv,
                         in_reward_band=in_band,
                         paper=self.paper,
                         **inv,

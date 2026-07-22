@@ -286,6 +286,7 @@ def _recompute(st: ReplayState, now: float) -> None:
             size=q.size,
             order_id=oid,
             mid=mid_tok,
+            fv_yes=fv,
             in_reward_band=in_band,
             **inv,
         )

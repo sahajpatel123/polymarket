@@ -130,3 +130,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T13:31:00Z | Tier1 | T1-33 richest-log discovery across health/regime/scorecard/rank/snapshot; weekly report refresh | gate livecfg 6.51h/4318q; WEEKLY_REPORT overwritten; pytest related pass | merged
 
 2026-07-22T13:40:00Z | Tier1 | T1-34 quote lifetime/requote churn report (T2-05 evidence) | pytest pass; live life_p50/rq_p50 on ~6.6h tape; wired into cycle append | merged
+
+2026-07-22T13:50:00Z | Tier1 | T1-35 quote metrics emit fv_yes; shadow AS prefers it over mark heuristic | pytest shadow+metrics+replay 10 passed; paper ~6.8h/4500q collecting | merged

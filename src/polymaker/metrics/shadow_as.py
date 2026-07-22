@@ -120,15 +120,21 @@ def analyze_shadow_as(path: Path) -> ShadowASReport:
         return prev
 
     def to_yes_space(
-        *, mid: float, price: float, side: str, cid: str, ts: float
+        *,
+        mid: float,
+        price: float,
+        side: str,
+        cid: str,
+        ts: float,
+        fv_yes: float | None = None,
     ) -> tuple[float, float, str] | None:
         """Map token-local quote fields onto YES FV space used by mark events.
 
         Engine logs quote.mid in token space (YES mid or NO mid) but mark.fv
-        is always YES fair value. Without this remap, NO quotes produce
-        garbage ~0.6 markouts.
+        is always YES fair value. Prefer quote.fv_yes when present (T1-35);
+        else fall back to nearest mark FV.
         """
-        fv = nearest_yes_fv(cid, ts)
+        fv = fv_yes if fv_yes is not None else nearest_yes_fv(cid, ts)
         if fv is None:
             return None
         as_yes = abs(mid - fv) <= abs((1.0 - mid) - fv)
@@ -168,7 +174,11 @@ def analyze_shadow_as(path: Path) -> ShadowASReport:
             mid0 = float(mid)
             if not oid or not cid or side not in ("BUY", "SELL"):
                 continue
-            mapped = to_yes_space(mid=mid0, price=price, side=side, cid=cid, ts=ts)
+            fv_yes_raw = e.get("fv_yes")
+            fv_yes = float(fv_yes_raw) if fv_yes_raw is not None else None
+            mapped = to_yes_space(
+                mid=mid0, price=price, side=side, cid=cid, ts=ts, fv_yes=fv_yes
+            )
             if mapped is None:
                 continue
             yes_mid, yes_price, yes_side = mapped
