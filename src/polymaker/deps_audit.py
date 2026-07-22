@@ -208,16 +208,28 @@ def audit_lock(
 
     # scan installed METADATA for suspicious post-install hints (optional)
     if site_packages is not None and site_packages.exists():
+        # Package allowlist for the `easy_install` substring check. These
+        # packages mention `easy_install` in their METADATA (Description,
+        # Classifier list, or Requires-Python comments) without running it
+        # during install. The high-severity `setuptools.command.install`
+        # and `cmdclass` hints are NOT allowlisted — those still flag.
+        # Normalize the keys to lowercase + dash form so dist-info
+        # `pytest_cov-7.1.0.dist-info` matches the `pytest-cov` entry.
+        _EASY_INSTALL_ALLOWLIST: frozenset[str] = frozenset({
+            "pytest-cov",
+        })
         for dist in site_packages.glob("*.dist-info"):
             meta = dist / "METADATA"
             ep = dist / "entry_points.txt"
-            name = dist.name.split("-")[0].lower()
+            name = dist.name.split("-")[0].lower().replace("_", "-")
             flags: list[str] = []
             if meta.exists():
                 text = meta.read_text(errors="replace")
-                for hint in ("setuptools.command.install", "cmdclass", "easy_install"):
+                for hint in ("setuptools.command.install", "cmdclass"):
                     if hint in text:
                         flags.append(f"metadata_hint:{hint}")
+                if "easy_install" in text and name not in _EASY_INSTALL_ALLOWLIST:
+                    flags.append("metadata_hint:easy_install")
             if ep.exists():
                 ep_text = ep.read_text(errors="replace")
                 for group in SUSPICIOUS_EP_GROUPS:
@@ -225,7 +237,7 @@ def audit_lock(
                         flags.append(f"entry_point:{group}")
             if flags:
                 for p in packages:
-                    if p.name.lower().replace("_", "-") == name.replace("_", "-"):
+                    if p.name.lower().replace("_", "-") == name:
                         p.flags.extend(flags)
                         break
                 else:
