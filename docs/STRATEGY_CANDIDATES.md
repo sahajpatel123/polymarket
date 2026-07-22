@@ -124,6 +124,8 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
   (was frozen from an old cycle row). Still DOWN ~7.2h; no Tier-2 PR.
 - **Update 2026-07-22T22:50Z:** WEEKLY_REPORT now auto-counts Tier-1 changelog
   lines + backlog done. Still DOWN ~7.3h; no Tier-2 PR.
+- **Update 2026-07-22T23:00Z:** WEEKLY_REPORT counts `PENDING_REVIEW` rows
+  (`pending_reviews=0`). Still DOWN ~7.5h; no Tier-2 PR.
 
 ## C-02 Prefer higher-reward market weight (selection)
 

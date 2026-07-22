@@ -61,3 +61,25 @@ def test_count_backlog_tier1_done(tmp_path) -> None:
         "## Tier 2 — strategy\n### T2-01\n- Status: `done`\n"
     )
     assert wr._count_backlog_tier1_done(path) == 2
+
+
+def test_count_pending_reviews_none(tmp_path) -> None:
+    path = tmp_path / "PENDING_REVIEW.md"
+    path.write_text(
+        "# PENDING_REVIEW\n\n"
+        "| Opened | Branch / PR | Summary | Evidence |\n"
+        "|--------|-------------|---------|----------|\n"
+        "| _(none)_ | | | |\n"
+    )
+    assert wr._count_pending_reviews(path) == 0
+
+
+def test_count_pending_reviews_rows(tmp_path) -> None:
+    path = tmp_path / "PENDING_REVIEW.md"
+    path.write_text(
+        "| Opened | Branch / PR | Summary | Evidence |\n"
+        "|--------|-------------|---------|----------|\n"
+        "| 2026-07-22 | pr/1 | C-01 | pack |\n"
+        "| 2026-07-23 | pr/2 | C-02 | pack |\n"
+    )
+    assert wr._count_pending_reviews(path) == 2

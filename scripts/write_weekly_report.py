@@ -118,6 +118,32 @@ def _count_backlog_tier1_done(path: Path) -> int:
     return n
 
 
+def _count_pending_reviews(path: Path) -> int:
+    """Count non-empty PENDING_REVIEW table rows (T1-89)."""
+    if not path.exists():
+        return 0
+    n = 0
+    in_table = False
+    for line in path.read_text().splitlines():
+        if line.startswith("| Opened |"):
+            in_table = True
+            continue
+        if not in_table:
+            continue
+        if line.startswith("|---"):
+            continue
+        if not line.startswith("|"):
+            break
+        cells = [c.strip() for c in line.strip("|").split("|")]
+        if not cells:
+            continue
+        first = cells[0].lower()
+        if first.startswith("_(none)") or first == "(none)" or first == "":
+            continue
+        n += 1
+    return n
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--out", default="WEEKLY_REPORT.md")
@@ -151,6 +177,7 @@ def main() -> int:
     outage_block = _outage_status_block(outage_path)
     tier1_changelog = _count_changelog_tier1(Path("CHANGELOG_AGENT.md"))
     tier1_backlog_done = _count_backlog_tier1_done(Path("BACKLOG.md"))
+    pending_reviews = _count_pending_reviews(Path("PENDING_REVIEW.md"))
 
     body = f"""# WEEKLY_REPORT
 
@@ -175,7 +202,7 @@ Generated: `{ts}` (via `scripts/write_weekly_report.py`)
 
 | Opened | Still pending |
 |--------|----------------|
-| 0 | see `PENDING_REVIEW.md` |
+| {pending_reviews} | see `PENDING_REVIEW.md` |
 
 Open candidates: `docs/STRATEGY_CANDIDATES.md` (C-01…C-04).
 
@@ -254,10 +281,12 @@ No expiry tracker in-repo. `.env` is gitignored; operator must rotate
         "head": head,
         "tier1_changelog": tier1_changelog,
         "tier1_backlog_done": tier1_backlog_done,
+        "pending_reviews": pending_reviews,
     }, indent=2))
     print(
         f"status=OK wrote={path} ts={ts} "
         f"tier1_changelog={tier1_changelog} tier1_backlog_done={tier1_backlog_done} "
+        f"pending_reviews={pending_reviews} "
         f"c01={c01_line.split()[0] if c01_line else '?'} "
         f"deps={deps_status.split()[0] if deps_status else '?'}",
         file=sys.stderr,

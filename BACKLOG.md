@@ -590,6 +590,12 @@ done without evidence (script output / tests) from that cycle.
   Status:done; System table shows both; live WEEKLY_REPORT refreshed.
 - Evidence: live tier1_changelog / tier1_backlog_done printed on status line
 
+### T1-89 Weekly report counts PENDING_REVIEW rows
+- Status: `done`
+- Done when: write_weekly_report counts non-empty PENDING_REVIEW table rows
+  instead of hardcoding 0; status line surfaces pending_reviews.
+- Evidence: live pending_reviews=0 with empty PENDING_REVIEW table
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
