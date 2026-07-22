@@ -101,6 +101,15 @@ def main() -> int:
     line = _status_line(err, out)
     report["steps"]["unused_knobs"] = {"rc": code, "status_line": line, **_parse_kv(line)}
 
+    code, out, err = _run([
+        py,
+        "scripts/outage_window_report.py",
+        "--status-out",
+        "logs/outage_status.json",
+    ])
+    line = _status_line(err, out)
+    report["steps"]["outage"] = {"rc": code, "status_line": line, **_parse_kv(line)}
+
     if args.append:
         cmd = [py, "scripts/append_strategy_cycle.py"]
         if args.skip_connectivity:
@@ -121,6 +130,7 @@ def main() -> int:
     c01 = report["steps"].get("c01") or {}
     sm = report["steps"].get("summarize") or {}
     unused = report["steps"].get("unused_knobs") or {}
+    outage = report["steps"].get("outage") or {}
     ap_step = report["steps"].get("append") or {}
     weekly = report["steps"].get("weekly") or {}
     conn_line = str(conn.get("status_line") or "")
@@ -134,8 +144,9 @@ def main() -> int:
         f"status=OK "
         f"connectivity={conn_disp} "
         f"c01={c01.get('status')} blockers={c01.get('blockers')} "
-        f"outage_alert={c01.get('outage_alert')} "
-        f"outage_alert_severe={c01.get('outage_alert_severe')} "
+        f"outage_alert={c01.get('outage_alert') or outage.get('outage_alert')} "
+        f"outage_alert_severe={c01.get('outage_alert_severe') or outage.get('outage_alert_severe')} "
+        f"outage_total_h={outage.get('total_h')} "
         f"runtime_h={sm.get('runtime_h')} eta_paused={sm.get('eta_paused')} "
         f"tape_frozen={sm.get('tape_frozen')} "
         f"unused_set={unused.get('n_set_unused')} "
@@ -150,6 +161,8 @@ def main() -> int:
     if report["steps"]["summarize"]["rc"] != 0:
         bad = True
     if report["steps"]["unused_knobs"]["rc"] != 0:
+        bad = True
+    if report["steps"]["outage"]["rc"] not in (0, 2):
         bad = True
     if args.append and report["steps"]["append"]["rc"] != 0:
         bad = True

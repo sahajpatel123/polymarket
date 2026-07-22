@@ -518,6 +518,12 @@ done without evidence (script output / tests) from that cycle.
   optional --write-weekly regenerates WEEKLY_REPORT.md.
 - Evidence: live severe=True on summarize; --write-weekly status=OK
 
+### T1-77 Persist compact outage_status.json
+- Status: `done`
+- Done when: outage_window_report --status-out writes alert/severe snapshot;
+  strategy_tick updates logs/outage_status.json each tick.
+- Evidence: live status_out with outage_alert_severe=True (~5.5h)
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

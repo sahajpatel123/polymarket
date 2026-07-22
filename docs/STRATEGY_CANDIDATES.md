@@ -96,6 +96,9 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
 - **Update 2026-07-22T18:20Z:** CF sweep on frozen tape —
   suppress@2=0, @suggested(2.489)≈0.19, @8=1.0. Soft floor only cuts ~19% of
   attributed TRENDING; target 8 still full suppress. Still no merge.
+- **Update 2026-07-22T20:55Z:** Polymarket outage now **~5.5h**
+  (`outage_alert_severe=True`). Quotes still frozen at 5529 / runtime 8.37h.
+  Compact status at `logs/outage_status.json`. Still no Tier-2 PR.
 
 ## C-02 Prefer higher-reward market weight (selection)
 

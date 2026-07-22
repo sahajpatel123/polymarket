@@ -7,7 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from scripts.outage_window_report import analyze_cycles
+from scripts.outage_window_report import analyze_cycles, compact_status
 
 
 def test_analyze_cycles_detects_open_stale_window() -> None:
@@ -35,6 +35,14 @@ def test_analyze_cycles_detects_open_stale_window() -> None:
     assert rep["outage_open"] is True
     assert rep["current"]["quotes_start"] == 5000.0
     assert rep["current"]["n_cycles"] == 2
+
+
+def test_compact_status_alert_thresholds() -> None:
+    mild = compact_status({"outage_open": True, "outage_total_h": 3.5, "n_outage_windows": 1, "current": {}})
+    assert mild["outage_alert"] is True
+    assert mild["outage_alert_severe"] is False
+    severe = compact_status({"outage_open": True, "outage_total_h": 5.5, "n_outage_windows": 1, "current": {}})
+    assert severe["outage_alert_severe"] is True
 
 
 def test_outage_window_report_cli(tmp_path: Path) -> None:

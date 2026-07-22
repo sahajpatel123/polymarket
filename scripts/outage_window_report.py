@@ -119,9 +119,31 @@ def analyze_cycles(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def compact_status(rep: dict[str, Any]) -> dict[str, Any]:
+    """Machine-readable snapshot for operators / external monitors (T1-77)."""
+    cur = rep.get("current") or {}
+    total_h = float(rep.get("outage_total_h") or 0.0)
+    return {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "outage_open": bool(rep.get("outage_open")),
+        "outage_total_h": rep.get("outage_total_h"),
+        "outage_alert": total_h >= 3.0,
+        "outage_alert_severe": total_h >= 5.0,
+        "current_duration_s": cur.get("duration_s"),
+        "runtime_h": cur.get("runtime_hours_end"),
+        "quotes": cur.get("quotes_end"),
+        "n_outage_windows": rep.get("n_outage_windows"),
+    }
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--log", default="logs/strategy_cycles.jsonl")
+    ap.add_argument(
+        "--status-out",
+        default=None,
+        help="Write compact outage status JSON (default: none)",
+    )
     args = ap.parse_args()
     path = Path(args.log)
     if not path.exists():
@@ -145,11 +167,19 @@ def main() -> int:
     rep = analyze_cycles(rows)
     print(json.dumps(rep, indent=2, sort_keys=True))
     cur = rep.get("current") or {}
+    status = compact_status(rep)
+    if args.status_out:
+        outp = Path(args.status_out)
+        outp.parent.mkdir(parents=True, exist_ok=True)
+        outp.write_text(json.dumps(status, indent=2, sort_keys=True) + "\n")
     print(
         f"status=OK windows={rep['n_outage_windows']} open={rep['outage_open']} "
         f"total_h={rep['outage_total_h']} "
         f"current_duration_s={cur.get('duration_s')} "
-        f"runtime_h={cur.get('runtime_hours_end')} quotes={cur.get('quotes_end')}",
+        f"runtime_h={cur.get('runtime_hours_end')} quotes={cur.get('quotes_end')} "
+        f"outage_alert={status['outage_alert']} "
+        f"outage_alert_severe={status['outage_alert_severe']} "
+        f"status_out={args.status_out or '-'}",
         file=sys.stderr,
     )
     return 0
