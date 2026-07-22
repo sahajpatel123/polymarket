@@ -21,7 +21,16 @@ from typing import Any
 from polymaker.metrics.log_discovery import DEFAULT_PAPER_CANDIDATES, pick_richest_log
 
 
-def analyze_paper_log(path: Path) -> dict[str, Any]:
+def analyze_paper_log(
+    path: Path,
+    *,
+    trend_flow_z: float = 1.2,
+) -> dict[str, Any]:
+    """Summarize requote regimes.
+
+    false_trending_frac: share of TRENDING requotes with |flow_z| < trend_flow_z
+    — the vol-ratio-only trips that C-01 targets (T1-39).
+    """
     regimes = Counter()
     regimes_by_cid: dict[str, Counter] = defaultdict(Counter)
     transitions: Counter = Counter()
@@ -31,8 +40,10 @@ def analyze_paper_log(path: Path) -> dict[str, Any]:
     n_requote = 0
     trending_flowz: list[float] = []
     quiet_flowz: list[float] = []
+    false_trending = 0
     n_bad = 0
     n_lines = 0
+    thresh = abs(float(trend_flow_z))
 
     with path.open() as fh:
         for line in fh:
@@ -64,6 +75,8 @@ def analyze_paper_log(path: Path) -> dict[str, Any]:
             if flowz is not None:
                 if regime == "TRENDING":
                     trending_flowz.append(flowz)
+                    if abs(flowz) < thresh:
+                        false_trending += 1
                 elif regime == "QUIET":
                     quiet_flowz.append(flowz)
             prev = last_regime.get(cid)
@@ -75,6 +88,7 @@ def analyze_paper_log(path: Path) -> dict[str, Any]:
         return round(sum(xs) / len(xs), 6) if xs else None
 
     churn = round(cancel_sum / place_sum, 6) if place_sum else None
+    n_trend = regimes.get("TRENDING", 0)
     return {
         "path": str(path),
         "n_lines": n_lines,
@@ -89,23 +103,33 @@ def analyze_paper_log(path: Path) -> dict[str, Any]:
         "trending_flowz_n": len(trending_flowz),
         "trending_flowz_mean": _mean(trending_flowz),
         "quiet_flowz_mean": _mean(quiet_flowz),
-        "trending_frac": round(regimes.get("TRENDING", 0) / n_requote, 6) if n_requote else 0.0,
+        "trending_frac": round(n_trend / n_requote, 6) if n_requote else 0.0,
+        "trend_flow_z_threshold": thresh,
+        "false_trending_n": false_trending,
+        "false_trending_frac": round(false_trending / n_trend, 6) if n_trend else 0.0,
     }
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--log", default=None)
+    ap.add_argument(
+        "--trend-flow-z",
+        type=float,
+        default=1.2,
+        help=" |flow_z| below this on TRENDING counts as false_trending (default 1.2)",
+    )
     args = ap.parse_args()
     path = Path(args.log) if args.log else pick_richest_log(DEFAULT_PAPER_CANDIDATES)
     if path is None or not path.exists():
         print("status=NO_LOG", file=sys.stderr)
         print(json.dumps({"status": "NO_LOG"}, indent=2))
         return 0
-    rep = analyze_paper_log(path)
+    rep = analyze_paper_log(path, trend_flow_z=args.trend_flow_z)
     print(json.dumps(rep, indent=2, sort_keys=True))
     print(
         f"status=OK requotes={rep['n_requote']} trending_frac={rep['trending_frac']} "
+        f"false_trending_frac={rep['false_trending_frac']} "
         f"cancel_per_place={rep['cancel_per_place']} "
         f"transitions={sum(rep['regime_transitions'].values())}",
         file=sys.stderr,

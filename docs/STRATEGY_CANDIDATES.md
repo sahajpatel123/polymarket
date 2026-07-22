@@ -39,6 +39,10 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
   `trend_vol_ratio` validate, but `oos_replicated` still false
   (holdout_dn_quote=0). Confirms the idea needs adverse windows that
   actually replicate — not just more events.
+- **Update 2026-07-22T14:30Z:** `paper_regime_report --trend-flow-z 1.2` on
+  livecfg → `false_trending_frac=1.0` (all TRENDING requotes have
+  `|flow_z|<1.2`). Smoking gun for vol-ratio-only trips; promotion still
+  blocked on OOS holdout quality.
 
 ## C-02 Prefer higher-reward market weight (selection)
 

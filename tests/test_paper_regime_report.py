@@ -26,3 +26,5 @@ def test_analyze_paper_log_counts_regimes_and_transitions(tmp_path: Path) -> Non
     assert rep["cancel_sum"] == 1
     assert rep["place_sum"] == 5
     assert rep["trending_flowz_mean"] == 0.0
+    assert rep["false_trending_n"] == 1
+    assert rep["false_trending_frac"] == 1.0

@@ -138,3 +138,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T14:10:00Z | Tier1 | T1-37 schema in cycle history; C-01 recheck at ~7.1h still fails OOS; document C-04 unused knobs | append schema=OK; evidence pack full_dn=-111/-14 oos=false thin_holdout | merged
 
 2026-07-22T14:20:00Z | Tier1 | T1-38 dense multi-cycle synth; offline C-01 clears thin_holdout but still fails OOS | regime_dense 712 events; validate thin_holdout=false oos=false; pytest synth_dense pass | merged
+
+2026-07-22T14:30:00Z | Tier1 | T1-39 false_trending_frac in regime report — live frac=1.0 (all TRENDING are low flow_z) | pytest pass; C-01 smoking gun updated; still no Tier2 merge | merged

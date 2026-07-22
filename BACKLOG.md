@@ -287,6 +287,12 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: `fixtures/regime_dense.jsonl` (712 events, 8 cycles);
   `trend_vol_ratio` validate thin_holdout=false (oos still false)
 
+### T1-39 False-TRENDING fraction in regime report
+- Status: `done`
+- Done when: paper_regime_report counts TRENDING requotes with
+  `|flow_z| < trend_flow_z` as false_trending (C-01 smoking-gun metric).
+- Evidence: live `false_trending_frac=1.0` at threshold 1.2
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
