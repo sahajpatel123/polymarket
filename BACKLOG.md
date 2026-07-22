@@ -386,6 +386,12 @@ done without evidence (script output / tests) from that cycle.
   counterfactual/evidence-pack OOS into READY vs BLOCKED + blockers.
 - Evidence: live BLOCKED on hours/health/outage/oos/thin (expected)
 
+### T1-55 Regime report vol_ratio percentiles + quiet/trend gap
+- Status: `done`
+- Done when: paper_regime_report exposes quiet/trending vol_ratio
+  min/p50/p90/max and quiet→trend gap for C-01 threshold choice.
+- Evidence: live quiet max≈1.99 vs trend min≈2.03 (gap≈0.04)
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

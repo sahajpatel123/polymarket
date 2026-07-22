@@ -45,6 +45,7 @@ def analyze_paper_log(
     trending_flowz: list[float] = []
     quiet_flowz: list[float] = []
     trending_vol: list[float] = []
+    quiet_vol: list[float] = []
     false_trending = 0
     false_cancel = 0
     false_place = 0
@@ -119,6 +120,8 @@ def analyze_paper_log(
                         false_place += n_place
                 elif regime == "QUIET":
                     quiet_flowz.append(flowz)
+            if volr is not None and regime == "QUIET":
+                quiet_vol.append(volr)
             prev = last_regime.get(cid)
             if prev is not None and prev != regime:
                 transitions[f"{prev}->{regime}"] += 1
@@ -126,6 +129,28 @@ def analyze_paper_log(
 
     def _mean(xs: list[float]) -> float | None:
         return round(sum(xs) / len(xs), 6) if xs else None
+
+    def _pct(xs: list[float], p: float) -> float | None:
+        if not xs:
+            return None
+        s = sorted(xs)
+        if len(s) == 1:
+            return round(s[0], 6)
+        idx = (p / 100.0) * (len(s) - 1)
+        lo = int(idx)
+        hi = min(lo + 1, len(s) - 1)
+        frac = idx - lo
+        return round(s[lo] * (1.0 - frac) + s[hi] * frac, 6)
+
+    def _vol_summary(xs: list[float]) -> dict[str, float | int | None]:
+        return {
+            "n": len(xs),
+            "min": round(min(xs), 6) if xs else None,
+            "p50": _pct(xs, 50),
+            "p90": _pct(xs, 90),
+            "max": round(max(xs), 6) if xs else None,
+            "mean": _mean(xs),
+        }
 
     churn = round(cancel_sum / place_sum, 6) if place_sum else None
     n_trend = regimes.get("TRENDING", 0)
@@ -135,6 +160,12 @@ def analyze_paper_log(
         + path_counts["vol_only"]
         + path_counts["neither"]
     )
+    quiet_vol_sum = _vol_summary(quiet_vol)
+    trend_vol_sum = _vol_summary(trending_vol)
+    # Separation: how far QUIET max sits below TRENDING min (C-01 threshold room).
+    sep = None
+    if quiet_vol_sum["max"] is not None and trend_vol_sum["min"] is not None:
+        sep = round(float(trend_vol_sum["min"]) - float(quiet_vol_sum["max"]), 6)
     return {
         "path": str(path),
         "n_lines": n_lines,
@@ -150,6 +181,9 @@ def analyze_paper_log(
         "trending_flowz_mean": _mean(trending_flowz),
         "quiet_flowz_mean": _mean(quiet_flowz),
         "trending_vol_ratio_mean": _mean(trending_vol),
+        "quiet_vol_ratio": quiet_vol_sum,
+        "trending_vol_ratio": trend_vol_sum,
+        "vol_ratio_quiet_trend_gap": sep,
         "trending_frac": round(n_trend / n_requote, 6) if n_requote else 0.0,
         "trend_flow_z_threshold": flow_thresh,
         "trend_vol_ratio_threshold": vol_thresh,
@@ -209,6 +243,9 @@ def main() -> int:
         f"false_trending_cancel_share={rep['false_trending_cancel_share']} "
         f"false_trending_place_share={rep['false_trending_place_share']} "
         f"vol_only_frac={rep['trending_vol_only_frac']} "
+        f"quiet_vol_p90={(rep.get('quiet_vol_ratio') or {}).get('p90')} "
+        f"trend_vol_p50={(rep.get('trending_vol_ratio') or {}).get('p50')} "
+        f"vol_gap={rep.get('vol_ratio_quiet_trend_gap')} "
         f"path={rep['trending_path']} "
         f"cancel_per_place={rep['cancel_per_place']} "
         f"transitions={sum(rep['regime_transitions'].values())}",

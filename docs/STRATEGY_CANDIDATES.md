@@ -84,6 +84,10 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
 - **Update 2026-07-22T17:00Z:** `c01_promotion_checklist` → BLOCKED on
   `hours_ok,health_ok,outage_closed,oos_replicated,holdout_not_thin`
   (quotes already OK). No Tier-2 PR until Polymarket recovers + denser OOS.
+- **Update 2026-07-22T17:10Z:** attributed `vol_ratio` dist — QUIET
+  p90≈1.22 / max≈1.99; TRENDING p50≈3.11 / max≈7.58; quiet→trend gap≈0.04.
+  Default threshold 2.0 sits on the boundary; 8 clears all current TRENDING
+  (max&lt;8). Still no merge.
 
 ## C-02 Prefer higher-reward market weight (selection)
 
