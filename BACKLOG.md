@@ -97,6 +97,13 @@ done without evidence (script output / tests) from that cycle.
   livecfg logs.
 - Evidence: `scripts/strategy_snapshot.py`; status=OK with paper_quotes + reward_accrual_sum
 
+### T1-12 Paper regime/churn report
+- Status: `done`
+- Done when: a script summarizes requote regime mix, transitions, and
+  cancel/place churn from paper.jsonl (evidence surface for T2-04/T2-05).
+- Evidence: `scripts/paper_regime_report.py`, `tests/test_paper_regime_report.py`;
+  live: trending_frac≈0.067 with trending_flowz_mean=0.0 (vol-ratio trips)
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

@@ -48,3 +48,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T07:01:00Z | Tier1 | T1-10 synth regime journal + named-profile compare; paper gate finds livecfg logs; paper collector started | pytest 147 passed, 2 skipped; compare newsom-mm vs romania-pm dn_quote=-4.0; paper_data_gate status=OK requote_lines growing | merged
 
 2026-07-22T07:08:00Z | Tier1 | T1-11 strategy_snapshot + paper_metrics livecfg path; paper collecting (Tier2 gated) | strategy_snapshot status=OK; pytest green; reward_accrual on live paper | merged
+
+2026-07-22T07:18:00Z | Tier1 | T1-12 paper regime/churn report; paper ~18m (Tier2 gated) | paper_regime_report status=OK requotes=104 trending_frac=0.067 cancel_per_place=0.05 transitions=8 trending_flowz_mean=0.0; pytest test_paper_regime_report PASS | merged
