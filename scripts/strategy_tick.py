@@ -147,6 +147,8 @@ def main() -> int:
         f"outage_alert={c01.get('outage_alert') or outage.get('outage_alert')} "
         f"outage_alert_severe={c01.get('outage_alert_severe') or outage.get('outage_alert_severe')} "
         f"outage_total_h={outage.get('total_h')} "
+        f"hours_to_tier2_gate={outage.get('hours_to_tier2_gate')} "
+        f"quotes={outage.get('quotes')} "
         f"runtime_h={sm.get('runtime_h')} eta_paused={sm.get('eta_paused')} "
         f"tape_frozen={sm.get('tape_frozen')} "
         f"unused_set={unused.get('n_set_unused')} "

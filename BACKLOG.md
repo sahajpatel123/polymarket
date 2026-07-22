@@ -530,6 +530,12 @@ done without evidence (script output / tests) from that cycle.
   on STILL_DOWN; on RECOVERED marks recovered=True / outage_open=False.
 - Evidence: unit tests for STILL_DOWN + RECOVERED status_out paths
 
+### T1-79 hours_to_tier2_gate + connectivity in outage_status
+- Status: `done`
+- Done when: compact outage_status includes hours_to_tier2_gate (24-runtime_h);
+  await patches connectivity on STILL_DOWN; strategy_tick prints gate hours + quotes.
+- Evidence: live status JSON with hours_to_tier2_gate≈15.63 at runtime 8.37h
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

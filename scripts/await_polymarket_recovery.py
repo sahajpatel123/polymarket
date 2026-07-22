@@ -47,7 +47,8 @@ def _refresh_outage_status(py: str, status_out: str) -> str:
     return _status_line(err, out)
 
 
-def _mark_recovered(status_out: str, *, connectivity: str, waited_s: float) -> None:
+def _patch_outage_status(status_out: str, **fields: object) -> None:
+    """Merge fields into the compact outage status JSON (T1-78/T1-79)."""
     path = Path(status_out)
     data: dict = {}
     if path.exists():
@@ -55,17 +56,21 @@ def _mark_recovered(status_out: str, *, connectivity: str, waited_s: float) -> N
             data = json.loads(path.read_text())
         except json.JSONDecodeError:
             data = {}
-    data.update({
-        "ts": datetime.now(timezone.utc).isoformat(),
-        "recovered": True,
-        "outage_open": False,
-        "outage_alert": False,
-        "outage_alert_severe": False,
-        "connectivity": connectivity,
-        "waited_s": waited_s,
-    })
+    data.update({"ts": datetime.now(timezone.utc).isoformat(), **fields})
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
+
+
+def _mark_recovered(status_out: str, *, connectivity: str, waited_s: float) -> None:
+    _patch_outage_status(
+        status_out,
+        recovered=True,
+        outage_open=False,
+        outage_alert=False,
+        outage_alert_severe=False,
+        connectivity=connectivity,
+        waited_s=waited_s,
+    )
 
 
 def main() -> int:
@@ -164,6 +169,11 @@ def main() -> int:
 
         if status_out:
             _refresh_outage_status(py, status_out)
+            _patch_outage_status(
+                status_out,
+                connectivity=line,
+                recovered=False,
+            )
 
         if args.once:
             print(

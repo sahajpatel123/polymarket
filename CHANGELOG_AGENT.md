@@ -218,3 +218,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T21:00:00Z | Tier1 | T1-77 persist logs/outage_status.json via outage_window_report --status-out; strategy_tick writes each tick; live severe~5.52h | STILL_DOWN; no Tier2 | merged
 
 2026-07-22T21:10:00Z | Tier1 | T1-78 await_polymarket_recovery refreshes outage_status.json on STILL_DOWN + marks recovered on UP | pytest pass; no Tier2 | merged
+
+2026-07-22T21:20:00Z | Tier1 | T1-79 hours_to_tier2_gate + connectivity in outage_status; strategy_tick surfaces gate hours/quotes | live ~5.8h DOWN; no Tier2 | merged

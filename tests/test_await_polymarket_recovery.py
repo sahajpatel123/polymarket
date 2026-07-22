@@ -56,6 +56,8 @@ def test_await_recovery_once_still_down(
     data = json.loads(status_path.read_text())
     assert data["outage_open"] is True
     assert data["outage_alert_severe"] is True
+    assert data["connectivity"] == "status=DOWN rest_ok=False ws_ok=False"
+    assert data["recovered"] is False
 
 
 def test_await_recovery_once_still_down_live() -> None:

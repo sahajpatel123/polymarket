@@ -119,10 +119,21 @@ def analyze_cycles(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _hours_to_tier2_gate(runtime_h: Any) -> float | None:
+    """Remaining requote hours to the 24h Tier-2 gate (frozen during outage)."""
+    if runtime_h is None:
+        return None
+    try:
+        return round(max(0.0, 24.0 - float(runtime_h)), 2)
+    except (TypeError, ValueError):
+        return None
+
+
 def compact_status(rep: dict[str, Any]) -> dict[str, Any]:
-    """Machine-readable snapshot for operators / external monitors (T1-77)."""
+    """Machine-readable snapshot for operators / external monitors (T1-77/T1-79)."""
     cur = rep.get("current") or {}
     total_h = float(rep.get("outage_total_h") or 0.0)
+    runtime_h = cur.get("runtime_hours_end")
     return {
         "ts": datetime.now(timezone.utc).isoformat(),
         "outage_open": bool(rep.get("outage_open")),
@@ -130,7 +141,8 @@ def compact_status(rep: dict[str, Any]) -> dict[str, Any]:
         "outage_alert": total_h >= 3.0,
         "outage_alert_severe": total_h >= 5.0,
         "current_duration_s": cur.get("duration_s"),
-        "runtime_h": cur.get("runtime_hours_end"),
+        "runtime_h": runtime_h,
+        "hours_to_tier2_gate": _hours_to_tier2_gate(runtime_h),
         "quotes": cur.get("quotes_end"),
         "n_outage_windows": rep.get("n_outage_windows"),
     }
@@ -177,6 +189,7 @@ def main() -> int:
         f"total_h={rep['outage_total_h']} "
         f"current_duration_s={cur.get('duration_s')} "
         f"runtime_h={cur.get('runtime_hours_end')} quotes={cur.get('quotes_end')} "
+        f"hours_to_tier2_gate={status['hours_to_tier2_gate']} "
         f"outage_alert={status['outage_alert']} "
         f"outage_alert_severe={status['outage_alert_severe']} "
         f"status_out={args.status_out or '-'}",
