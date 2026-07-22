@@ -184,3 +184,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T18:10:00Z | Tier1 | T1-60 record outage open/total_h in strategy cycle trail; live outage_total_h≈2.68 | Polymarket still DOWN; no Tier2 | merged
 
 2026-07-22T18:20:00Z | Tier1 | T1-61 C-01 checklist CF sweep at 2/suggested/target; live suppress 0/0.19/1.0 | Polymarket DOWN ~2.8h; no Tier2 | merged
+
+2026-07-22T18:30:00Z | Tier1 | T1-62 record C-01 suppress_2/suggested/target in cycle trail; live 0/0.1875/1.0; outage ~3.0h | Polymarket still DOWN; no Tier2 | merged

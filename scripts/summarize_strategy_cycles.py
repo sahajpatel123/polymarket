@@ -118,6 +118,9 @@ def main() -> int:
         ),
         "last_c01_status": (last.get("c01") or {}).get("status"),
         "last_c01_blockers": (last.get("c01") or {}).get("blockers"),
+        "last_suppress_2": (last.get("c01") or {}).get("suppress_2"),
+        "last_suppress_suggested": (last.get("c01") or {}).get("suppress_suggested"),
+        "last_suppress_target": (last.get("c01") or {}).get("suppress_target"),
         "last_outage_open": (last.get("outage") or {}).get("open"),
         "last_outage_total_h": (last.get("outage") or {}).get("total_h"),
         "last_paper_schema": (last.get("paper_schema") or {}).get("status"),
@@ -157,6 +160,9 @@ def main() -> int:
         f"suggested_vol={rep['last_suggested_vol']} "
         f"false_trending_attr_frac={rep['last_false_trending_attr_frac']} "
         f"c01={rep['last_c01_status']} c01_blockers={rep['last_c01_blockers']} "
+        f"suppress_2={rep['last_suppress_2']} "
+        f"suppress_suggested={rep['last_suppress_suggested']} "
+        f"suppress_target={rep['last_suppress_target']} "
         f"paper_schema={rep['last_paper_schema']}",
         file=sys.stderr,
     )

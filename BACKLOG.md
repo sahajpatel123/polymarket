@@ -428,6 +428,12 @@ done without evidence (script output / tests) from that cycle.
   and target; surfaces suppress_frac_* on status line.
 - Evidence: live suppress fractions printed during outage freeze
 
+### T1-62 Record C-01 suppress curve in strategy cycle trail
+- Status: `done`
+- Done when: append/summarize surface suppress_2 / suppress_suggested /
+  suppress_target from the checklist status line each tick.
+- Evidence: live suppress 0 / 0.1875 / 1.0 on frozen tape
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

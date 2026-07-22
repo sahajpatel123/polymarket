@@ -151,6 +151,9 @@ def main() -> int:
         f"suggested_vol={snap.get('suggested_vol')} "
         f"false_trending_attr_frac={snap.get('false_trending_attr_frac')} "
         f"c01={c01.get('status')} c01_blockers={c01.get('blockers')} "
+        f"suppress_2={c01.get('suppress_2')} "
+        f"suppress_suggested={c01.get('suppress_suggested')} "
+        f"suppress_target={c01.get('suppress_target')} "
         f"outage_open={outage.get('open')} outage_total_h={outage.get('total_h')} "
         f"counterfactual={cf.get('status') or cf.get('mode') or '-'}",
         file=sys.stderr,
