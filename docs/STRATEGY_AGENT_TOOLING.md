@@ -17,7 +17,7 @@ uv run python scripts/paper_health.py            # fail if quotes go stale
 |--------|---------|
 | `scripts/compare_strategies.py` | A/B two profiles on one journal (+ holdout) |
 | `scripts/sweep_profile_knob.py` | Sweep one StrategyProfile knob |
-| `scripts/validate_knob_candidate.py` | Full vs OOS holdout; flags non-replication |
+| `scripts/validate_knob_candidate.py` | Full vs OOS holdout; optional `--also-set` multi-knob |
 | `scripts/replay_livecfg.py` | Replay livecfg journal with token auto-detect |
 | `scripts/synth_regime_journal.py` | Quiet→jump→recovery synthetic tape (`--dense`) |
 | `scripts/rank_vs_realized.py` | Scanner vs realized vs liquidity-oracle ranks |

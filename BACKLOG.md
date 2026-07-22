@@ -312,6 +312,12 @@ done without evidence (script output / tests) from that cycle.
   snapshot/append/summarize surface `vol_only_frac` + paper_schema status.
 - Evidence: pytest; live paper_schema OK/CATCHING_UP after T1-41 restart
 
+### T1-43 Multi-override knob validate (`--also-set`)
+- Status: `done`
+- Done when: validate_knob_candidate applies repeatable `--also-set k=v`
+  beside the swept knob (dual-knob C-01 screens without Tier-2 merges).
+- Evidence: pytest; live vol8+flow2 ≡ vol8 on ~8h tape (vol_only regime)
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

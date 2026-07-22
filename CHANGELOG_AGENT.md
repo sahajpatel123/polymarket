@@ -146,3 +146,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T14:50:00Z | Tier1 | T1-41 requote vol_ratio + dual-path TRENDING attribution (flow/vol/both) | pytest pass; restart paper collector for new field; no Tier2 | merged
 
 2026-07-22T15:00:00Z | Tier1 | T1-42 paper requote schema verifier + vol_only_frac in cycles; old collector SIGTERM expected after T1-41 restart | pytest pass; paper_schema catching_up/OK; no Tier2 | merged
+
+2026-07-22T15:10:00Z | Tier1 | T1-43 validate --also-set multi-override; C-01 vol8+flow2 ≡ vol8 on vol_only tape | pytest pass; still thin OOS; no Tier2 | merged

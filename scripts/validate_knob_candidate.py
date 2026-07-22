@@ -10,6 +10,9 @@ Usage:
       --config-dir livecfg --baseline-profile live-tiny \\
       --knob trend_vol_ratio --values 2,5,8 \\
       --yes-token ... --no-token ... --condition-id ... --tick-size 0.001
+
+  # Dual-knob screen (C-01 + higher flow gate), still Tier-1 / no merge:
+  ... --knob trend_vol_ratio --values 8 --also-set trend_flow_z=2.0
 """
 
 from __future__ import annotations
@@ -42,6 +45,28 @@ def _parse_values(raw: str, knob: str) -> list[Any]:
     return out
 
 
+def _parse_also_set(items: list[str]) -> dict[str, Any]:
+    """Parse repeated ``key=value`` overrides applied to every candidate."""
+    dump = StrategyProfile().model_dump()
+    out: dict[str, Any] = {}
+    for raw in items:
+        if "=" not in raw:
+            raise ValueError(f"also-set must be key=value, got {raw!r}")
+        key, _, val = raw.partition("=")
+        key = key.strip()
+        val = val.strip()
+        if key not in dump:
+            raise ValueError(f"unknown StrategyProfile field {key!r}")
+        sample = dump[key]
+        if isinstance(sample, bool):
+            out[key] = val.lower() in ("1", "true", "yes")
+        elif isinstance(sample, int) and not isinstance(sample, bool):
+            out[key] = int(float(val))
+        else:
+            out[key] = float(val)
+    return out
+
+
 def _run_window(
     *,
     journal: Path,
@@ -49,6 +74,7 @@ def _run_window(
     baseline: StrategyProfile,
     knob: str,
     values: list[Any],
+    also_set: dict[str, Any],
     holdout_frac: float,
     use_holdout: bool,
     split: str,
@@ -58,7 +84,8 @@ def _run_window(
     with tempfile.TemporaryDirectory(prefix="validate_") as td:
         root = Path(td)
         for i, val in enumerate(values):
-            cand = profile_from_overrides(baseline, {knob: val})
+            overrides = {**also_set, knob: val}
+            cand = profile_from_overrides(baseline, overrides)
             result = compare_profiles(
                 journal,
                 meta,
@@ -73,6 +100,7 @@ def _run_window(
                 window_meta = dict(result.window)
             rows.append({
                 "candidate_value": val,
+                "also_set": also_set,
                 "delta_n_quote": result.delta.get("n_quote"),
                 "delta_n_cancel": result.delta.get("n_cancel"),
                 "candidate_n_quote": result.candidate.get("n_quote"),
@@ -88,6 +116,12 @@ def main() -> int:
     ap.add_argument("--baseline-profile", default=None)
     ap.add_argument("--knob", required=True)
     ap.add_argument("--values", required=True)
+    ap.add_argument(
+        "--also-set",
+        action="append",
+        default=[],
+        help="Extra profile overrides on every candidate (repeatable key=value)",
+    )
     ap.add_argument("--holdout-frac", type=float, default=0.3)
     ap.add_argument("--split", choices=("time", "events"), default="events",
                     help="Holdout cut by timestamp span or event count (default events)")
@@ -105,6 +139,17 @@ def main() -> int:
         return 2
     if args.knob not in StrategyProfile().model_dump():
         print(f"status=BAD_KNOB {args.knob}", file=sys.stderr)
+        return 2
+    try:
+        also_set = _parse_also_set(args.also_set)
+    except ValueError as exc:
+        print(f"status=BAD_ALSO_SET {exc}", file=sys.stderr)
+        return 2
+    if args.knob in also_set:
+        print(
+            f"status=BAD_ALSO_SET swept knob {args.knob!r} also listed in --also-set",
+            file=sys.stderr,
+        )
         return 2
 
     baseline = (
@@ -134,19 +179,25 @@ def main() -> int:
 
     full = _run_window(
         journal=journal, meta=meta, baseline=baseline, knob=args.knob, values=values,
-        holdout_frac=0.0, use_holdout=False, split=args.split,
+        also_set=also_set, holdout_frac=0.0, use_holdout=False, split=args.split,
     )
     hold = _run_window(
         journal=journal, meta=meta, baseline=baseline, knob=args.knob, values=values,
-        holdout_frac=args.holdout_frac, use_holdout=True, split=args.split,
+        also_set=also_set, holdout_frac=args.holdout_frac, use_holdout=True, split=args.split,
     )
 
-    # Pick best non-baseline value on full window by prefer direction
+    # Pick best non-baseline value on full window by prefer direction.
+    # With --also-set, even sweeping the baseline knob value is a real candidate.
     base_val = getattr(baseline, args.knob)
-    candidates = [r for r in full["rows"] if r["candidate_value"] != base_val]
+    if also_set:
+        candidates = list(full["rows"])
+    else:
+        candidates = [r for r in full["rows"] if r["candidate_value"] != base_val]
+
     def score(r: dict[str, Any]) -> float:
         dq = float(r.get("delta_n_quote") or 0.0)
         return -dq if args.prefer == "lower_quotes" else dq
+
     best = max(candidates, key=score) if candidates else None
     hold_row = None
     if best is not None:
@@ -169,6 +220,7 @@ def main() -> int:
 
     payload = {
         "knob": args.knob,
+        "also_set": also_set,
         "baseline_profile": args.baseline_profile,
         "baseline_value": base_val,
         "prefer": args.prefer,
@@ -183,8 +235,9 @@ def main() -> int:
     bval = best["candidate_value"] if best else None
     bdq = best["delta_n_quote"] if best else None
     hdq = hold_row["delta_n_quote"] if hold_row else None
+    also_s = ",".join(f"{k}={v}" for k, v in sorted(also_set.items())) or "-"
     print(
-        f"status=OK knob={args.knob} best={bval} full_dn_quote={bdq} "
+        f"status=OK knob={args.knob} also_set={also_s} best={bval} full_dn_quote={bdq} "
         f"holdout_dn_quote={hdq} oos_replicated={oos_ok} thin_holdout={thin_holdout}",
         file=sys.stderr,
     )
