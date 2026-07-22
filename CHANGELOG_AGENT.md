@@ -124,3 +124,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T13:02:00Z | Tier1 | T1-30 cycle history wires shadow AS; C-03 multi-knob null screen on ~6h tape | pytest summarize+shadow pass; trend_flow_z in-sample only (oos=false); reprice/gamma/event_jump/c_tox dn_quote=0 | merged
 
 2026-07-22T13:10:00Z | Tier1 | T1-31 StrategyProfile knob audit; event_sweep_levels newly confirmed unused | pytest pass; status n_used=26 n_unused=3 unused=end_date_taper_days,event_sweep_levels,exit_urgency_s | merged
+
+2026-07-22T13:20:00Z | Tier1 | T1-32 richest paper-log discovery — fix gate shadowing by tiny logs/paper.jsonl | gate restored livecfg runtime_h=6.33 quotes=4200; pytest test_paper_data_gate pass | merged

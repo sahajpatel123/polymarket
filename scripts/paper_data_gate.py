@@ -22,6 +22,12 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from polymaker.metrics.log_discovery import (
+    DEFAULT_METRICS_CANDIDATES,
+    DEFAULT_PAPER_CANDIDATES,
+    pick_richest_log,
+)
+
 
 def _ts(obj: dict) -> float | None:
     for key in ("ts", "timestamp", "time"):
@@ -40,14 +46,11 @@ def _ts(obj: dict) -> float | None:
 
 
 def _sibling_metrics(paper_log: Path) -> Path | None:
-    """livecfg/logs/paper.jsonl → livecfg/logs/metrics-paper.jsonl, etc."""
+    """Prefer metrics beside the chosen paper log, else richest known metrics."""
     cand = paper_log.with_name("metrics-paper.jsonl")
     if cand.exists():
         return cand
-    for p in (Path("livecfg/logs/metrics-paper.jsonl"), Path("logs/metrics-paper.jsonl")):
-        if p.exists():
-            return p
-    return None
+    return pick_richest_log(DEFAULT_METRICS_CANDIDATES)
 
 
 def _count_metric_quotes(path: Path) -> int:
@@ -69,21 +72,20 @@ def _count_metric_quotes(path: Path) -> int:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--log", default=None,
-                    help="Paper JSONL (default: first existing among "
-                         "logs/paper.jsonl, livecfg/logs/paper.jsonl)")
+                    help="Paper JSONL (default: richest among "
+                         "livecfg/logs/paper.jsonl, logs/paper.jsonl)")
     ap.add_argument("--metrics-log", default=None,
                     help="Optional metrics JSONL for quote event counts")
     ap.add_argument("--min-hours", type=float, default=24.0)
     ap.add_argument("--min-quotes", type=int, default=500)
     args = ap.parse_args()
 
-    candidates = []
     if args.log:
-        candidates.append(Path(args.log))
+        path = Path(args.log)
     else:
-        candidates.extend([Path("logs/paper.jsonl"), Path("livecfg/logs/paper.jsonl")])
-
-    path = next((p for p in candidates if p.exists()), candidates[0])
+        path = pick_richest_log(DEFAULT_PAPER_CANDIDATES) or Path(
+            DEFAULT_PAPER_CANDIDATES[0]
+        )
     now = datetime.now(timezone.utc).isoformat()
     print(f"paper_data_gate now={now}")
     print(f"log_path={path.resolve()}")

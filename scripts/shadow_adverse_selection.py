@@ -30,11 +30,14 @@ def main() -> int:
     if args.log:
         path = Path(args.log)
     else:
-        candidates = [
-            Path("livecfg/logs/metrics-paper.jsonl"),
-            Path("logs/metrics-paper.jsonl"),
-        ]
-        path = next((p for p in candidates if p.exists()), candidates[0])
+        from polymaker.metrics.log_discovery import (
+            DEFAULT_METRICS_CANDIDATES,
+            pick_richest_log,
+        )
+
+        path = pick_richest_log(DEFAULT_METRICS_CANDIDATES) or Path(
+            DEFAULT_METRICS_CANDIDATES[0]
+        )
 
     if not path.exists():
         print(f"status=NO_LOG path={path}", file=sys.stderr)

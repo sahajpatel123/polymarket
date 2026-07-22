@@ -239,6 +239,14 @@ done without evidence (script output / tests) from that cycle.
   `scripts/profile_knob_audit.py`, `tests/test_profile_knob_audit.py`;
   status n_unused=3
 
+### T1-32 Richest paper-log discovery (gate shadowing fix)
+- Status: `done`
+- Done when: paper_data_gate / paper_metrics / shadow AS pick the longest
+  existing paper/metrics JSONL so a tiny `logs/paper.jsonl` cannot reset the
+  Tier-2 runtime counter away from `livecfg/logs`.
+- Evidence: `src/polymaker/metrics/log_discovery.py`; gate restored to
+  livecfg ~6.3h / 4200 quotes after preferring richest log
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

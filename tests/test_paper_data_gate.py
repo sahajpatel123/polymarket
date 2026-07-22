@@ -7,6 +7,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from polymaker.metrics.log_discovery import pick_richest_log
+
 
 def test_paper_data_gate_prefers_metrics_quotes(tmp_path: Path) -> None:
     paper = tmp_path / "paper.jsonl"
@@ -46,3 +48,20 @@ def test_paper_data_gate_prefers_metrics_quotes(tmp_path: Path) -> None:
     assert "requote_lines=3" in out
     assert "quotes_for_gate=7" in out
     assert "tier2_allowed=true" in out
+
+
+def test_pick_richest_log_prefers_longer_runtime(tmp_path: Path) -> None:
+    tiny = tmp_path / "tiny.jsonl"
+    rich = tmp_path / "rich.jsonl"
+    t0 = 1_700_000_000.0
+    tiny.write_text(
+        "\n".join(json.dumps({"ts": t0 + i, "event": "requote"}) for i in range(3)) + "\n"
+    )
+    rich.write_text(
+        "\n".join(
+            json.dumps({"ts": t0 + i * 3600, "event": "requote"}) for i in range(4)
+        )
+        + "\n"
+    )
+    picked = pick_richest_log([tiny, rich])
+    assert picked == rich

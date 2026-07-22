@@ -16,6 +16,10 @@ import sys
 from pathlib import Path
 
 from polymaker.metrics.analyze import analyze
+from polymaker.metrics.log_discovery import (
+    DEFAULT_METRICS_CANDIDATES,
+    pick_richest_log,
+)
 
 
 def main() -> int:
@@ -23,18 +27,16 @@ def main() -> int:
     ap.add_argument(
         "--log",
         default=None,
-        help="Metrics JSONL (default: first existing among "
+        help="Metrics JSONL (default: richest among "
              "livecfg/logs/metrics-paper.jsonl, logs/metrics-paper.jsonl)",
     )
     args = ap.parse_args()
     if args.log:
         path = Path(args.log)
     else:
-        candidates = [
-            Path("livecfg/logs/metrics-paper.jsonl"),
-            Path("logs/metrics-paper.jsonl"),
-        ]
-        path = next((p for p in candidates if p.exists()), candidates[-1])
+        path = pick_richest_log(DEFAULT_METRICS_CANDIDATES) or Path(
+            DEFAULT_METRICS_CANDIDATES[0]
+        )
     rep = analyze(path)
     print(json.dumps(rep.as_dict(), indent=2, sort_keys=True))
     if not path.exists():
