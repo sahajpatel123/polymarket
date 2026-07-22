@@ -150,3 +150,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T15:10:00Z | Tier1 | T1-43 validate --also-set multi-override; C-01 vol8+flow2 ≡ vol8 on vol_only tape | pytest pass; still thin OOS; no Tier2 | merged
 
 2026-07-22T15:20:00Z | Tier1 | T1-44 freeze journal in evidence pack + holdout_base_nq; reject live-append OOS false positive | pytest pass; frozen pack still thin OOS; no Tier2 | merged
+
+2026-07-22T15:35:00Z | Tier1 | T1-45 ensure_paper_collector restart helper; live still STALE — Polymarket market WS handshake timeouts | pytest pass; collector restarted pid recorded; gate clock pauses until WS recovers | merged

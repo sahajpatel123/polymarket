@@ -324,6 +324,13 @@ done without evidence (script output / tests) from that cycle.
   validate status exposes holdout_baseline_n_quote (anti live-append race).
 - Evidence: frozen pack ~8.3h still thin (base_nq≈6–7); no Tier2
 
+### T1-45 Ensure/restart paper collector helper
+- Status: `done`
+- Done when: ensure_paper_collector diagnoses STALE and can `--restart`;
+  surfaces collector_hint (e.g. ws_handshake_timeout) after relaunch.
+- Evidence: pytest diagnose path; live WS handshake timeouts leave health
+  STALE after restart (external outage, not strategy)
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

@@ -9,6 +9,7 @@ accumulates toward the 24h Tier-2 gate. **None of these change pricing math.**
 uv run python scripts/append_strategy_cycle.py   # gate+snapshot+rank+health+shadow → JSONL
 uv run python scripts/summarize_strategy_cycles.py  # ETA to 24h gate (+ latest shadow AS)
 uv run python scripts/paper_health.py            # fail if quotes go stale
+uv run python scripts/ensure_paper_collector.py --restart  # relaunch if STALE
 ```
 
 ## Evaluation / candidates
@@ -29,7 +30,7 @@ uv run python scripts/paper_health.py            # fail if quotes go stale
 | `scripts/profile_knob_audit.py` | StrategyProfile fields used vs dead/unused |
 | `scripts/quote_churn_report.py` | Quote lifetime + requote-interval percentiles |
 | `scripts/verify_metrics_schema.py` | Fail if latest quotes lack required fields |
-| `scripts/verify_paper_schema.py` | Fail if latest requotes lack `vol_ratio` etc. |
+| `scripts/ensure_paper_collector.py` | Diagnose STALE paper collector; optional `--restart` |
 
 ## Open candidates
 
