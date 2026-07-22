@@ -5,17 +5,17 @@ autonomous loop. Not an action request.
 
 ## Week of 2026-07-22 (UTC)
 
-Generated: `2026-07-22T22:58:55Z` (via `scripts/write_weekly_report.py`)
+Generated: `2026-07-22T23:18:59Z` (via `scripts/write_weekly_report.py`)
 
 ### System
 
 | Item | Status |
 |------|--------|
-| Branch | `git log -1` → `88e2b05 Include Tier-1 done counts in WEEKLY_REPORT (T1-88).` |
+| Branch | `git log -1` → `c8e81ad Surface collector PID and ensure_status in outage_status (T1-90).` |
 | Paper trading | `78216 /Users/sahajpatel/Code/polymarket/.venv/bin/python3 /Users/sahajpatel/Code/polymarket/.venv/bin/polymaker run --paper --config-dir livecfg` |
 | Loop | 10m Agent-1 strategy-pricing cadence; Tier-2 gated on hours |
-| Tier-1 changelog lines | `134` (from `CHANGELOG_AGENT.md`) |
-| Tier-1 backlog done | `89` (from `BACKLOG.md` Status: done) |
+| Tier-1 changelog lines | `136` (from `CHANGELOG_AGENT.md`) |
+| Tier-1 backlog done | `91` (from `BACKLOG.md` Status: done) |
 
 ### Tier-2 PRs
 
@@ -30,10 +30,10 @@ Open candidates: `docs/STRATEGY_CANDIDATES.md` (C-01…C-04).
 `logs/outage_status.json`:
 
 ```
-ts=2026-07-22T22:58:20.261270+00:00
+ts=2026-07-22T23:18:59.039739+00:00
 connectivity=status=DOWN rest_ok=False ws_ok=False
 outage_open=True
-outage_total_h=7.5075
+outage_total_h=7.8516
 outage_alert=True
 outage_alert_severe=True
 runtime_h=8.37
@@ -48,9 +48,12 @@ deps_bumps=0
 deps_flagged=21
 tape_frozen=True
 eta_paused=True
-last_requote_age_s=27383.703
-last_quote_age_s=27383.705
+last_requote_age_s=28622.327
+last_quote_age_s=28622.329
 health=STALE
+ensure_status=NEEDS_RESTART
+collector_pid=78216
+collector_pids=[78216]
 ```
 
 ### Paper P&L / risk metrics (literal script output)
@@ -60,10 +63,10 @@ health=STALE
 ```
 log_path=/Users/sahajpatel/Code/polymarket/livecfg/logs/paper.jsonl
 metrics_path=/Users/sahajpatel/Code/polymarket/livecfg/logs/metrics-paper.jsonl
-status=OK lines=5399 json_lines=5399 bad_lines=0
+status=OK lines=5460 json_lines=5460 bad_lines=0
 runtime_basis=requote
 runtime_hours=8.3700
-runtime_hours_all_events=15.9838
+runtime_hours_all_events=16.3172
 quote_events=5529
 requote_lines=2843
 quotes_for_gate=5529
@@ -91,13 +94,13 @@ status=OK requotes=2843 trending_frac=0.042912 false_trending_frac=1.0 false_tre
 `uv run python scripts/c01_promotion_checklist.py`:
 
 ```
-status=BLOCKED blockers=hours_ok,health_ok,outage_closed,oos_replicated,holdout_not_thin runtime_h=8.3700 quotes=5529 health=STALE last_requote_age_s=27420.616 outage_open=True outage_total_h=7.5177 outage_alert=True outage_alert_severe=True oos=False thin=True vol_gap=0.04 quiet_vol_max=1.989 trend_vol_min=2.029 suggested_vol=2.489 suppress_2=0.0 suppress_suggested=0.1875 suppress_target=1.0 false_trending_attr_frac=1.0 boundary_tight=True
+status=BLOCKED blockers=hours_ok,health_ok,outage_closed,oos_replicated,holdout_not_thin runtime_h=8.3700 quotes=5529 health=STALE last_requote_age_s=28624.641 outage_open=True outage_total_h=7.8521 outage_alert=True outage_alert_severe=True oos=False thin=True vol_gap=0.04 quiet_vol_max=1.989 trend_vol_min=2.029 suggested_vol=2.489 suppress_2=0.0 suppress_suggested=0.1875 suppress_target=1.0 false_trending_attr_frac=1.0 boundary_tight=True
 ```
 
 `uv run python scripts/summarize_strategy_cycles.py`:
 
 ```
-status=OK cycles=77 runtime_h=8.37 hours_remaining=15.63 eta_wall_h=None eta_paused=True outage_open=True outage_total_h=7.5177 outage_alert=True outage_alert_severe=True hours_to_tier2_gate=15.63 tier2_allowed=False quotes_per_wall_h=325.86 health=STALE last_requote_age_s=23300.387 tape_frozen=True connectivity=SKIPPED crossed_frac=0.0000 markout_30s=0.000006 false_trending_frac=1.0 false_trending_cancel_share=0.718563 vol_only_frac=1.0 vol_gap=0.04 quiet_vol_max=1.989 trend_vol_min=2.029 suggested_vol=2.489 false_trending_attr_frac=1.0 c01=BLOCKED c01_blockers=hours_ok,health_ok,outage_closed,oos_replicated,holdout_not_thin suppress_2=0.0 suppress_suggested=0.1875 suppress_target=1.0 unused_set=9 paper_schema=OK
+status=OK cycles=77 runtime_h=8.37 hours_remaining=15.63 eta_wall_h=None eta_paused=True outage_open=True outage_total_h=7.8522 outage_alert=True outage_alert_severe=True hours_to_tier2_gate=15.63 tier2_allowed=False quotes_per_wall_h=325.86 health=STALE last_requote_age_s=23300.387 tape_frozen=True connectivity=SKIPPED crossed_frac=0.0000 markout_30s=0.000006 false_trending_frac=1.0 false_trending_cancel_share=0.718563 vol_only_frac=1.0 vol_gap=0.04 quiet_vol_max=1.989 trend_vol_min=2.029 suggested_vol=2.489 false_trending_attr_frac=1.0 c01=BLOCKED c01_blockers=hours_ok,health_ok,outage_closed,oos_replicated,holdout_not_thin suppress_2=0.0 suppress_suggested=0.1875 suppress_target=1.0 unused_set=9 paper_schema=OK
 ```
 
 ### Dependency / security audit

@@ -602,6 +602,13 @@ done without evidence (script output / tests) from that cycle.
   ensure_status + collector_pid into outage_status; status line shows ensure=.
 - Evidence: live ensure=NEEDS_RESTART collector_pid=78216 during ~7.7h DOWN
 
+### T1-91 Document outage_status field contract + expand recommended keys
+- Status: `done`
+- Done when: STRATEGY_AGENT_TOOLING documents required/recommended keys;
+  validate_outage_status RECOMMENDED_KEYS includes health/ensure/deps/tape fields;
+  live validate reports recommended_missing=-.
+- Evidence: live validate status=OK recommended_missing=- during ~7.8h DOWN
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

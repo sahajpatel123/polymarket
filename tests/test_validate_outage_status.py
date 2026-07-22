@@ -22,6 +22,13 @@ def _full(**overrides):
         "tier2_allowed": False,
         "gate_reason": "need_hours>=24.0",
         "runtime_basis": "requote",
+        "tape_frozen": True,
+        "eta_paused": True,
+        "last_requote_age_s": 28000.0,
+        "health": "STALE",
+        "ensure_status": "NEEDS_RESTART",
+        "collector_pid": 78216,
+        "deps_ok": True,
     }
     base.update(overrides)
     return base

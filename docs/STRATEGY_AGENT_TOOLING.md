@@ -48,6 +48,23 @@ uv run python scripts/c01_promotion_checklist.py          # C-01 Tier-2 PR block
 | `scripts/strategy_tick.py` | One-shot tick: connectivity + C-01 + summarize + gate + deps → `outage_status.json` |
 | `scripts/c01_promotion_checklist.py` | C-01 Tier-2 PR readiness: READY vs blockers |
 
+## `logs/outage_status.json` field contract
+
+Compact monitor snapshot written by `strategy_tick` / `outage_window_report`
+/ `await_polymarket_recovery`. Validated by `validate_outage_status.py`.
+
+**Required** (fail if missing): `ts`, `outage_open`, `outage_total_h`,
+`outage_alert` (≥3h), `outage_alert_severe` (≥5h), `hours_to_tier2_gate`,
+`runtime_h`, `quotes`.
+
+**Recommended** (warned if missing): `connectivity`, `tier2_allowed`,
+`gate_reason`, `runtime_basis`, `tape_frozen`, `eta_paused`,
+`last_requote_age_s`, `health`, `ensure_status`, `collector_pid`, `deps_ok`.
+
+During a Polymarket outage expect `outage_open=true`, `health=STALE`,
+`ensure_status=NEEDS_RESTART` (collector alive; do **not** force-restart while
+upstream is DOWN), and frozen `quotes` / `runtime_h`.
+
 ## Open candidates
 
 See [STRATEGY_CANDIDATES.md](STRATEGY_CANDIDATES.md). Do not promote Tier-2

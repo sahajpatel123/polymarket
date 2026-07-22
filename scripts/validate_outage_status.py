@@ -35,6 +35,13 @@ RECOMMENDED_KEYS = (
     "tier2_allowed",
     "gate_reason",
     "runtime_basis",
+    "tape_frozen",
+    "eta_paused",
+    "last_requote_age_s",
+    "health",
+    "ensure_status",
+    "collector_pid",
+    "deps_ok",
 )
 
 
