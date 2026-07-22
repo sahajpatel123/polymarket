@@ -93,6 +93,9 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
 - **Update 2026-07-22T17:40Z:** attributed false-TRENDING (vol-present only)
   still 100%; informational `suggested_vol≈2.489` (quiet_max+0.5). Candidate
   target remains 8 for full suppress; no Tier-2 PR while outage continues.
+- **Update 2026-07-22T18:20Z:** CF sweep on frozen tape —
+  suppress@2=0, @suggested(2.489)≈0.19, @8=1.0. Soft floor only cuts ~19% of
+  attributed TRENDING; target 8 still full suppress. Still no merge.
 
 ## C-02 Prefer higher-reward market weight (selection)
 

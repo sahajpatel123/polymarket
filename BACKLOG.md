@@ -422,6 +422,12 @@ done without evidence (script output / tests) from that cycle.
   last_outage_* alongside derived outage windows.
 - Evidence: live outage_open=True total_h≈2.7 during Polymarket DOWN
 
+### T1-61 C-01 checklist CF at 2 / suggested / target
+- Status: `done`
+- Done when: checklist sweeps counterfactual at default 2, suggested_vol,
+  and target; surfaces suppress_frac_* on status line.
+- Evidence: live suppress fractions printed during outage freeze
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

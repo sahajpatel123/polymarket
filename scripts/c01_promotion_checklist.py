@@ -74,17 +74,60 @@ def main() -> int:
     _, _, outage_err = _run([py, "scripts/outage_window_report.py"])
     outage = _parse_status_line(outage_err)
 
-    _, _, cf_err = _run([
+    _, _, regime_err = _run([py, "scripts/paper_regime_report.py"])
+    regime = _parse_status_line(regime_err)
+
+    def _f(key: str) -> float | None:
+        raw = regime.get(key)
+        if raw is None or raw in ("", "None", "null"):
+            return None
+        try:
+            return float(raw)
+        except ValueError:
+            return None
+
+    suggested = _f("suggested_vol")
+    sweep_vals: list[float] = []
+    if suggested is not None:
+        sweep_vals.append(suggested)
+    if args.target_vol not in sweep_vals:
+        sweep_vals.append(float(args.target_vol))
+    # Include live default (2.0) when it differs — baseline for C-01 delta.
+    if 2.0 not in sweep_vals:
+        sweep_vals.insert(0, 2.0)
+
+    _, cf_out, cf_err = _run([
         py,
         "scripts/trending_counterfactual.py",
         "--sweep-vol",
-        str(args.target_vol),
+        ",".join(str(v) for v in sweep_vals),
         "--by-market",
     ])
     cf = _parse_status_line(cf_err)
-
-    _, _, regime_err = _run([py, "scripts/paper_regime_report.py"])
-    regime = _parse_status_line(regime_err)
+    cf_sweep_all: list[dict[str, Any]] = []
+    try:
+        cf_obj = json.loads(cf_out) if cf_out.strip().startswith("{") else {}
+        for m in cf_obj.get("markets") or []:
+            if m.get("condition_id") == "ALL":
+                cf_sweep_all = m.get("sweep") or []
+                break
+        if not cf_sweep_all and cf_obj.get("markets"):
+            # by-market mode: average suppress_frac across markets per vol level
+            by_vol: dict[float, list[float]] = {}
+            for m in cf_obj["markets"]:
+                for row in m.get("sweep") or []:
+                    v = float(row.get("candidate_trend_vol_ratio") or 0)
+                    by_vol.setdefault(v, []).append(float(row.get("would_suppress_frac") or 0))
+            cf_sweep_all = [
+                {
+                    "candidate_trend_vol_ratio": v,
+                    "would_suppress_frac": round(sum(xs) / len(xs), 6) if xs else 0.0,
+                    "markets_n": len(xs),
+                }
+                for v, xs in sorted(by_vol.items())
+            ]
+    except (json.JSONDecodeError, TypeError, ValueError):
+        cf_sweep_all = []
 
     pack = _load_json(Path(args.evidence_pack))
     c01 = (pack or {}).get("c01_trend_vol_ratio") or {}
@@ -110,15 +153,6 @@ def main() -> int:
     outage_open = str(outage.get("open", "")).lower() == "true"
     cf_ok = cf.get("status") == "OK"
 
-    def _f(key: str) -> float | None:
-        raw = regime.get(key)
-        if raw is None or raw in ("", "None", "null"):
-            return None
-        try:
-            return float(raw)
-        except ValueError:
-            return None
-
     quiet_max = _f("quiet_vol_max")
     trend_min = _f("trend_vol_min")
     vol_gap = _f("vol_gap")
@@ -130,6 +164,21 @@ def main() -> int:
     )
     # Gap under 0.25 means default 2.0 sits near the QUIET/TRENDING boundary.
     boundary_tight = None if vol_gap is None else abs(vol_gap) < 0.25
+
+    def _suppress_at(vol: float | None) -> float | None:
+        if vol is None or not cf_sweep_all:
+            return None
+        for row in cf_sweep_all:
+            try:
+                if abs(float(row.get("candidate_trend_vol_ratio")) - float(vol)) < 1e-6:
+                    return float(row.get("would_suppress_frac"))
+            except (TypeError, ValueError):
+                continue
+        return None
+
+    suppress_at_2 = _suppress_at(2.0)
+    suppress_at_suggested = _suppress_at(suggested)
+    suppress_at_target = _suppress_at(float(args.target_vol))
 
     checks = {
         "hours_ok": hours_ok,
@@ -168,12 +217,17 @@ def main() -> int:
             "trend_vol_min": trend_min,
             "trend_vol_p50": _f("trend_vol_p50"),
             "vol_gap": vol_gap,
-            "suggested_trend_vol_ratio": _f("suggested_vol"),
+            "suggested_trend_vol_ratio": suggested,
             "false_trending_attr_frac": _f("false_trending_attr_frac"),
             "target_trend_vol_ratio": args.target_vol,
             "target_above_quiet_max": target_above_quiet,
             "target_above_trend_min": target_above_trend_min,
             "boundary_tight": boundary_tight,
+            "cf_sweep_vols": sweep_vals,
+            "suppress_frac_at_2": suppress_at_2,
+            "suppress_frac_at_suggested": suppress_at_suggested,
+            "suppress_frac_at_target": suppress_at_target,
+            "cf_sweep": cf_sweep_all,
         },
         "evidence_pack": {
             "path": args.evidence_pack if pack else None,
@@ -196,7 +250,9 @@ def main() -> int:
         f"oos={any_oos if validate_present else None} "
         f"thin={thin_any if validate_present else None} "
         f"vol_gap={vol_gap} quiet_vol_max={quiet_max} trend_vol_min={trend_min} "
-        f"suggested_vol={_f('suggested_vol')} "
+        f"suggested_vol={suggested} "
+        f"suppress_2={suppress_at_2} suppress_suggested={suppress_at_suggested} "
+        f"suppress_target={suppress_at_target} "
         f"false_trending_attr_frac={_f('false_trending_attr_frac')} "
         f"boundary_tight={boundary_tight}",
         file=sys.stderr,
