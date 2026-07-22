@@ -99,6 +99,29 @@ def _merge_outage_status(path: Path, fields: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
+def _coerce_status_value(raw: str) -> Any:
+    low = raw.lower()
+    if low in {"true", "false"}:
+        return low == "true"
+    if low in {"none", "null"}:
+        return None
+    try:
+        if "." in raw:
+            return float(raw)
+        return int(raw)
+    except ValueError:
+        return raw
+
+
+def _summarize_freeze_fields(sm: dict[str, Any]) -> dict[str, Any]:
+    """Pull tape-freeze fields from summarize status into outage_status (T1-86)."""
+    out: dict[str, Any] = {}
+    for key in ("tape_frozen", "eta_paused", "last_requote_age_s"):
+        if key in sm and sm[key] not in (None, ""):
+            out[key] = _coerce_status_value(str(sm[key]))
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
@@ -176,6 +199,7 @@ def main() -> int:
     }
 
     merge_fields: dict[str, Any] = dict(gate_fields)
+    merge_fields.update(_summarize_freeze_fields(report["steps"].get("summarize") or {}))
     conn = report["steps"].get("connectivity") or {}
     conn_line = str(conn.get("status_line") or "")
     if conn_line and conn.get("status") != "SKIPPED":

@@ -29,3 +29,17 @@ def test_parse_gate_stdout() -> None:
     assert fields["runtime_basis"] == "requote"
     assert fields["gate_runtime_h"] == 8.37
     assert fields["gate_quotes"] == 5529
+
+
+def test_summarize_freeze_fields() -> None:
+    fields = tick._summarize_freeze_fields({
+        "tape_frozen": "True",
+        "eta_paused": "True",
+        "last_requote_age_s": "25225.3",
+        "runtime_h": "8.37",
+    })
+    assert fields == {
+        "tape_frozen": True,
+        "eta_paused": True,
+        "last_requote_age_s": 25225.3,
+    }

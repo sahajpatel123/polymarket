@@ -139,6 +139,9 @@ PRESERVE_STATUS_KEYS = (
     "deps_ok",
     "deps_bumps",
     "deps_flagged",
+    "tape_frozen",
+    "eta_paused",
+    "last_requote_age_s",
 )
 
 
