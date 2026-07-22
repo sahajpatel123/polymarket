@@ -148,6 +148,13 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: `slice_journal_rows(split=events)`, `filter_rows_for_tokens`;
   C-01 still oos_replicated=false after market-filtered event holdout
 
+### T1-19 Strategy snapshot includes reward + regime
+- Status: `done`
+- Done when: strategy_snapshot.py prints gate, reward scorecard, and regime
+  report alongside offline compare in one command.
+- Evidence: `scripts/strategy_snapshot.py` status line with top_reward_per_hour
+  + trending_frac
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

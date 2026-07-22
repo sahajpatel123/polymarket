@@ -17,6 +17,9 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
 - **Next:** re-validate after ≥24h paper / denser adverse windows; if OOS still
   fails, reject or combine with higher `trend_flow_z` instead.
 - **Status:** `watching` (blocked on data, not code)
+- **Update 2026-07-22T08:27Z:** TRENDING still fires late in session (~84m)
+  with `flow_z≈-0.08` — vol-ratio path remains the smoking gun, but OOS
+  promotion still blocked.
 
 ## C-02 Prefer higher-reward market weight (selection)
 
