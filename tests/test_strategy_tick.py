@@ -17,3 +17,15 @@ def test_parse_kv_extracts_c01_fields() -> None:
 def test_status_line_prefers_stderr() -> None:
     line = tick._status_line("status=OK runtime_h=8.37\n", "{}\n")
     assert line.startswith("status=OK")
+
+
+def test_parse_gate_stdout() -> None:
+    fields = tick._parse_gate_stdout(
+        "status=OK\nruntime_basis=requote\nruntime_hours=8.3700\n"
+        "quotes_for_gate=5529\ntier2_allowed=false reason=need_hours>=24.0\n"
+    )
+    assert fields["tier2_allowed"] is False
+    assert fields["gate_reason"] == "need_hours>=24.0"
+    assert fields["runtime_basis"] == "requote"
+    assert fields["gate_runtime_h"] == 8.37
+    assert fields["gate_quotes"] == 5529

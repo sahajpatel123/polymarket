@@ -220,3 +220,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T21:10:00Z | Tier1 | T1-78 await_polymarket_recovery refreshes outage_status.json on STILL_DOWN + marks recovered on UP | pytest pass; no Tier2 | merged
 
 2026-07-22T21:20:00Z | Tier1 | T1-79 hours_to_tier2_gate + connectivity in outage_status; strategy_tick surfaces gate hours/quotes | live ~5.8h DOWN; no Tier2 | merged
+
+2026-07-22T21:30:00Z | Tier1 | T1-80 preserve probe fields on status rewrite + merge paper_data_gate into outage_status | live ~6.0h DOWN; no Tier2 | merged

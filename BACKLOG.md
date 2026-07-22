@@ -536,6 +536,12 @@ done without evidence (script output / tests) from that cycle.
   await patches connectivity on STILL_DOWN; strategy_tick prints gate hours + quotes.
 - Evidence: live status JSON with hours_to_tier2_gate≈15.63 at runtime 8.37h
 
+### T1-80 Preserve probe fields + merge paper_data_gate into outage_status
+- Status: `done`
+- Done when: status-out rewrite preserves connectivity/recovered/gate keys;
+  strategy_tick merges tier2_allowed/gate_reason into logs/outage_status.json.
+- Evidence: live status has connectivity + tier2_allowed=false after strategy_tick
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

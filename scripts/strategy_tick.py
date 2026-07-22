@@ -19,6 +19,7 @@ import json
 import subprocess
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 
@@ -41,6 +42,61 @@ def _parse_kv(line: str) -> dict[str, str]:
             k, _, v = part.partition("=")
             out[k] = v
     return out
+
+
+def _parse_gate_stdout(stdout: str) -> dict[str, Any]:
+    """Pull Tier-2 gate fields from paper_data_gate stdout (T1-80)."""
+    kv: dict[str, str] = {}
+    wanted = {
+        "tier2_allowed",
+        "reason",
+        "runtime_basis",
+        "runtime_hours",
+        "quotes_for_gate",
+        "status",
+    }
+    for line in stdout.splitlines():
+        if line.startswith(" ") or line.startswith("{"):
+            continue
+        for part in line.split():
+            if "=" not in part:
+                continue
+            k, _, v = part.partition("=")
+            if k in wanted:
+                kv[k] = v
+    out: dict[str, Any] = {}
+    if "tier2_allowed" in kv:
+        out["tier2_allowed"] = kv["tier2_allowed"].lower() == "true"
+    if "reason" in kv:
+        out["gate_reason"] = kv["reason"]
+    if "runtime_basis" in kv:
+        out["runtime_basis"] = kv["runtime_basis"]
+    if "runtime_hours" in kv:
+        try:
+            out["gate_runtime_h"] = float(kv["runtime_hours"])
+        except ValueError:
+            out["gate_runtime_h"] = kv["runtime_hours"]
+    if "quotes_for_gate" in kv:
+        try:
+            out["gate_quotes"] = int(float(kv["quotes_for_gate"]))
+        except ValueError:
+            out["gate_quotes"] = kv["quotes_for_gate"]
+    if "status" in kv:
+        out["gate_status"] = kv["status"]
+    return out
+
+
+def _merge_outage_status(path: Path, fields: dict[str, Any]) -> dict[str, Any]:
+    data: dict[str, Any] = {}
+    if path.exists():
+        try:
+            data = json.loads(path.read_text())
+        except json.JSONDecodeError:
+            data = {}
+    data.update({"ts": datetime.now(timezone.utc).isoformat(), **fields})
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
+    return data
 
 
 def main() -> int:
@@ -67,6 +123,7 @@ def main() -> int:
     )
     args = ap.parse_args()
     py = sys.executable
+    status_path = Path("logs/outage_status.json")
     report: dict[str, Any] = {
         "ts": datetime.now(timezone.utc).isoformat(),
         "steps": {},
@@ -105,10 +162,34 @@ def main() -> int:
         py,
         "scripts/outage_window_report.py",
         "--status-out",
-        "logs/outage_status.json",
+        str(status_path),
     ])
     line = _status_line(err, out)
     report["steps"]["outage"] = {"rc": code, "status_line": line, **_parse_kv(line)}
+
+    code, gout, gerr = _run([py, "scripts/paper_data_gate.py"])
+    gate_fields = _parse_gate_stdout(gout)
+    report["steps"]["gate"] = {
+        "rc": code,
+        "status_line": _status_line(gerr, gout),
+        **{k: str(v) for k, v in gate_fields.items()},
+    }
+
+    merge_fields: dict[str, Any] = dict(gate_fields)
+    conn = report["steps"].get("connectivity") or {}
+    conn_line = str(conn.get("status_line") or "")
+    if conn_line and conn.get("status") != "SKIPPED":
+        if conn.get("rest_ok") is not None:
+            merge_fields["connectivity"] = (
+                f"status={conn.get('status')} "
+                f"rest_ok={conn.get('rest_ok')} "
+                f"ws_ok={conn.get('ws_ok')}"
+            )
+        else:
+            merge_fields["connectivity"] = conn_line
+        merge_fields["recovered"] = "RECOVERED" in conn_line
+    if merge_fields:
+        _merge_outage_status(status_path, merge_fields)
 
     if args.append:
         cmd = [py, "scripts/append_strategy_cycle.py"]
@@ -131,6 +212,7 @@ def main() -> int:
     sm = report["steps"].get("summarize") or {}
     unused = report["steps"].get("unused_knobs") or {}
     outage = report["steps"].get("outage") or {}
+    gate = report["steps"].get("gate") or {}
     ap_step = report["steps"].get("append") or {}
     weekly = report["steps"].get("weekly") or {}
     conn_line = str(conn.get("status_line") or "")
@@ -149,6 +231,8 @@ def main() -> int:
         f"outage_total_h={outage.get('total_h')} "
         f"hours_to_tier2_gate={outage.get('hours_to_tier2_gate')} "
         f"quotes={outage.get('quotes')} "
+        f"tier2_allowed={gate.get('tier2_allowed')} "
+        f"gate_reason={gate.get('gate_reason')} "
         f"runtime_h={sm.get('runtime_h')} eta_paused={sm.get('eta_paused')} "
         f"tape_frozen={sm.get('tape_frozen')} "
         f"unused_set={unused.get('n_set_unused')} "
@@ -165,6 +249,8 @@ def main() -> int:
     if report["steps"]["unused_knobs"]["rc"] != 0:
         bad = True
     if report["steps"]["outage"]["rc"] not in (0, 2):
+        bad = True
+    if report["steps"]["gate"]["rc"] not in (0, 1):
         bad = True
     if args.append and report["steps"]["append"]["rc"] != 0:
         bad = True

@@ -105,6 +105,9 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
 - **Update 2026-07-22T21:20Z:** `outage_status` now includes
   `hours_to_tier2_gate` (24−runtime_h) and live `connectivity` on probe.
   Still ~15.6h gate remaining on frozen 8.37h requote runtime.
+- **Update 2026-07-22T21:30Z:** `outage_status` preserves connectivity across
+  rewrites and embeds `tier2_allowed` / `gate_reason` from paper_data_gate.
+  Outage ~6h; still no Tier-2 PR.
 
 ## C-02 Prefer higher-reward market weight (selection)
 

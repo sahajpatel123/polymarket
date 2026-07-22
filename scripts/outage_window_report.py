@@ -129,6 +129,32 @@ def _hours_to_tier2_gate(runtime_h: Any) -> float | None:
         return None
 
 
+PRESERVE_STATUS_KEYS = (
+    "connectivity",
+    "recovered",
+    "waited_s",
+    "tier2_allowed",
+    "gate_reason",
+    "runtime_basis",
+)
+
+
+def write_compact_status(path: Path, status: dict[str, Any]) -> dict[str, Any]:
+    """Write compact status, preserving probe/gate fields from a prior file (T1-80)."""
+    prev: dict[str, Any] = {}
+    if path.exists():
+        try:
+            prev = json.loads(path.read_text())
+        except json.JSONDecodeError:
+            prev = {}
+    for key in PRESERVE_STATUS_KEYS:
+        if key in prev and key not in status:
+            status[key] = prev[key]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(status, indent=2, sort_keys=True) + "\n")
+    return status
+
+
 def compact_status(rep: dict[str, Any]) -> dict[str, Any]:
     """Machine-readable snapshot for operators / external monitors (T1-77/T1-79)."""
     cur = rep.get("current") or {}
@@ -182,8 +208,7 @@ def main() -> int:
     status = compact_status(rep)
     if args.status_out:
         outp = Path(args.status_out)
-        outp.parent.mkdir(parents=True, exist_ok=True)
-        outp.write_text(json.dumps(status, indent=2, sort_keys=True) + "\n")
+        status = write_compact_status(outp, status)
     print(
         f"status=OK windows={rep['n_outage_windows']} open={rep['outage_open']} "
         f"total_h={rep['outage_total_h']} "

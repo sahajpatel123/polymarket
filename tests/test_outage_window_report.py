@@ -7,7 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from scripts.outage_window_report import analyze_cycles, compact_status
+from scripts.outage_window_report import analyze_cycles, compact_status, write_compact_status
 
 
 def test_analyze_cycles_detects_open_stale_window() -> None:
@@ -58,6 +58,26 @@ def test_compact_status_alert_thresholds() -> None:
         "current": {"runtime_hours_end": 24.5},
     })
     assert gated["hours_to_tier2_gate"] == 0.0
+
+
+def test_write_compact_status_preserves_probe_fields(tmp_path: Path) -> None:
+    path = tmp_path / "outage_status.json"
+    path.write_text(json.dumps({
+        "connectivity": "status=DOWN",
+        "recovered": False,
+        "tier2_allowed": False,
+        "gate_reason": "need_hours>=24.0",
+    }) + "\n")
+    written = write_compact_status(path, {
+        "outage_open": True,
+        "outage_total_h": 6.0,
+        "hours_to_tier2_gate": 15.63,
+    })
+    assert written["connectivity"] == "status=DOWN"
+    assert written["recovered"] is False
+    assert written["tier2_allowed"] is False
+    assert written["gate_reason"] == "need_hours>=24.0"
+    assert written["outage_open"] is True
 
 
 def test_outage_window_report_cli(tmp_path: Path) -> None:
