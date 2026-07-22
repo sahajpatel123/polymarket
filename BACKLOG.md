@@ -162,6 +162,13 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: `scripts/rank_vs_realized.py`; live spearman=-1.0 disagreements=2
   (Vance wins realized, Newsom wins scanner)
 
+### T1-21 Reward accrual decomposition in rank report
+- Status: `done`
+- Done when: rank_vs_realized also prints rewards_daily_rate, in_band_hours,
+  in_band_frac so rank inversions can be attributed to pool size vs uptime.
+- Evidence: both live markets in_band_frac≈1.0; daily_rate 308 vs 214 explains
+  realized gap
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

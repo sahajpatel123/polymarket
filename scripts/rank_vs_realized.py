@@ -37,6 +37,53 @@ def _first_existing(*paths: Path) -> Path | None:
     return None
 
 
+def _reward_decomposition(metrics: Path) -> dict[str, dict[str, float]]:
+    """Per-market daily_rate, in-band hours, and accrual from metrics JSONL."""
+    meta: dict[str, dict] = {}
+    band: dict[str, list[tuple[float, bool]]] = {}
+    with metrics.open() as fh:
+        for line in fh:
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            cid = str(obj.get("condition_id") or "")
+            if not cid:
+                continue
+            if obj.get("event") == "market_meta":
+                meta[cid] = obj
+            elif obj.get("event") == "quote":
+                try:
+                    ts = float(obj.get("ts") or 0.0)
+                except (TypeError, ValueError):
+                    continue
+                band.setdefault(cid, []).append((ts, bool(obj.get("in_reward_band", False))))
+    out: dict[str, dict[str, float]] = {}
+    for cid, samples in band.items():
+        samples = sorted(samples)
+        daily = float((meta.get(cid) or {}).get("rewards_daily_rate") or 0.0)
+        if len(samples) < 2:
+            out[cid] = {
+                "rewards_daily_rate": daily,
+                "in_band_hours": 0.0,
+                "quote_span_hours": 0.0,
+                "in_band_frac": 0.0,
+            }
+            continue
+        in_s = 0.0
+        for (t0, b0), (t1, _) in zip(samples, samples[1:]):
+            if b0:
+                in_s += max(0.0, t1 - t0)
+        span = max(0.0, samples[-1][0] - samples[0][0])
+        out[cid] = {
+            "rewards_daily_rate": daily,
+            "in_band_hours": round(in_s / 3600.0, 6),
+            "quote_span_hours": round(span / 3600.0, 6),
+            "in_band_frac": round(in_s / span, 6) if span > 0 else 0.0,
+        }
+    return out
+
+
 def load_catalog_scores(db: Path) -> dict[str, dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {}
     con = sqlite3.connect(db)
@@ -103,15 +150,20 @@ def build_report(
     build_scorecard = _load_script_build_scorecard()
     card = build_scorecard(metrics, paper_log)
     catalog = load_catalog_scores(db)
+    decomp = _reward_decomposition(metrics)
     rows = []
     for m in card.get("markets") or []:
         cid = m["condition_id"]
         cat = catalog.get(cid) or {}
+        d = decomp.get(cid) or {}
         rows.append({
             "condition_id": cid,
             "slug": cat.get("slug"),
             "scanner_score": cat.get("scanner_score"),
             "reward_density": cat.get("reward_density"),
+            "rewards_daily_rate": d.get("rewards_daily_rate"),
+            "in_band_hours": d.get("in_band_hours"),
+            "in_band_frac": d.get("in_band_frac"),
             "realized_reward_per_hour": m.get("reward_per_hour_usdc"),
             "realized_reward_accrual_usdc": m.get("reward_accrual_usdc"),
             "n_quote": m.get("n_quote"),
@@ -189,6 +241,13 @@ def main() -> int:
         f"disagreements={len(rep['rank_disagreements'])}",
         file=sys.stderr,
     )
+    for m in rep.get("markets") or []:
+        print(
+            f"market slug={m.get('slug')} scanner_rank={m.get('scanner_rank')} "
+            f"realized_rank={m.get('realized_rank')} daily_rate={m.get('rewards_daily_rate')} "
+            f"in_band_frac={m.get('in_band_frac')} rph={m.get('realized_reward_per_hour')}",
+            file=sys.stderr,
+        )
     return 0
 
 
