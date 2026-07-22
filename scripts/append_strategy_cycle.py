@@ -117,6 +117,10 @@ def main() -> int:
         "counterfactual": statuses.get("counterfactual", {}),
         "gate": statuses.get("gate_full", statuses.get("gate", {})),
     }
+    # Shadow/churn/markout on a STALE collector are frozen-tape snapshots — not
+    # live adverse-selection signal (T1-65).
+    health_status = str((row.get("health") or {}).get("status") or "")
+    row["tape_frozen"] = health_status.upper() == "STALE"
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     with out.open("a") as fh:
@@ -133,11 +137,13 @@ def main() -> int:
     cf = row.get("counterfactual") or {}
     c01 = row.get("c01") or {}
     outage = row.get("outage") or {}
+    tape_frozen = bool(row.get("tape_frozen"))
     print(
         f"status=OK appended={out} runtime_h={g.get('runtime_hours')} "
         f"quotes={g.get('quotes_for_gate')} tier2={g.get('tier2_allowed')} "
         f"spearman={row['rank'].get('spearman')} health={h.get('status')} "
         f"last_requote_age_s={h.get('last_requote_age_s')} "
+        f"tape_frozen={tape_frozen} "
         f"connectivity={conn.get('status')} "
         f"shadow_lifetimes={sh.get('lifetimes')} "
         f"crossed_frac={sh.get('crossed_frac')} "
@@ -160,6 +166,7 @@ def main() -> int:
         f"counterfactual={cf.get('status') or cf.get('mode') or '-'}",
         file=sys.stderr,
     )
+
     # health returncode 1 = stale; still append evidence but surface non-zero
     return 0 if codes.get("gate", 1) == 0 and codes.get("snapshot", 1) == 0 else 1
 

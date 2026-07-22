@@ -46,6 +46,16 @@ See [STRATEGY_CANDIDATES.md](STRATEGY_CANDIDATES.md). Do not promote Tier-2
 pricing/selection changes until `paper_data_gate` reports `tier2_allowed=true`
 **and** OOS validation passes on a non-thin holdout.
 
+## Recovery playbook (Polymarket REST/WS DOWN)
+
+1. `uv run python scripts/await_polymarket_recovery.py --once`
+   — if UP: restarts collector + appends a cycle (disable with
+   `--no-restart-on-recover` / `--no-append-cycle-on-recover`).
+2. Confirm `paper_health` is OK (not STALE) and `tape_frozen=false` on the
+   latest cycle line.
+3. Re-run `c01_promotion_checklist.py` once quotes advance; do not promote
+   C-01 while `outage_alert=true` or holdouts remain thin.
+
 ## Hard stops
 
 Kill-switch, daily-loss, wallet/credential logic: human only (`ESCALATE.md`).

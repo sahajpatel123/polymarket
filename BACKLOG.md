@@ -446,6 +446,12 @@ done without evidence (script output / tests) from that cycle.
   sets outage_alert when outage_total_h≥3.
 - Evidence: live outage_alert=True with age≈12k s during DOWN
 
+### T1-65 Mark cycle metrics tape_frozen when health is STALE
+- Status: `done`
+- Done when: append stores tape_frozen=true on STALE health; summarize
+  surfaces last_tape_frozen so shadow/churn are not read as live AS.
+- Evidence: live tape_frozen=True during Polymarket outage
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
