@@ -374,6 +374,12 @@ done without evidence (script output / tests) from that cycle.
   still reports `runtime_hours_all_events` for transparency.
 - Evidence: live requote=8.37h vs all_events=9.66h during WS outage
 
+### T1-53 Richest-log score uses requote runtime
+- Status: `done`
+- Done when: `paper_log_score` ranks by requote span (fallback all-events);
+  outage-padded logs cannot shadow an active collector.
+- Evidence: pytest pick_richest ignores ws_dropped padding
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

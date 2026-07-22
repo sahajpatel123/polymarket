@@ -29,10 +29,16 @@ def _ts(obj: dict) -> float | None:
 
 
 def paper_log_score(path: Path, *, sample_limit: int = 5000) -> tuple[float, int]:
-    """Return (runtime_hours, n_json_lines) for ranking paper logs."""
+    """Return (runtime_hours, n_json_lines) for ranking paper logs.
+
+    Runtime prefers the requote timeline so outage noise
+    (``market_ws_dropped`` / ``get_full_book_failed``) cannot make a stale
+    collector look "richer" than an active one (aligned with T1-52 gate).
+    """
     if not path.exists():
         return (-1.0, -1)
-    times: list[float] = []
+    times_all: list[float] = []
+    times_requote: list[float] = []
     n_json = 0
     try:
         with path.open() as fh:
@@ -47,9 +53,12 @@ def paper_log_score(path: Path, *, sample_limit: int = 5000) -> tuple[float, int
                 if not isinstance(obj, dict):
                     continue
                 n_json += 1
+                event = str(obj.get("event") or obj.get("msg") or "")
                 t = _ts(obj)
                 if t is not None:
-                    times.append(t)
+                    times_all.append(t)
+                    if event == "requote" or "requote" in event:
+                        times_requote.append(t)
                 # After sample_limit lines, still count remaining cheaply for size
                 if i + 1 >= sample_limit:
                     for rest in fh:
@@ -58,9 +67,15 @@ def paper_log_score(path: Path, *, sample_limit: int = 5000) -> tuple[float, int
                     break
     except OSError:
         return (-1.0, -1)
-    runtime_h = 0.0
-    if len(times) >= 2:
-        runtime_h = max(0.0, (max(times) - min(times)) / 3600.0)
+
+    def _span_h(times: list[float]) -> float:
+        if len(times) >= 2:
+            return max(0.0, (max(times) - min(times)) / 3600.0)
+        return 0.0
+
+    runtime_h = _span_h(times_requote)
+    if runtime_h <= 0.0:
+        runtime_h = _span_h(times_all)
     return (runtime_h, n_json)
 
 

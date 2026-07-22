@@ -103,3 +103,28 @@ def test_pick_richest_log_prefers_longer_runtime(tmp_path: Path) -> None:
     )
     picked = pick_richest_log([tiny, rich])
     assert picked == rich
+
+
+def test_pick_richest_log_ignores_outage_padding(tmp_path: Path) -> None:
+    from polymaker.metrics.log_discovery import paper_log_score
+
+    active = tmp_path / "active.jsonl"
+    padded = tmp_path / "padded.jsonl"
+    t0 = 1_700_000_000.0
+    # Active: 3h of requotes
+    active.write_text(
+        "\n".join(
+            json.dumps({"ts": t0 + i * 3600, "event": "requote"}) for i in range(4)
+        )
+        + "\n"
+    )
+    # Padded: 1h requotes then 10h of ws failures — must not win on all-events span
+    padded_rows = [
+        {"ts": t0, "event": "requote"},
+        {"ts": t0 + 3600, "event": "requote"},
+        {"ts": t0 + 11 * 3600, "event": "market_ws_dropped"},
+    ]
+    padded.write_text("\n".join(json.dumps(r) for r in padded_rows) + "\n")
+    assert paper_log_score(active)[0] == 3.0
+    assert paper_log_score(padded)[0] == 1.0
+    assert pick_richest_log([padded, active]) == active
