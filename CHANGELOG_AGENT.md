@@ -134,3 +134,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T13:50:00Z | Tier1 | T1-35 quote metrics emit fv_yes; shadow AS prefers it over mark heuristic | pytest shadow+metrics+replay 10 passed; paper ~6.8h/4500q collecting | merged
 
 2026-07-22T14:02:00Z | Tier1 | T1-36 flush quote metrics immediately + schema verifier; restarted paper collector | pytest metrics+schema pass; live quotes now have fv_yes; gate ~7.0h/4626q | merged
+
+2026-07-22T14:10:00Z | Tier1 | T1-37 schema in cycle history; C-01 recheck at ~7.1h still fails OOS; document C-04 unused knobs | append schema=OK; evidence pack full_dn=-111/-14 oos=false thin_holdout | merged

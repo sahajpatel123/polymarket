@@ -31,6 +31,9 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
   `crossed_frac≈0`, `markout_30s≈0` on ~3960 quote lifetimes — resting
   post-only quotes are not being mid-crossed in this quiet window; churn
   reduction is the only in-sample signal so far.
+- **Update 2026-07-22T14:08Z (~7.1h tape):** evidence pack still
+  `oos_replicated=false` / `thin_holdout=true` (full_dn_quote=-111 / -14).
+  Holdout remains too thin to promote despite larger in-sample churn cut.
 
 ## C-02 Prefer higher-reward market weight (selection)
 
@@ -68,3 +71,16 @@ Offline `validate_knob_candidate` on both livecfg markets (events holdout 30%):
   (`trend_vol_ratio` C-01, `trend_flow_z`) move quote counts; sticky-reprice /
   skew / EVENT jump are inert. Do not invent Tier-2 PRs from null screens.
 - **Status:** `watching` (await denser adverse windows + fills)
+
+## C-04 Wire unused profile knobs (or delete)
+
+Confirmed unused by `scripts/profile_knob_audit.py` (n_unused=3):
+
+| Knob | Intended role | Risk if wired |
+|------|---------------|---------------|
+| `exit_urgency_s` | Raise exit urgency with hold time | More aggressive exits → more churn / worse maker edge |
+| `end_date_taper_days` | Soft size taper before `reduce_only_hours` | Earlier size cut → less reward uptime |
+| `event_sweep_levels` | Named but unused; sweep uses frac/mult only | Wiring without design could false-trip EVENT |
+
+- **Status:** `watching` — Tier-2 only after paper fills + adverse windows;
+  prefer implement-or-delete over leaving dead knobs in `strategy.toml`.

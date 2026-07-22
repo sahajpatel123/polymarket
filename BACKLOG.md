@@ -274,6 +274,12 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: `src/polymaker/metrics/__init__.py`,
   `scripts/verify_metrics_schema.py`, tests; live quotes now include `fv_yes`
 
+### T1-37 Cycle history records metrics schema + C-01 7h refresh
+- Status: `done`
+- Done when: append_strategy_cycle includes verify_metrics_schema status;
+  STRATEGY_CANDIDATES updated with ~7.1h C-01 evidence + C-04 unused-knob list.
+- Evidence: schema=OK on live collector; C-01 still oos=false thin_holdout
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
