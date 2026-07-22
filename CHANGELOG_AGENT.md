@@ -198,3 +198,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T19:20:00Z | Tier1 | T1-67 strategy_tick consolidates connectivity+C-01+summarize(+append); live BLOCKED outage_alert tape_frozen | Polymarket DOWN ~3.8h; no Tier2 | merged
 
 2026-07-22T19:30:00Z | Tier1 | T1-68 refresh deps baseline (coverage/pytest-cov); audit ok bumps=0; strategy_tick STILL_DOWN display | Polymarket DOWN ~3.8h; no Tier2 | merged
+
+2026-07-22T19:40:00Z | Tier1 | T1-69 unused_knob_toml_scan for C-04; live n_set_unused=9 across 5 profiles (exit/taper/sweep inert) | Polymarket STILL_DOWN; no Tier2 | merged

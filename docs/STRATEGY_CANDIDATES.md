@@ -146,3 +146,7 @@ Confirmed unused by `scripts/profile_knob_audit.py` (n_unused=3):
 
 - **Status:** `watching` — Tier-2 only after paper fills + adverse windows;
   prefer implement-or-delete over leaving dead knobs in `strategy.toml`.
+- **Update 2026-07-22T19:40Z:** `unused_knob_toml_scan` confirms all three
+  dead knobs are set in `livecfg/strategy.toml` (and exit/taper in
+  `config/strategy.toml`). Values have **no live effect** until wired or
+  removed — do not tune them expecting churn/size changes.

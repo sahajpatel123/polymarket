@@ -470,6 +470,12 @@ done without evidence (script output / tests) from that cycle.
   coverage/pytest-cov additions; ok=true bumps=0.
 - Evidence: live status=OK packages=83 flagged=21 bumps=0
 
+### T1-69 Scan TOML for set-but-unused strategy knobs (C-04)
+- Status: `done`
+- Done when: unused_knob_toml_scan lists unused knobs present in
+  config/livecfg strategy.toml; tests cover hit/miss.
+- Evidence: live n_set_unused>0 for exit_urgency_s/end_date_taper/event_sweep
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
