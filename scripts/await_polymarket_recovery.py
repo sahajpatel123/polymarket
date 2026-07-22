@@ -3,6 +3,9 @@
 
 Tier-1 ops for long outages (REST/WS DOWN). Does not change strategy math.
 
+On recovery (default): restart the paper collector, then append one strategy
+cycle so the longitudinal trail timestamps the outage→UP transition.
+
 Usage:
   uv run python scripts/await_polymarket_recovery.py --once
   uv run python scripts/await_polymarket_recovery.py --interval-s 60 --max-wait-s 3600
@@ -41,10 +44,16 @@ def main() -> int:
                     help="Single connectivity check (no loop)")
     ap.add_argument("--no-restart-on-recover", action="store_true",
                     help="Do not relaunch collector when connectivity returns")
+    ap.add_argument(
+        "--no-append-cycle-on-recover",
+        action="store_true",
+        help="Skip append_strategy_cycle after a successful recovery",
+    )
     ap.add_argument("--wait-s", type=float, default=45.0,
                     help="ensure_paper_collector post-restart health wait")
     args = ap.parse_args()
     restart = not args.no_restart_on_recover
+    append_cycle = not args.no_append_cycle_on_recover
 
     py = sys.executable
     t0 = time.time()
@@ -82,13 +91,27 @@ def main() -> int:
                 ])
                 report["ensure_rc"] = rcode
                 report["ensure"] = _status_line(rerr, rout)
+            if append_cycle:
+                acode, aout, aerr = _run([
+                    py,
+                    "scripts/append_strategy_cycle.py",
+                    "--with-counterfactual",
+                ])
+                report["append_rc"] = acode
+                report["append"] = _status_line(aerr, aout)
             print(json.dumps(report, indent=2, sort_keys=True))
             print(
                 f"status=RECOVERED waited_s={report['waited_s']} "
-                f"ensure={report.get('ensure', 'skipped')}",
+                f"ensure={report.get('ensure', 'skipped')} "
+                f"append={report.get('append', 'skipped')}",
                 file=sys.stderr,
             )
-            return 0 if (not restart or report.get("ensure_rc") == 0) else 1
+            ok = True
+            if restart and report.get("ensure_rc") != 0:
+                ok = False
+            if append_cycle and report.get("append_rc") != 0:
+                ok = False
+            return 0 if ok else 1
 
         if args.once:
             print(f"status=STILL_DOWN {line}", file=sys.stderr)

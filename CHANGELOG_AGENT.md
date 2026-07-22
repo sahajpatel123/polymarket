@@ -186,3 +186,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T18:20:00Z | Tier1 | T1-61 C-01 checklist CF sweep at 2/suggested/target; live suppress 0/0.19/1.0 | Polymarket DOWN ~2.8h; no Tier2 | merged
 
 2026-07-22T18:30:00Z | Tier1 | T1-62 record C-01 suppress_2/suggested/target in cycle trail; live 0/0.1875/1.0; outage ~3.0h | Polymarket still DOWN; no Tier2 | merged
+
+2026-07-22T18:40:00Z | Tier1 | T1-63 await recovery appends strategy cycle after collector restart; unit-tested; live still DOWN ~3.2h | no Tier2 | merged

@@ -12,7 +12,7 @@ uv run python scripts/paper_health.py            # fail if quotes go stale
 uv run python scripts/ensure_paper_collector.py --restart  # relaunch if STALE
 uv run python scripts/polymarket_connectivity.py  # REST+WS upstream probe
 uv run python scripts/outage_window_report.py     # STALE/DOWN duration from cycles
-uv run python scripts/await_polymarket_recovery.py --once  # check / relaunch when UP
+uv run python scripts/await_polymarket_recovery.py --once  # check / relaunch+append cycle when UP
 uv run python scripts/c01_promotion_checklist.py          # C-01 Tier-2 PR blockers
 ```
 
@@ -37,7 +37,7 @@ uv run python scripts/c01_promotion_checklist.py          # C-01 Tier-2 PR block
 | `scripts/ensure_paper_collector.py` | Diagnose STALE paper collector; optional `--restart` (refuses while upstream DOWN) |
 | `scripts/polymarket_connectivity.py` | REST + market WS upstream probe (outage vs local) |
 | `scripts/outage_window_report.py` | STALE/DOWN window durations from strategy_cycles |
-| `scripts/await_polymarket_recovery.py` | Poll until REST+WS UP; optional collector restart |
+| `scripts/await_polymarket_recovery.py` | Poll until REST+WS UP; collector restart + cycle append |
 | `scripts/c01_promotion_checklist.py` | C-01 Tier-2 PR readiness: READY vs blockers |
 
 ## Open candidates

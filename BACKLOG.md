@@ -434,6 +434,12 @@ done without evidence (script output / tests) from that cycle.
   suppress_target from the checklist status line each tick.
 - Evidence: live suppress 0 / 0.1875 / 1.0 on frozen tape
 
+### T1-63 Append strategy cycle on Polymarket recovery
+- Status: `done`
+- Done when: await_polymarket_recovery (default) runs append_strategy_cycle
+  after collector restart so the trail timestamps outage→UP.
+- Evidence: unit test recover_appends_cycle; live still DOWN (~3.2h)
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
