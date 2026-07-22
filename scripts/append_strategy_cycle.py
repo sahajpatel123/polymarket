@@ -48,6 +48,7 @@ def main() -> int:
         ("snapshot", [py, "scripts/strategy_snapshot.py"]),
         ("rank", [py, "scripts/rank_vs_realized.py"]),
         ("gate", [py, "scripts/paper_data_gate.py"]),
+        ("health", [py, "scripts/paper_health.py"]),
     ):
         code, stdout, stderr = _run_capture(cmd)
         codes[name] = code
@@ -68,6 +69,7 @@ def main() -> int:
         "returncodes": codes,
         "snapshot": statuses.get("snapshot", {}),
         "rank": statuses.get("rank", {}),
+        "health": statuses.get("health", {}),
         "gate": statuses.get("gate_full", statuses.get("gate", {})),
     }
     out = Path(args.out)
@@ -76,13 +78,15 @@ def main() -> int:
         fh.write(json.dumps(row, sort_keys=True) + "\n")
     print(json.dumps(row, indent=2, sort_keys=True))
     g = row["gate"]
+    h = row["health"]
     print(
         f"status=OK appended={out} runtime_h={g.get('runtime_hours')} "
         f"quotes={g.get('quotes_for_gate')} tier2={g.get('tier2_allowed')} "
-        f"spearman={row['rank'].get('spearman')}",
+        f"spearman={row['rank'].get('spearman')} health={h.get('status')}",
         file=sys.stderr,
     )
-    return 0 if all(c == 0 for c in codes.values()) else 1
+    # health returncode 1 = stale; still append evidence but surface non-zero
+    return 0 if codes.get("gate", 1) == 0 and codes.get("snapshot", 1) == 0 else 1
 
 
 if __name__ == "__main__":

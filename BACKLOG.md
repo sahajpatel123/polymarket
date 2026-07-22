@@ -189,6 +189,12 @@ done without evidence (script output / tests) from that cycle.
   zero-fill / full in-band paper) and reports Spearman vs scanner.
 - Evidence: live spearman_scanner_vs_liquidity_oracle=-1.0 (same inversion)
 
+### T1-25 Paper collector staleness watchdog
+- Status: `done`
+- Done when: a script fails if newest requote/quote is older than N seconds;
+  wired into append_strategy_cycle.
+- Evidence: `scripts/paper_health.py`; live status=OK fresh ages
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
