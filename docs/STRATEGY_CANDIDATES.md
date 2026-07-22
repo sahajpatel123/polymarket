@@ -108,6 +108,8 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
 - **Update 2026-07-22T21:30Z:** `outage_status` preserves connectivity across
   rewrites and embeds `tier2_allowed` / `gate_reason` from paper_data_gate.
   Outage ~6h; still no Tier-2 PR.
+- **Update 2026-07-22T21:40Z:** WEEKLY_REPORT embeds `outage_status` snapshot
+  (hours_to_tier2_gate / tier2_allowed). Still DOWN ~6.2h; no Tier-2 PR.
 
 ## C-02 Prefer higher-reward market weight (selection)
 

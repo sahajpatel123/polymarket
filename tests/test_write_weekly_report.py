@@ -23,3 +23,19 @@ def test_gate_block_filters_noise() -> None:
     assert "runtime_hours=8.37" in block
     assert "paper_data_gate" not in block
     assert "ignored" not in block
+
+
+def test_outage_status_block(tmp_path) -> None:
+    missing = wr._outage_status_block(tmp_path / "missing.json")
+    assert "missing" in missing
+    path = tmp_path / "outage_status.json"
+    path.write_text(
+        '{"connectivity":"status=DOWN","outage_total_h":6.1,'
+        '"hours_to_tier2_gate":15.63,"tier2_allowed":false,'
+        '"gate_reason":"need_hours>=24.0"}\n'
+    )
+    block = wr._outage_status_block(path)
+    assert "connectivity=status=DOWN" in block
+    assert "hours_to_tier2_gate=15.63" in block
+    assert "tier2_allowed=False" in block
+    assert "gate_reason=need_hours>=24.0" in block

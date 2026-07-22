@@ -542,6 +542,12 @@ done without evidence (script output / tests) from that cycle.
   strategy_tick merges tier2_allowed/gate_reason into logs/outage_status.json.
 - Evidence: live status has connectivity + tier2_allowed=false after strategy_tick
 
+### T1-81 Weekly report embeds outage_status snapshot
+- Status: `done`
+- Done when: write_weekly_report includes Outage/gate snapshot from
+  logs/outage_status.json; live WEEKLY_REPORT refreshed during current outage.
+- Evidence: WEEKLY_REPORT shows outage_total_h / hours_to_tier2_gate / tier2_allowed
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

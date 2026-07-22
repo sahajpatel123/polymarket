@@ -52,9 +52,41 @@ def _pid_line() -> str:
     return out.strip().splitlines()[0]
 
 
+def _outage_status_block(path: Path) -> str:
+    """Pretty-print logs/outage_status.json for the weekly report (T1-81)."""
+    if not path.exists():
+        return "(missing — run strategy_tick or outage_window_report --status-out)"
+    try:
+        data = json.loads(path.read_text())
+    except json.JSONDecodeError:
+        return "(invalid JSON)"
+    keys = (
+        "ts",
+        "connectivity",
+        "outage_open",
+        "outage_total_h",
+        "outage_alert",
+        "outage_alert_severe",
+        "runtime_h",
+        "hours_to_tier2_gate",
+        "quotes",
+        "tier2_allowed",
+        "gate_reason",
+        "runtime_basis",
+        "recovered",
+    )
+    lines = [f"{k}={data.get(k)}" for k in keys if k in data]
+    return "\n".join(lines) if lines else json.dumps(data, indent=2, sort_keys=True)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--out", default="WEEKLY_REPORT.md")
+    ap.add_argument(
+        "--outage-status",
+        default="logs/outage_status.json",
+        help="Compact outage/gate status JSON to embed",
+    )
     args = ap.parse_args()
     py = sys.executable
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -76,6 +108,8 @@ def main() -> int:
     pid = _pid_line()
     c01_line = _status_line(c01)
     sum_line = _status_line(summarize)
+    outage_path = Path(args.outage_status)
+    outage_block = _outage_status_block(outage_path)
 
     body = f"""# WEEKLY_REPORT
 
@@ -101,6 +135,14 @@ Generated: `{ts}` (via `scripts/write_weekly_report.py`)
 | 0 | see `PENDING_REVIEW.md` |
 
 Open candidates: `docs/STRATEGY_CANDIDATES.md` (C-01…C-04).
+
+### Outage / gate snapshot
+
+`{outage_path}`:
+
+```
+{outage_block}
+```
 
 ### Paper P&L / risk metrics (literal script output)
 
@@ -156,9 +198,9 @@ No expiry tracker in-repo. `.env` is gitignored; operator must rotate
 
 ### Blockers (informational)
 
-- Parse C-01 / summarize lines above for outage_alert, tape_frozen, ETA pause,
-  and promotion blockers. Do not promote Tier-2 while health is STALE or
-  holdouts are thin.
+- Parse C-01 / summarize / outage_status above for outage_alert, tape_frozen,
+  ETA pause, tier2_allowed, and promotion blockers. Do not promote Tier-2
+  while health is STALE or holdouts are thin.
 - Live capital / size increases remain human-only (`ESCALATE.md`).
 """
     path = Path(args.out)

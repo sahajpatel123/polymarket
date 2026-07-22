@@ -222,3 +222,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T21:20:00Z | Tier1 | T1-79 hours_to_tier2_gate + connectivity in outage_status; strategy_tick surfaces gate hours/quotes | live ~5.8h DOWN; no Tier2 | merged
 
 2026-07-22T21:30:00Z | Tier1 | T1-80 preserve probe fields on status rewrite + merge paper_data_gate into outage_status | live ~6.0h DOWN; no Tier2 | merged
+
+2026-07-22T21:40:00Z | Tier1 | T1-81 WEEKLY_REPORT embeds outage_status snapshot; refreshed during ~6.2h Polymarket outage | STILL_DOWN; no Tier2 | merged
