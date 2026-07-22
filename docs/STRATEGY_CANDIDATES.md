@@ -55,6 +55,10 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
   `trend_vol_ratio=8` + `trend_flow_z=2.0` matches vol-only screen
   (full_dn −126/−17, holdout 0, thin). Raising flow_z adds nothing on a
   100% vol_only TRENDING tape — C-01 remains a pure `trend_vol_ratio` lever.
+- **Update 2026-07-22T15:20Z (~8.3h, frozen journal):** evidence pack still
+  `oos_replicated=false` / `thin_holdout=true` (holdout_base_nq≈6–7). A live
+  append race briefly looked like OOS=true — packs now freeze the journal
+  before validate (T1-44). **Do not promote.**
 
 ## C-02 Prefer higher-reward market weight (selection)
 

@@ -68,6 +68,12 @@ def main() -> int:
     ap.add_argument("--values", default="2,5,8")
     ap.add_argument("--holdout-frac", type=float, default=0.3)
     ap.add_argument("--tick-size", type=float, default=0.001)
+    ap.add_argument(
+        "--also-set",
+        action="append",
+        default=[],
+        help="Forwarded to validate_knob_candidate (repeatable key=value)",
+    )
     ap.add_argument("--out", default="logs/candidate_evidence_pack.json")
     args = ap.parse_args()
 
@@ -89,19 +95,22 @@ def main() -> int:
     markets: list[dict[str, Any]] = []
     validate_rows: list[dict[str, Any]] = []
 
-    for cid in cids:
-        yes, no = infer_yes_no_tokens(metrics, cid)
-        if not yes or not no:
-            markets.append({"condition_id": cid, "error": "token_infer_failed"})
-            continue
-        markets.append({"condition_id": cid, "yes": yes, "no": no})
-        with tempfile.TemporaryDirectory(prefix="evpack_") as td:
-            # validate writes JSON to stdout
+    # Freeze the live journal once so append races cannot flip OOS mid-pack (T1-44).
+    with tempfile.TemporaryDirectory(prefix="evpack_freeze_") as freeze_td:
+        journal_freeze = Path(freeze_td) / "journal.jsonl"
+        journal_freeze.write_bytes(journal.read_bytes())
+
+        for cid in cids:
+            yes, no = infer_yes_no_tokens(metrics, cid)
+            if not yes or not no:
+                markets.append({"condition_id": cid, "error": "token_infer_failed"})
+                continue
+            markets.append({"condition_id": cid, "yes": yes, "no": no})
             cmd = [
                 sys.executable,
                 "scripts/validate_knob_candidate.py",
                 "--journal",
-                str(journal),
+                str(journal_freeze),
                 "--config-dir",
                 str(cfg),
                 "--baseline-profile",
@@ -123,7 +132,8 @@ def main() -> int:
                 "--tick-size",
                 str(args.tick_size),
             ]
-            # validate prints JSON to stdout — capture via temp redirect of cwd out
+            for item in args.also_set:
+                cmd.extend(["--also-set", item])
             proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
             entry: dict[str, Any] = {
                 "condition_id": cid,
@@ -146,7 +156,13 @@ def main() -> int:
     scorecard = _run([sys.executable, "scripts/reward_scorecard.py"])
 
     # Summarize best full-window delta and OOS flag across markets
-    c01: dict[str, Any] = {"knob": args.knob, "values": args.values, "markets": []}
+    c01: dict[str, Any] = {
+        "knob": args.knob,
+        "values": args.values,
+        "also_set": args.also_set,
+        "journal_frozen": True,
+        "markets": [],
+    }
     any_oos = False
     for row in validate_rows:
         res = row.get("result") or {}
@@ -174,6 +190,7 @@ def main() -> int:
             "status_line": row.get("status_line"),
             "full_dn_quote": (best or {}).get("delta_n_quote"),
             "holdout_dn_quote": (hold_best or {}).get("delta_n_quote"),
+            "holdout_baseline_n_quote": res.get("holdout_baseline_n_quote"),
             "oos_replicated": oos,
             "thin_holdout": bool(res.get("thin_holdout")),
             "best_value": (best or {}).get("candidate_value"),
@@ -198,7 +215,7 @@ def main() -> int:
     print(
         f"status=OK out={out} "
         f"tier2={gate_kv.get('tier2_allowed')} "
-        f"c01_any_oos={any_oos} "
+        f"c01_any_oos={any_oos} journal_frozen=true "
         f"shadow_lifetimes={sh.get('n_quote_lifetimes')} "
         f"crossed_frac={sh.get('crossed_frac')} "
         f"markout_30s={((sh.get('markout_mean') or {}).get('30s'))}",

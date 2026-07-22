@@ -318,6 +318,12 @@ done without evidence (script output / tests) from that cycle.
   beside the swept knob (dual-knob C-01 screens without Tier-2 merges).
 - Evidence: pytest; live vol8+flow2 ≡ vol8 on ~8h tape (vol_only regime)
 
+### T1-44 Freeze journal for evidence pack + holdout_base_nq
+- Status: `done`
+- Done when: candidate_evidence_pack snapshots journal before validate;
+  validate status exposes holdout_baseline_n_quote (anti live-append race).
+- Evidence: frozen pack ~8.3h still thin (base_nq≈6–7); no Tier2
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

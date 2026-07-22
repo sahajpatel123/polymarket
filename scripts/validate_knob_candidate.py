@@ -208,6 +208,7 @@ def main() -> int:
 
     oos_ok = False
     thin_holdout = False
+    hold_n = 0
     if hold_row is not None:
         hold_n = int(hold_row.get("baseline_n_quote") or 0)
         thin_holdout = hold_n < 20
@@ -230,6 +231,7 @@ def main() -> int:
         "best_on_holdout": hold_row,
         "oos_replicated": oos_ok,
         "thin_holdout": thin_holdout,
+        "holdout_baseline_n_quote": hold_n,
     }
     print(json.dumps(payload, indent=2, sort_keys=True))
     bval = best["candidate_value"] if best else None
@@ -238,7 +240,8 @@ def main() -> int:
     also_s = ",".join(f"{k}={v}" for k, v in sorted(also_set.items())) or "-"
     print(
         f"status=OK knob={args.knob} also_set={also_s} best={bval} full_dn_quote={bdq} "
-        f"holdout_dn_quote={hdq} oos_replicated={oos_ok} thin_holdout={thin_holdout}",
+        f"holdout_dn_quote={hdq} holdout_base_nq={hold_n} "
+        f"oos_replicated={oos_ok} thin_holdout={thin_holdout}",
         file=sys.stderr,
     )
     return 0

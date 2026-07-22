@@ -67,3 +67,4 @@ def test_validate_knob_candidate_also_set(tmp_path: Path) -> None:
     payload = json.loads(proc.stdout)
     assert payload["also_set"] == {"trend_flow_z": 2.0}
     assert "also_set=trend_flow_z=2.0" in proc.stderr
+    assert "holdout_base_nq=" in proc.stderr
