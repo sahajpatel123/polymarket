@@ -6,7 +6,7 @@ accumulates toward the 24h Tier-2 gate. **None of these change pricing math.**
 ## Every-tick commands
 
 ```bash
-uv run python scripts/append_strategy_cycle.py   # gate+snapshot+rank+health+shadow+c01 → JSONL
+uv run python scripts/append_strategy_cycle.py   # gate+snapshot+rank+health+shadow+c01+outage → JSONL
 uv run python scripts/summarize_strategy_cycles.py  # ETA to 24h gate (+ latest shadow AS)
 uv run python scripts/paper_health.py            # fail if quotes go stale
 uv run python scripts/ensure_paper_collector.py --restart  # relaunch if STALE

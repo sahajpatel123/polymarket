@@ -416,6 +416,12 @@ done without evidence (script output / tests) from that cycle.
   when REST/WS probe fails (unless --allow-down-restart).
 - Evidence: live SKIPPED_UPSTREAM_DOWN during ~2.5h outage
 
+### T1-60 Record outage_window_report in strategy cycle trail
+- Status: `done`
+- Done when: append stores outage open/total_h; summarize surfaces
+  last_outage_* alongside derived outage windows.
+- Evidence: live outage_open=True total_h≈2.7 during Polymarket DOWN
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

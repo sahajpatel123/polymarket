@@ -64,6 +64,7 @@ def main() -> int:
         ("schema", [py, "scripts/verify_metrics_schema.py", "--tail", "50"]),
         ("paper_schema", [py, "scripts/verify_paper_schema.py", "--tail", "50"]),
         ("c01", [py, "scripts/c01_promotion_checklist.py"]),
+        ("outage", [py, "scripts/outage_window_report.py"]),
     ]
     if not args.skip_connectivity:
         cmds.append(
@@ -108,6 +109,7 @@ def main() -> int:
         "schema": statuses.get("schema", {}),
         "paper_schema": statuses.get("paper_schema", {}),
         "c01": statuses.get("c01", {}),
+        "outage": statuses.get("outage", {}),
         "connectivity": statuses.get(
             "connectivity",
             {"status": "SKIPPED"} if args.skip_connectivity else {},
@@ -130,6 +132,7 @@ def main() -> int:
     snap = row["snapshot"]
     cf = row.get("counterfactual") or {}
     c01 = row.get("c01") or {}
+    outage = row.get("outage") or {}
     print(
         f"status=OK appended={out} runtime_h={g.get('runtime_hours')} "
         f"quotes={g.get('quotes_for_gate')} tier2={g.get('tier2_allowed')} "
@@ -148,6 +151,7 @@ def main() -> int:
         f"suggested_vol={snap.get('suggested_vol')} "
         f"false_trending_attr_frac={snap.get('false_trending_attr_frac')} "
         f"c01={c01.get('status')} c01_blockers={c01.get('blockers')} "
+        f"outage_open={outage.get('open')} outage_total_h={outage.get('total_h')} "
         f"counterfactual={cf.get('status') or cf.get('mode') or '-'}",
         file=sys.stderr,
     )

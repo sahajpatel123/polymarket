@@ -118,6 +118,8 @@ def main() -> int:
         ),
         "last_c01_status": (last.get("c01") or {}).get("status"),
         "last_c01_blockers": (last.get("c01") or {}).get("blockers"),
+        "last_outage_open": (last.get("outage") or {}).get("open"),
+        "last_outage_total_h": (last.get("outage") or {}).get("total_h"),
         "last_paper_schema": (last.get("paper_schema") or {}).get("status"),
         "last_connectivity": (last.get("connectivity") or {}).get("status"),
     }
