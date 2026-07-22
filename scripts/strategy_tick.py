@@ -124,6 +124,7 @@ def main() -> int:
         f"connectivity={conn_disp} "
         f"c01={c01.get('status')} blockers={c01.get('blockers')} "
         f"outage_alert={c01.get('outage_alert')} "
+        f"outage_alert_severe={c01.get('outage_alert_severe')} "
         f"runtime_h={sm.get('runtime_h')} eta_paused={sm.get('eta_paused')} "
         f"tape_frozen={sm.get('tape_frozen')} "
         f"unused_set={unused.get('n_set_unused')} "

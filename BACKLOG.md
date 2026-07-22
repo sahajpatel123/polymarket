@@ -506,6 +506,12 @@ done without evidence (script output / tests) from that cycle.
   summarize/deps and overwrites WEEKLY_REPORT.md; unit tests for helpers.
 - Evidence: live status=OK wrote=WEEKLY_REPORT.md during ~5h outage
 
+### T1-75 Severe outage alert at ≥5h
+- Status: `done`
+- Done when: c01 checklist sets outage_alert_severe when outage_total_h≥5;
+  status line + strategy_tick/append surface it.
+- Evidence: live outage_alert_severe=True at ~5.17h DOWN
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

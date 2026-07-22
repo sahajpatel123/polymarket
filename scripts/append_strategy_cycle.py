@@ -166,6 +166,7 @@ def main() -> int:
         f"suppress_target={c01.get('suppress_target')} "
         f"outage_open={outage.get('open')} outage_total_h={outage.get('total_h')} "
         f"outage_alert={c01.get('outage_alert')} "
+        f"outage_alert_severe={c01.get('outage_alert_severe')} "
         f"unused_set={unused.get('n_set_unused')} "
         f"counterfactual={cf.get('status') or cf.get('mode') or '-'}",
         file=sys.stderr,

@@ -210,3 +210,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T20:20:00Z | Tier1 | T1-73 refresh WEEKLY_REPORT for ~4.85h Polymarket outage; unused_set=9; deps ok bumps=0 | STILL_DOWN; no Tier2 | merged
 
 2026-07-22T20:30:00Z | Tier1 | T1-74 write_weekly_report.py automates WEEKLY_REPORT from live scripts; live wrote during ~5.0h outage | STILL_DOWN; no Tier2 | merged
+
+2026-07-22T20:40:00Z | Tier1 | T1-75 outage_alert_severe at ≥5h; live True at ~5.19h DOWN | STILL_DOWN; no Tier2 | merged
