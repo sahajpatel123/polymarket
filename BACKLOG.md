@@ -512,6 +512,12 @@ done without evidence (script output / tests) from that cycle.
   status line + strategy_tick/append surface it.
 - Evidence: live outage_alert_severe=True at ~5.17h DOWN
 
+### T1-76 Summarize severe alert + strategy_tick --write-weekly
+- Status: `done`
+- Done when: summarize surfaces last_outage_alert_severe; strategy_tick
+  optional --write-weekly regenerates WEEKLY_REPORT.md.
+- Evidence: live severe=True on summarize; --write-weekly status=OK
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

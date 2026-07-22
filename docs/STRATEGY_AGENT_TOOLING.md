@@ -8,7 +8,7 @@ accumulates toward the 24h Tier-2 gate. **None of these change pricing math.**
 ```bash
 uv run python scripts/write_weekly_report.py     # overwrite WEEKLY_REPORT.md from live scripts
 uv run python scripts/strategy_tick.py           # connectivity + C-01 + summarize + unused-knob scan
-uv run python scripts/strategy_tick.py --append --skip-connectivity
+uv run python scripts/strategy_tick.py --append --write-weekly
 uv run python scripts/append_strategy_cycle.py   # gate+snapshot+rank+health+shadow+c01+outage → JSONL
 uv run python scripts/summarize_strategy_cycles.py  # ETA to 24h gate (+ latest shadow AS)
 uv run python scripts/paper_health.py            # fail if quotes go stale

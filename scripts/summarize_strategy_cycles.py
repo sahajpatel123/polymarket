@@ -123,6 +123,8 @@ def main() -> int:
         "last_suppress_2": (last.get("c01") or {}).get("suppress_2"),
         "last_suppress_suggested": (last.get("c01") or {}).get("suppress_suggested"),
         "last_suppress_target": (last.get("c01") or {}).get("suppress_target"),
+        "last_outage_alert": (last.get("c01") or {}).get("outage_alert"),
+        "last_outage_alert_severe": (last.get("c01") or {}).get("outage_alert_severe"),
         "last_outage_open": (last.get("outage") or {}).get("open"),
         "last_outage_total_h": (last.get("outage") or {}).get("total_h"),
         "last_unused_set": (last.get("unused_knobs") or {}).get("n_set_unused"),
@@ -152,6 +154,8 @@ def main() -> int:
         f"hours_remaining={rep['hours_remaining']} "
         f"eta_wall_h={rep['eta_wall_hours_to_gate']} eta_paused={eta_paused} "
         f"outage_open={rep.get('outage_open')} outage_total_h={rep.get('outage_total_h')} "
+        f"outage_alert={rep['last_outage_alert']} "
+        f"outage_alert_severe={rep['last_outage_alert_severe']} "
         f"quotes_per_wall_h={rep['quotes_per_wall_hour']} health={rep['last_health']} "
         f"last_requote_age_s={rep['last_requote_age_s']} "
         f"tape_frozen={rep['last_tape_frozen']} "

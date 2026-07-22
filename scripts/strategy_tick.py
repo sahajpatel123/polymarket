@@ -60,6 +60,11 @@ def main() -> int:
         action="store_true",
         help="When --append, also record offline C-01 counterfactual",
     )
+    ap.add_argument(
+        "--write-weekly",
+        action="store_true",
+        help="Also overwrite WEEKLY_REPORT.md from live script outputs",
+    )
     args = ap.parse_args()
     py = sys.executable
     report: dict[str, Any] = {
@@ -106,12 +111,18 @@ def main() -> int:
         line = _status_line(err, out)
         report["steps"]["append"] = {"rc": code, "status_line": line, **_parse_kv(line)}
 
+    if args.write_weekly:
+        code, out, err = _run([py, "scripts/write_weekly_report.py"])
+        line = _status_line(err, out)
+        report["steps"]["weekly"] = {"rc": code, "status_line": line, **_parse_kv(line)}
+
     print(json.dumps(report, indent=2, sort_keys=True))
     conn = report["steps"].get("connectivity") or {}
     c01 = report["steps"].get("c01") or {}
     sm = report["steps"].get("summarize") or {}
     unused = report["steps"].get("unused_knobs") or {}
     ap_step = report["steps"].get("append") or {}
+    weekly = report["steps"].get("weekly") or {}
     conn_line = str(conn.get("status_line") or "")
     if conn.get("status") == "SKIPPED":
         conn_disp = "SKIPPED"
@@ -128,7 +139,8 @@ def main() -> int:
         f"runtime_h={sm.get('runtime_h')} eta_paused={sm.get('eta_paused')} "
         f"tape_frozen={sm.get('tape_frozen')} "
         f"unused_set={unused.get('n_set_unused')} "
-        f"append={ap_step.get('status') or ('SKIPPED' if not args.append else 'UNKNOWN')}",
+        f"append={ap_step.get('status') or ('SKIPPED' if not args.append else 'UNKNOWN')} "
+        f"weekly={weekly.get('status') or ('SKIPPED' if not args.write_weekly else 'UNKNOWN')}",
         file=sys.stderr,
     )
     # Non-zero only if checklist crashed (rc not in 0/1) or summarize failed hard.
@@ -140,6 +152,8 @@ def main() -> int:
     if report["steps"]["unused_knobs"]["rc"] != 0:
         bad = True
     if args.append and report["steps"]["append"]["rc"] != 0:
+        bad = True
+    if args.write_weekly and report["steps"]["weekly"]["rc"] != 0:
         bad = True
     return 1 if bad else 0
 
