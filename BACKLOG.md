@@ -452,6 +452,12 @@ done without evidence (script output / tests) from that cycle.
   surfaces last_tape_frozen so shadow/churn are not read as live AS.
 - Evidence: live tape_frozen=True during Polymarket outage
 
+### T1-66 Refresh WEEKLY_REPORT during Polymarket outage
+- Status: `done`
+- Done when: WEEKLY_REPORT overwritten with this-cycle gate/metrics/shadow/
+  regime/checklist/summarize/deps output reflecting STALE + outage_alert.
+- Evidence: report Generated 2026-07-22T19:10Z; outage ~3.7h documented
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

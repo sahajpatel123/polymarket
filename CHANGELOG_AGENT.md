@@ -192,3 +192,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T18:50:00Z | Tier1 | T1-64 surface last_requote_age_s + outage_alert(≥3h) in checklist/trail; live alert=True age≈12.4ks | Polymarket still DOWN; no Tier2 | merged
 
 2026-07-22T19:00:00Z | Tier1 | T1-65 tape_frozen flag on STALE cycles + recovery playbook; live tape_frozen=True outage~3.5h | Polymarket still DOWN; no Tier2 | merged
+
+2026-07-22T19:10:00Z | Tier1 | T1-66 refresh WEEKLY_REPORT with live STALE/outage (~3.7h) + C-01 suppress curve; ETA paused | Polymarket still DOWN; no Tier2 | merged
