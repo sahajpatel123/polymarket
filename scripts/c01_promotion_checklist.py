@@ -206,8 +206,14 @@ def main() -> int:
             "reason": gate.get("reason"),
         },
         "health": health.get("status"),
+        "last_requote_age_s": health.get("last_requote_age_s"),
         "outage_open": outage_open,
         "outage_total_h": outage.get("total_h"),
+        "outage_alert": (
+            None
+            if outage.get("total_h") in (None, "")
+            else float(str(outage.get("total_h")).split()[0]) >= 3.0
+        ),
         "counterfactual_line": next(
             (ln for ln in cf_err.splitlines() if ln.startswith("status=")), None
         ),
@@ -246,7 +252,9 @@ def main() -> int:
         f"status={'READY' if ready else 'BLOCKED'} "
         f"blockers={','.join(blockers) or '-'} "
         f"runtime_h={gate.get('runtime_hours')} quotes={gate.get('quotes_for_gate')} "
-        f"health={health.get('status')} outage_open={outage_open} "
+        f"health={health.get('status')} last_requote_age_s={health.get('last_requote_age_s')} "
+        f"outage_open={outage_open} outage_total_h={outage.get('total_h')} "
+        f"outage_alert={report['outage_alert']} "
         f"oos={any_oos if validate_present else None} "
         f"thin={thin_any if validate_present else None} "
         f"vol_gap={vol_gap} quiet_vol_max={quiet_max} trend_vol_min={trend_min} "

@@ -137,6 +137,7 @@ def main() -> int:
         f"status=OK appended={out} runtime_h={g.get('runtime_hours')} "
         f"quotes={g.get('quotes_for_gate')} tier2={g.get('tier2_allowed')} "
         f"spearman={row['rank'].get('spearman')} health={h.get('status')} "
+        f"last_requote_age_s={h.get('last_requote_age_s')} "
         f"connectivity={conn.get('status')} "
         f"shadow_lifetimes={sh.get('lifetimes')} "
         f"crossed_frac={sh.get('crossed_frac')} "
@@ -155,6 +156,7 @@ def main() -> int:
         f"suppress_suggested={c01.get('suppress_suggested')} "
         f"suppress_target={c01.get('suppress_target')} "
         f"outage_open={outage.get('open')} outage_total_h={outage.get('total_h')} "
+        f"outage_alert={c01.get('outage_alert')} "
         f"counterfactual={cf.get('status') or cf.get('mode') or '-'}",
         file=sys.stderr,
     )

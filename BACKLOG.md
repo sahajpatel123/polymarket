@@ -440,6 +440,12 @@ done without evidence (script output / tests) from that cycle.
   after collector restart so the trail timestamps outage→UP.
 - Evidence: unit test recover_appends_cycle; live still DOWN (~3.2h)
 
+### T1-64 Surface requote age + outage_alert (≥3h) in checklist/trail
+- Status: `done`
+- Done when: checklist/append/summarize expose last_requote_age_s; checklist
+  sets outage_alert when outage_total_h≥3.
+- Evidence: live outage_alert=True with age≈12k s during DOWN
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

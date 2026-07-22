@@ -31,8 +31,11 @@ def test_parse_status_line_outage() -> None:
 
 def test_parse_status_line_c01_blockers() -> None:
     kv = chk._parse_status_line(
-        "status=BLOCKED blockers=hours_ok,health_ok vol_gap=0.04 suggested_vol=2.489"
+        "status=BLOCKED blockers=hours_ok,health_ok vol_gap=0.04 suggested_vol=2.489 "
+        "outage_alert=True last_requote_age_s=12000"
     )
     assert kv["status"] == "BLOCKED"
     assert kv["blockers"] == "hours_ok,health_ok"
     assert kv["suggested_vol"] == "2.489"
+    assert kv["outage_alert"] == "True"
+    assert kv["last_requote_age_s"] == "12000"

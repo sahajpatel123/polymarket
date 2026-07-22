@@ -98,6 +98,7 @@ def main() -> int:
         "eta_wall_hours_to_gate": None if eta_wall_h is None else round(eta_wall_h, 4),
         "eta_paused": eta_paused,
         "last_health": last_health,
+        "last_requote_age_s": (last.get("health") or {}).get("last_requote_age_s"),
         "last_spearman": (last.get("rank") or {}).get("spearman"),
         "last_shadow_lifetimes": (last.get("shadow") or {}).get("lifetimes"),
         "last_crossed_frac": (last.get("shadow") or {}).get("crossed_frac"),
@@ -150,6 +151,7 @@ def main() -> int:
         f"eta_wall_h={rep['eta_wall_hours_to_gate']} eta_paused={eta_paused} "
         f"outage_open={rep.get('outage_open')} outage_total_h={rep.get('outage_total_h')} "
         f"quotes_per_wall_h={rep['quotes_per_wall_hour']} health={rep['last_health']} "
+        f"last_requote_age_s={rep['last_requote_age_s']} "
         f"connectivity={rep['last_connectivity']} "
         f"crossed_frac={rep['last_crossed_frac']} markout_30s={rep['last_markout_30s']} "
         f"false_trending_frac={rep['last_false_trending_frac']} "
