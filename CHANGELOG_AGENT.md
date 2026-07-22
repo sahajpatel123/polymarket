@@ -64,3 +64,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T08:18:00Z | Tier1 | T1-18 event holdout + market token filter; C-01 still fails OOS (Tier2 gated) | validate events split full_dn_quote=-27 holdout_dn_quote=0 oos_replicated=false; pytest compare+validate 9 passed; gate quotes=845 need_hours>=24 | merged
 
 2026-07-22T08:28:00Z | Tier1 | T1-19 snapshot adds reward+regime; C-01 still watching (Tier2 gated on hours) | strategy_snapshot status=OK; TRENDING at t+84m with flowz~0; gate quotes=951 need_hours>=24 | merged
+
+2026-07-22T08:29:00Z | Tier1 | T1-19 follow-up: land strategy_snapshot reward+regime code | snapshot status includes top_reward_per_hour+trending_frac | merged

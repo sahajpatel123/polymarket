@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One-shot strategy-loop snapshot: gate + paper metrics + profile A/B on synth.
+"""One-shot strategy-loop snapshot: gate + metrics + reward/regime + synth A/B.
 
 Tier-1 ops tool for Agent-1 cycles. Does not change strategy math.
 
@@ -21,6 +21,9 @@ from polymaker.domain import MarketMeta, TokenMeta
 from polymaker.metrics.analyze import analyze
 from polymaker.replay.compare import compare_profiles, load_named_profile
 from polymaker.replay.synth import write_regime_journal
+
+from scripts.paper_regime_report import analyze_paper_log
+from scripts.reward_scorecard import build_scorecard
 
 
 def _first_existing(*paths: Path) -> Path | None:
@@ -60,11 +63,29 @@ def main() -> int:
         Path("livecfg/logs/metrics-paper.jsonl"),
         Path("logs/metrics-paper.jsonl"),
     )
+    paper_log = _first_existing(
+        Path(args.config_dir) / "logs" / "paper.jsonl",
+        Path("livecfg/logs/paper.jsonl"),
+        Path("logs/paper.jsonl"),
+    )
     paper_metrics = None
     if metrics_path is not None:
         paper_metrics = analyze(metrics_path).as_dict()
 
-    # Offline named-profile baseline on frozen synth tape
+    reward_card = None
+    if metrics_path is not None:
+        try:
+            reward_card = build_scorecard(metrics_path, paper_log)
+        except Exception as exc:  # noqa: BLE001
+            reward_card = {"error": str(exc)}
+
+    regime_rep = None
+    if paper_log is not None:
+        try:
+            regime_rep = analyze_paper_log(paper_log)
+        except Exception as exc:  # noqa: BLE001
+            regime_rep = {"error": str(exc)}
+
     tmp_dir = Path("logs/strategy_snapshot")
     tmp_dir.mkdir(parents=True, exist_ok=True)
     journal = tmp_dir / "regime_jump.jsonl"
@@ -96,12 +117,11 @@ def main() -> int:
     except KeyError as exc:
         compare = {"error": str(exc)}
 
-    # Livecfg profile names in use (for operator context)
     live_profiles: list[str] = []
     try:
         cfg = Config.load(args.config_dir, load_env=False)
         live_profiles = sorted({e.profile for e in cfg.markets if e.enabled})
-    except Exception as exc:  # noqa: BLE001 — snapshot must not crash the loop
+    except Exception as exc:  # noqa: BLE001
         live_profiles = [f"load_error:{exc}"]
 
     gate = _run_gate()
@@ -111,6 +131,8 @@ def main() -> int:
         "live_enabled_profiles": live_profiles,
         "paper_metrics_path": str(metrics_path) if metrics_path else None,
         "paper_metrics": paper_metrics,
+        "reward_scorecard": reward_card,
+        "regime_report": regime_rep,
         "offline_compare": {
             "baseline_profile": args.baseline_profile,
             "candidate_profile": args.candidate_profile,
@@ -127,9 +149,14 @@ def main() -> int:
     d_quote = None
     if isinstance(compare, dict) and isinstance(compare.get("delta"), dict):
         d_quote = compare["delta"].get("n_quote")
+    trending_frac = (regime_rep or {}).get("trending_frac") if isinstance(regime_rep, dict) else None
+    top_rph = None
+    if isinstance(reward_card, dict) and reward_card.get("markets"):
+        top_rph = reward_card["markets"][0].get("reward_per_hour_usdc")
     print(
         f"status=OK gate={g_status} tier2={g_tier2} paper_quotes={nq} "
-        f"reward_accrual_sum={reward_sum} offline_dn_quote={d_quote}",
+        f"reward_accrual_sum={reward_sum} top_reward_per_hour={top_rph} "
+        f"trending_frac={trending_frac} offline_dn_quote={d_quote}",
         file=sys.stderr,
     )
     return 0
