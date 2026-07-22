@@ -144,6 +144,9 @@ PRESERVE_STATUS_KEYS = (
     "last_requote_age_s",
     "last_quote_age_s",
     "health",
+    "ensure_status",
+    "collector_pids",
+    "collector_pid",
 )
 
 

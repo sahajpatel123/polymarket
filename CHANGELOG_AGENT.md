@@ -240,3 +240,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T22:50:00Z | Tier1 | T1-88 WEEKLY_REPORT Tier-1 done counts from CHANGELOG+BACKLOG; refreshed ~7.3h outage | STILL_DOWN; no Tier2 | merged
 
 2026-07-22T23:00:00Z | Tier1 | T1-89 WEEKLY_REPORT counts PENDING_REVIEW rows (pending_reviews=0 live); ~7.5h outage | STILL_DOWN; no Tier2 | merged
+
+2026-07-22T23:10:00Z | Tier1 | T1-90 ensure_status+collector_pid in outage_status (NEEDS_RESTART pid=78216); ~7.7h DOWN | no Tier2 | merged

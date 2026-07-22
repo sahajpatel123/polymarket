@@ -136,6 +136,26 @@ def _live_health_fields(health: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _ensure_collector_fields(ensure: dict[str, Any]) -> dict[str, Any]:
+    """Pull diagnose-only collector pid/status into outage_status (T1-90)."""
+    out: dict[str, Any] = {}
+    status = ensure.get("status")
+    if status:
+        out["ensure_status"] = status
+    pids = ensure.get("pids")
+    if pids not in (None, ""):
+        # status line has pids=[78216]
+        raw = str(pids).strip()
+        out["collector_pids"] = raw
+        try:
+            cleaned = raw.strip("[]")
+            if cleaned:
+                out["collector_pid"] = int(cleaned.split(",")[0].strip())
+        except ValueError:
+            pass
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
@@ -196,6 +216,15 @@ def main() -> int:
     hkv = _parse_kv(hline)
     report["steps"]["health"] = {"rc": code, "status_line": hline, **hkv}
 
+    code, eout, eerr = _run([
+        py,
+        "scripts/ensure_paper_collector.py",
+        "--config-dir",
+        "livecfg",
+    ])
+    eline = _status_line(eerr, eout)
+    report["steps"]["ensure"] = {"rc": code, "status_line": eline, **_parse_kv(eline)}
+
     code, out, err = _run([py, "scripts/unused_knob_toml_scan.py"])
     line = _status_line(err, out)
     report["steps"]["unused_knobs"] = {"rc": code, "status_line": line, **_parse_kv(line)}
@@ -221,6 +250,7 @@ def main() -> int:
     merge_fields.update(_summarize_freeze_fields(report["steps"].get("summarize") or {}))
     # Live paper_health overwrites trail-stale requote ages.
     merge_fields.update(_live_health_fields(report["steps"].get("health") or {}))
+    merge_fields.update(_ensure_collector_fields(report["steps"].get("ensure") or {}))
     conn = report["steps"].get("connectivity") or {}
     conn_line = str(conn.get("status_line") or "")
     if conn_line and conn.get("status") != "SKIPPED":
@@ -302,6 +332,7 @@ def main() -> int:
     c01 = report["steps"].get("c01") or {}
     sm = report["steps"].get("summarize") or {}
     health = report["steps"].get("health") or {}
+    ensure = report["steps"].get("ensure") or {}
     unused = report["steps"].get("unused_knobs") or {}
     outage = report["steps"].get("outage") or {}
     gate = report["steps"].get("gate") or {}
@@ -330,6 +361,7 @@ def main() -> int:
         f"outage_status={ost_val.get('status')} "
         f"deps_ok={deps.get('ok')} deps_bumps={deps.get('bumps')} "
         f"health={health.get('status')} "
+        f"ensure={ensure.get('status')} collector_pid={ensure.get('pids')} "
         f"last_requote_age_s={health.get('last_requote_age_s') or sm.get('last_requote_age_s')} "
         f"runtime_h={sm.get('runtime_h')} eta_paused={sm.get('eta_paused')} "
         f"tape_frozen={sm.get('tape_frozen')} "
@@ -345,6 +377,9 @@ def main() -> int:
     if report["steps"]["summarize"]["rc"] != 0:
         bad = True
     if report["steps"]["health"]["rc"] not in (0, 1):
+        bad = True
+    # ensure: 0=OK, 1=NEEDS_RESTART, 2=SKIPPED_UPSTREAM_DOWN — all informative
+    if report["steps"]["ensure"]["rc"] not in (0, 1, 2):
         bad = True
     if report["steps"]["unused_knobs"]["rc"] != 0:
         bad = True

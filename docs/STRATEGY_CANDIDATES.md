@@ -126,6 +126,8 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
   lines + backlog done. Still DOWN ~7.3h; no Tier-2 PR.
 - **Update 2026-07-22T23:00Z:** WEEKLY_REPORT counts `PENDING_REVIEW` rows
   (`pending_reviews=0`). Still DOWN ~7.5h; no Tier-2 PR.
+- **Update 2026-07-22T23:10Z:** `outage_status` now includes collector
+  `ensure_status` + `collector_pid` (alive but STALE). Still DOWN ~7.7h.
 
 ## C-02 Prefer higher-reward market weight (selection)
 

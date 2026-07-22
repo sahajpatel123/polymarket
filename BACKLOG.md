@@ -596,6 +596,12 @@ done without evidence (script output / tests) from that cycle.
   instead of hardcoding 0; status line surfaces pending_reviews.
 - Evidence: live pending_reviews=0 with empty PENDING_REVIEW table
 
+### T1-90 Collector PID + ensure_status in outage_status
+- Status: `done`
+- Done when: strategy_tick diagnose-runs ensure_paper_collector; merges
+  ensure_status + collector_pid into outage_status; status line shows ensure=.
+- Evidence: live ensure=NEEDS_RESTART collector_pid=78216 during ~7.7h DOWN
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

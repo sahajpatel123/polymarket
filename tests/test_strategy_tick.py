@@ -55,3 +55,13 @@ def test_live_health_fields_overwrite_stale_age() -> None:
     assert fields["tape_frozen"] is True
     assert fields["last_requote_age_s"] == 25845.5
     assert fields["last_quote_age_s"] == 25840.1
+
+
+def test_ensure_collector_fields() -> None:
+    fields = tick._ensure_collector_fields({
+        "status": "NEEDS_RESTART",
+        "pids": "[78216]",
+    })
+    assert fields["ensure_status"] == "NEEDS_RESTART"
+    assert fields["collector_pids"] == "[78216]"
+    assert fields["collector_pid"] == 78216
