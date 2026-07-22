@@ -36,9 +36,25 @@ def _parse_status_line(stderr: str) -> dict[str, str]:
     return out
 
 
+def _load_outage_status(path: Path) -> dict:
+    """Load compact outage/gate snapshot for the cycle trail (T1-82)."""
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text())
+    except json.JSONDecodeError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--out", default="logs/strategy_cycles.jsonl")
+    ap.add_argument(
+        "--outage-status",
+        default="logs/outage_status.json",
+        help="Compact outage/gate JSON to embed in the cycle row",
+    )
     ap.add_argument(
         "--skip-connectivity",
         action="store_true",
@@ -64,7 +80,15 @@ def main() -> int:
         ("schema", [py, "scripts/verify_metrics_schema.py", "--tail", "50"]),
         ("paper_schema", [py, "scripts/verify_paper_schema.py", "--tail", "50"]),
         ("c01", [py, "scripts/c01_promotion_checklist.py"]),
-        ("outage", [py, "scripts/outage_window_report.py"]),
+        (
+            "outage",
+            [
+                py,
+                "scripts/outage_window_report.py",
+                "--status-out",
+                args.outage_status,
+            ],
+        ),
         ("unused_knobs", [py, "scripts/unused_knob_toml_scan.py"]),
     ]
     if not args.skip_connectivity:
@@ -123,6 +147,17 @@ def main() -> int:
     # live adverse-selection signal (T1-65).
     health_status = str((row.get("health") or {}).get("status") or "")
     row["tape_frozen"] = health_status.upper() == "STALE"
+    ost = _load_outage_status(Path(args.outage_status))
+    # Prefer this-cycle gate fields when compact status is missing them.
+    g = row.get("gate") or {}
+    if ost is not None:
+        if "tier2_allowed" not in ost and "tier2_allowed" in g:
+            ost["tier2_allowed"] = str(g.get("tier2_allowed")).lower() == "true"
+        if "gate_reason" not in ost and "reason" in g:
+            ost["gate_reason"] = g.get("reason")
+        if "runtime_basis" not in ost and "runtime_basis" in g:
+            ost["runtime_basis"] = g.get("runtime_basis")
+    row["outage_status"] = ost
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     with out.open("a") as fh:
@@ -140,6 +175,7 @@ def main() -> int:
     c01 = row.get("c01") or {}
     outage = row.get("outage") or {}
     unused = row.get("unused_knobs") or {}
+    ost = row.get("outage_status") or {}
     tape_frozen = bool(row.get("tape_frozen"))
     print(
         f"status=OK appended={out} runtime_h={g.get('runtime_hours')} "
@@ -167,6 +203,7 @@ def main() -> int:
         f"outage_open={outage.get('open')} outage_total_h={outage.get('total_h')} "
         f"outage_alert={c01.get('outage_alert')} "
         f"outage_alert_severe={c01.get('outage_alert_severe')} "
+        f"hours_to_tier2_gate={ost.get('hours_to_tier2_gate')} "
         f"unused_set={unused.get('n_set_unused')} "
         f"counterfactual={cf.get('status') or cf.get('mode') or '-'}",
         file=sys.stderr,

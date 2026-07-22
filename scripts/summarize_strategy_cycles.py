@@ -127,6 +127,11 @@ def main() -> int:
         "last_outage_alert_severe": (last.get("c01") or {}).get("outage_alert_severe"),
         "last_outage_open": (last.get("outage") or {}).get("open"),
         "last_outage_total_h": (last.get("outage") or {}).get("total_h"),
+        "last_hours_to_tier2_gate": (last.get("outage_status") or {}).get(
+            "hours_to_tier2_gate"
+        ),
+        "last_tier2_allowed": (last.get("outage_status") or {}).get("tier2_allowed"),
+        "last_gate_reason": (last.get("outage_status") or {}).get("gate_reason"),
         "last_unused_set": (last.get("unused_knobs") or {}).get("n_set_unused"),
         "last_paper_schema": (last.get("paper_schema") or {}).get("status"),
         "last_connectivity": (last.get("connectivity") or {}).get("status"),
@@ -156,6 +161,8 @@ def main() -> int:
         f"outage_open={rep.get('outage_open')} outage_total_h={rep.get('outage_total_h')} "
         f"outage_alert={rep['last_outage_alert']} "
         f"outage_alert_severe={rep['last_outage_alert_severe']} "
+        f"hours_to_tier2_gate={rep['last_hours_to_tier2_gate']} "
+        f"tier2_allowed={rep['last_tier2_allowed']} "
         f"quotes_per_wall_h={rep['quotes_per_wall_hour']} health={rep['last_health']} "
         f"last_requote_age_s={rep['last_requote_age_s']} "
         f"tape_frozen={rep['last_tape_frozen']} "

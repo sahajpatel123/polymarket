@@ -548,6 +548,12 @@ done without evidence (script output / tests) from that cycle.
   logs/outage_status.json; live WEEKLY_REPORT refreshed during current outage.
 - Evidence: WEEKLY_REPORT shows outage_total_h / hours_to_tier2_gate / tier2_allowed
 
+### T1-82 Embed outage_status in strategy cycle trail
+- Status: `done`
+- Done when: append_strategy_cycle writes outage_status object into each JSONL
+  row; summarize surfaces last hours_to_tier2_gate / tier2_allowed.
+- Evidence: live append row includes outage_status; summarize shows gate hours
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
