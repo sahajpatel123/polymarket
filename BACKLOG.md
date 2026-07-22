@@ -560,6 +560,12 @@ done without evidence (script output / tests) from that cycle.
   strategy_tick runs it after merging gate/connectivity.
 - Evidence: live status=OK on current outage_status during ~6.5h DOWN
 
+### T1-84 deps_audit on every strategy_tick
+- Status: `done`
+- Done when: strategy_tick runs deps_audit each cycle; surfaces deps_ok/bumps;
+  merges deps_* into outage_status; weekly report shows deps fields.
+- Evidence: live deps_ok=True bumps=0 during ~6.7h Polymarket outage
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

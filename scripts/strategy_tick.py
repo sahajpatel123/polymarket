@@ -206,6 +206,37 @@ def main() -> int:
         **_parse_kv(line),
     }
 
+    code, dout, derr = _run([py, "scripts/deps_audit.py"])
+    dline = _status_line(derr, dout)
+    deps_ok = None
+    deps_bumps = None
+    deps_flagged = None
+    try:
+        djson = json.loads(dout) if dout.strip().startswith("{") else {}
+        deps_ok = djson.get("ok")
+        deps_bumps = len(djson.get("baseline_bumps") or [])
+        deps_flagged = len(djson.get("flagged") or [])
+    except json.JSONDecodeError:
+        djson = {}
+    dkv = _parse_kv(dline)
+    report["steps"]["deps"] = {
+        "rc": code,
+        "status_line": dline,
+        "ok": deps_ok,
+        "bumps": deps_bumps,
+        "flagged": deps_flagged,
+        **dkv,
+    }
+    if status_path.exists() and deps_ok is not None:
+        _merge_outage_status(
+            status_path,
+            {
+                "deps_ok": bool(deps_ok),
+                "deps_bumps": deps_bumps,
+                "deps_flagged": deps_flagged,
+            },
+        )
+
     if args.append:
         cmd = [py, "scripts/append_strategy_cycle.py"]
         if args.skip_connectivity:
@@ -229,6 +260,7 @@ def main() -> int:
     outage = report["steps"].get("outage") or {}
     gate = report["steps"].get("gate") or {}
     ost_val = report["steps"].get("outage_status_validate") or {}
+    deps = report["steps"].get("deps") or {}
     ap_step = report["steps"].get("append") or {}
     weekly = report["steps"].get("weekly") or {}
     conn_line = str(conn.get("status_line") or "")
@@ -250,6 +282,7 @@ def main() -> int:
         f"tier2_allowed={gate.get('tier2_allowed')} "
         f"gate_reason={gate.get('gate_reason')} "
         f"outage_status={ost_val.get('status')} "
+        f"deps_ok={deps.get('ok')} deps_bumps={deps.get('bumps')} "
         f"runtime_h={sm.get('runtime_h')} eta_paused={sm.get('eta_paused')} "
         f"tape_frozen={sm.get('tape_frozen')} "
         f"unused_set={unused.get('n_set_unused')} "
@@ -270,6 +303,8 @@ def main() -> int:
     if report["steps"]["gate"]["rc"] not in (0, 1):
         bad = True
     if report["steps"]["outage_status_validate"]["rc"] not in (0, 1, 2):
+        bad = True
+    if report["steps"]["deps"]["rc"] != 0:
         bad = True
     if args.append and report["steps"]["append"]["rc"] != 0:
         bad = True

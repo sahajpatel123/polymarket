@@ -136,6 +136,9 @@ PRESERVE_STATUS_KEYS = (
     "tier2_allowed",
     "gate_reason",
     "runtime_basis",
+    "deps_ok",
+    "deps_bumps",
+    "deps_flagged",
 )
 
 

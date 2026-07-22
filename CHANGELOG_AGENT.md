@@ -228,3 +228,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T21:50:00Z | Tier1 | T1-82 embed outage_status in strategy_cycles trail + summarize gate hours | live ~6.3h DOWN; no Tier2 | merged
 
 2026-07-22T22:00:00Z | Tier1 | T1-83 validate_outage_status schema/freshness; strategy_tick surfaces outage_status=OK | live ~6.5h DOWN; no Tier2 | merged
+
+2026-07-22T22:10:00Z | Tier1 | T1-84 strategy_tick runs deps_audit each cycle; deps_* in outage_status + weekly; live ok bumps=0 | ~6.7h DOWN; no Tier2 | merged

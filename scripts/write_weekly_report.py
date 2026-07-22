@@ -74,6 +74,9 @@ def _outage_status_block(path: Path) -> str:
         "gate_reason",
         "runtime_basis",
         "recovered",
+        "deps_ok",
+        "deps_bumps",
+        "deps_flagged",
     )
     lines = [f"{k}={data.get(k)}" for k in keys if k in data]
     return "\n".join(lines) if lines else json.dumps(data, indent=2, sort_keys=True)
