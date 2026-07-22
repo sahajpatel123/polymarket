@@ -75,5 +75,19 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 filterwarnings = ["ignore::DeprecationWarning"]
 
+# Coverage: exclude operational scripts that are entry points (cli.main),
+# invoked from a live process doctor (doctor/moneydoctor), or a scanner
+# that runs against real Polymarket data. These are integration surfaces,
+# not unit-tested library code.
+[tool.coverage.run]
+omit = [
+    "src/polymaker/cli.py",
+    "src/polymaker/doctor.py",
+    "src/polymaker/livetest.py",
+    "src/polymaker/moneydoctor.py",
+    "src/polymaker/catalog/scanner.py",
+    "src/polymaker/merge.py",
+]
+
 [tool.uv]
 package = true
