@@ -34,7 +34,7 @@ uv run python scripts/c01_promotion_checklist.py          # C-01 Tier-2 PR block
 | `scripts/profile_knob_audit.py` | StrategyProfile fields used vs dead/unused |
 | `scripts/quote_churn_report.py` | Quote lifetime + requote-interval percentiles |
 | `scripts/verify_metrics_schema.py` | Fail if latest quotes lack required fields |
-| `scripts/ensure_paper_collector.py` | Diagnose STALE paper collector; optional `--restart` |
+| `scripts/ensure_paper_collector.py` | Diagnose STALE paper collector; optional `--restart` (refuses while upstream DOWN) |
 | `scripts/polymarket_connectivity.py` | REST + market WS upstream probe (outage vs local) |
 | `scripts/outage_window_report.py` | STALE/DOWN window durations from strategy_cycles |
 | `scripts/await_polymarket_recovery.py` | Poll until REST+WS UP; optional collector restart |

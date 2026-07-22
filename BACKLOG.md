@@ -410,6 +410,12 @@ done without evidence (script output / tests) from that cycle.
   surfaces last_c01_status / last_c01_blockers.
 - Evidence: live c01=BLOCKED with hours/health/outage/oos/thin blockers
 
+### T1-59 Skip collector restart while Polymarket is DOWN
+- Status: `done`
+- Done when: ensure_paper_collector --restart returns SKIPPED_UPSTREAM_DOWN
+  when REST/WS probe fails (unless --allow-down-restart).
+- Evidence: live SKIPPED_UPSTREAM_DOWN during ~2.5h outage
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

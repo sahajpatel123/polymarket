@@ -5,6 +5,10 @@ Tier-1 ops for long unattended runs toward the 24h Tier-2 gate. Does not
 change strategy math. Default is diagnose-only; pass ``--restart`` to kill
 ``polymaker run --paper`` processes and relaunch.
 
+When Polymarket REST/WS is DOWN, ``--restart`` is refused by default
+(``SKIPPED_UPSTREAM_DOWN``) so outages do not thrash relaunches. Use
+``--allow-down-restart`` to override; recovery helper already waits for UP.
+
 Usage:
   uv run python scripts/ensure_paper_collector.py
   uv run python scripts/ensure_paper_collector.py --restart --config-dir livecfg
@@ -115,6 +119,26 @@ def _collector_log_hint(log_path: Path, *, tail: int = 80) -> str | None:
     return None
 
 
+def _upstream_ok(*, timeout_s: float = 5.0) -> tuple[bool, str]:
+    """Return (ok, status_line) from polymarket_connectivity probe."""
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "scripts/polymarket_connectivity.py",
+            "--timeout-s",
+            str(timeout_s),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    line = next(
+        (ln for ln in (proc.stderr.splitlines() + proc.stdout.splitlines()) if ln.startswith("status=")),
+        f"status=UNKNOWN rc={proc.returncode}",
+    )
+    return proc.returncode == 0 and "status=OK" in line, line
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--config-dir", default="livecfg")
@@ -130,6 +154,21 @@ def main() -> int:
         "--force-restart",
         action="store_true",
         help="Restart even when health is OK",
+    )
+    ap.add_argument(
+        "--allow-down-restart",
+        action="store_true",
+        help="Allow restart even when Polymarket REST/WS probe is DOWN",
+    )
+    ap.add_argument(
+        "--skip-connectivity-check",
+        action="store_true",
+        help="Skip upstream probe (tests / offline). Prefer --allow-down-restart for ops.",
+    )
+    ap.add_argument(
+        "--connectivity-timeout-s",
+        type=float,
+        default=5.0,
     )
     ap.add_argument(
         "--wait-s",
@@ -172,6 +211,20 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
+
+    # Avoid thrashing relaunches while Polymarket itself is unreachable (T1-59).
+    if not args.skip_connectivity_check and not args.allow_down_restart:
+        up_ok, up_line = _upstream_ok(timeout_s=args.connectivity_timeout_s)
+        report["connectivity"] = up_line
+        if not up_ok:
+            report["action"] = "skipped_upstream_down"
+            print(json.dumps(report, indent=2, sort_keys=True))
+            print(
+                f"status=SKIPPED_UPSTREAM_DOWN connectivity={up_line} "
+                f"health={health.get('_status_line')} pids={pids}",
+                file=sys.stderr,
+            )
+            return 2
 
     report["action"] = "restart"
     log_path = cfg / "logs" / "collector-stdout.log"

@@ -178,3 +178,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T17:40:00Z | Tier1 | T1-57 attributed false-TRENDING + suggested_vol=quiet_max+0.5; live attr_frac=1.0 suggested=2.489 | Polymarket DOWN; quotes frozen; no Tier2 | merged
 
 2026-07-22T17:50:00Z | Tier1 | T1-58 record C-01 checklist status/blockers in strategy cycle trail | Polymarket DOWN ~2.4h outage; quotes frozen 5529; no Tier2 | merged
+
+2026-07-22T18:00:00Z | Tier1 | T1-59 skip collector restart while Polymarket DOWN (SKIPPED_UPSTREAM_DOWN); live confirmed | outage ~2.5h; quotes frozen; no Tier2 | merged
