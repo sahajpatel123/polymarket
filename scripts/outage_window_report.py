@@ -142,6 +142,8 @@ PRESERVE_STATUS_KEYS = (
     "tape_frozen",
     "eta_paused",
     "last_requote_age_s",
+    "last_quote_age_s",
+    "health",
 )
 
 

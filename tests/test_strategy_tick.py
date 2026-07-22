@@ -43,3 +43,15 @@ def test_summarize_freeze_fields() -> None:
         "eta_paused": True,
         "last_requote_age_s": 25225.3,
     }
+
+
+def test_live_health_fields_overwrite_stale_age() -> None:
+    fields = tick._live_health_fields({
+        "status": "STALE",
+        "last_requote_age_s": "25845.5",
+        "last_quote_age_s": "25840.1",
+    })
+    assert fields["health"] == "STALE"
+    assert fields["tape_frozen"] is True
+    assert fields["last_requote_age_s"] == 25845.5
+    assert fields["last_quote_age_s"] == 25840.1

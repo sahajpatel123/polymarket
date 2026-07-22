@@ -120,6 +120,8 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
   `political-hot` are present in `config/strategy.toml`. Still DOWN ~6.8h.
 - **Update 2026-07-22T22:30Z:** `outage_status` now carries `tape_frozen` /
   `last_requote_age_s`. Outage crossed **~7h**; still no Tier-2 PR.
+- **Update 2026-07-22T22:40Z:** requote age now comes from live `paper_health`
+  (was frozen from an old cycle row). Still DOWN ~7.2h; no Tier-2 PR.
 
 ## C-02 Prefer higher-reward market weight (selection)
 

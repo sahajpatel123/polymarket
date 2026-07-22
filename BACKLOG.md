@@ -578,6 +578,12 @@ done without evidence (script output / tests) from that cycle.
   into logs/outage_status.json; weekly snapshot includes those fields.
 - Evidence: live outage_status shows tape_frozen=True and requote age during ~7h DOWN
 
+### T1-87 Live paper_health ages in outage_status
+- Status: `done`
+- Done when: strategy_tick runs paper_health and overwrites last_requote_age_s
+  with the live age (not stale cycle-trail value); surfaces health= on status line.
+- Evidence: live last_requote_age_s advances with wall clock (~7.2h outage)
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

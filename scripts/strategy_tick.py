@@ -122,6 +122,20 @@ def _summarize_freeze_fields(sm: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _live_health_fields(health: dict[str, Any]) -> dict[str, Any]:
+    """Prefer live paper_health ages over stale cycle-trail values (T1-87)."""
+    out: dict[str, Any] = {}
+    status = str(health.get("status") or "")
+    if status in {"OK", "STALE"}:
+        out["health"] = status
+        out["tape_frozen"] = status == "STALE"
+    if health.get("last_requote_age_s") not in (None, ""):
+        out["last_requote_age_s"] = _coerce_status_value(str(health["last_requote_age_s"]))
+    if health.get("last_quote_age_s") not in (None, ""):
+        out["last_quote_age_s"] = _coerce_status_value(str(health["last_quote_age_s"]))
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
@@ -177,6 +191,11 @@ def main() -> int:
     line = _status_line(err, out)
     report["steps"]["summarize"] = {"rc": code, "status_line": line, **_parse_kv(line)}
 
+    code, hout, herr = _run([py, "scripts/paper_health.py"])
+    hline = _status_line(herr, hout)
+    hkv = _parse_kv(hline)
+    report["steps"]["health"] = {"rc": code, "status_line": hline, **hkv}
+
     code, out, err = _run([py, "scripts/unused_knob_toml_scan.py"])
     line = _status_line(err, out)
     report["steps"]["unused_knobs"] = {"rc": code, "status_line": line, **_parse_kv(line)}
@@ -200,6 +219,8 @@ def main() -> int:
 
     merge_fields: dict[str, Any] = dict(gate_fields)
     merge_fields.update(_summarize_freeze_fields(report["steps"].get("summarize") or {}))
+    # Live paper_health overwrites trail-stale requote ages.
+    merge_fields.update(_live_health_fields(report["steps"].get("health") or {}))
     conn = report["steps"].get("connectivity") or {}
     conn_line = str(conn.get("status_line") or "")
     if conn_line and conn.get("status") != "SKIPPED":
@@ -280,6 +301,7 @@ def main() -> int:
     conn = report["steps"].get("connectivity") or {}
     c01 = report["steps"].get("c01") or {}
     sm = report["steps"].get("summarize") or {}
+    health = report["steps"].get("health") or {}
     unused = report["steps"].get("unused_knobs") or {}
     outage = report["steps"].get("outage") or {}
     gate = report["steps"].get("gate") or {}
@@ -307,6 +329,8 @@ def main() -> int:
         f"gate_reason={gate.get('gate_reason')} "
         f"outage_status={ost_val.get('status')} "
         f"deps_ok={deps.get('ok')} deps_bumps={deps.get('bumps')} "
+        f"health={health.get('status')} "
+        f"last_requote_age_s={health.get('last_requote_age_s') or sm.get('last_requote_age_s')} "
         f"runtime_h={sm.get('runtime_h')} eta_paused={sm.get('eta_paused')} "
         f"tape_frozen={sm.get('tape_frozen')} "
         f"unused_set={unused.get('n_set_unused')} "
@@ -319,6 +343,8 @@ def main() -> int:
     if report["steps"]["c01"]["rc"] not in (0, 1):
         bad = True
     if report["steps"]["summarize"]["rc"] != 0:
+        bad = True
+    if report["steps"]["health"]["rc"] not in (0, 1):
         bad = True
     if report["steps"]["unused_knobs"]["rc"] != 0:
         bad = True
