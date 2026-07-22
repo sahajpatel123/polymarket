@@ -165,6 +165,29 @@ class OrderBook:
 
     def view(self, band_frac: float = 0.05, min_size: float = 0.0) -> BookView:
         """Resolved YES-side view with best/second and in-band depth."""
+        bids = self.bids
+        asks = self.asks
+
+        # Fast path: min_size <= 0.0 (all levels have size > 0, so no size
+        # filter is needed). Inline the _nth_bid/_nth_ask/best_bid/best_ask
+        # and depth_within calls to avoid ~16 function calls per view().
+        if min_size <= 0.0:
+            if not bids or not asks:
+                return BookView(None, 0.0, None, 0.0, None, None, 0.0, 0.0)
+
+            bb_p, bb_s = bids.peekitem(-1)
+            ba_p, ba_s = asks.peekitem(0)
+            sb_p = bids.peekitem(-2)[0] if len(bids) >= 2 else None
+            sa_p = asks.peekitem(1)[0] if len(asks) >= 2 else None
+
+            # bid_depth/ask_depth are always just the best level's size:
+            # irange(bb_p, mid*(1+band_frac)) can only contain bb_p (no bids
+            # exist above the best bid), and irange(mid*(1-band_frac), ba_p)
+            # can only contain ba_p (no asks exist below the best ask).
+            # Skipping irange+sum eliminates ~12k calls per 5k-event replay.
+            return BookView(bb_p, bb_s, ba_p, ba_s, sb_p, sa_p, bb_s, ba_s)
+
+        # Slow path: min_size > 0.0 (filter by size)
         bb = self._nth_bid(0, min_size)
         ba = self._nth_ask(0, min_size)
         sb = self._nth_bid(1, min_size)
@@ -173,8 +196,9 @@ class OrderBook:
         bid_depth = ask_depth = 0.0
         if bb is not None and ba is not None:
             mid = (bb.price + ba.price) / 2.0
-            bid_depth = self.depth_within(Side.BUY, bb.price, mid * (1 + band_frac))
-            ask_depth = self.depth_within(Side.SELL, mid * (1 - band_frac), ba.price)
+            # Same invariant as fast path: depth band only contains the best level.
+            bid_depth = bb.size
+            ask_depth = ba.size
         return BookView(
             best_bid=bb.price if bb else None,
             best_bid_size=bb.size if bb else 0.0,

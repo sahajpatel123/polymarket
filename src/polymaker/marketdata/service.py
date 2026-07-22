@@ -22,6 +22,7 @@ import websockets
 from polymaker.journal import Journal
 from polymaker.logging import get_logger
 from polymaker.marketdata.orderbook import BookView, OrderBook
+from polymaker.marketdata.orderbook import BookView
 from polymaker.marketdata.parse import (
     TradePrint,
     parse_book,
@@ -76,7 +77,7 @@ class MarketDataService:
 
     def view(self, token_id: str) -> BookView:
         book = self.books.get(token_id)
-        return book.view() if book else _empty_view()
+        return book.view() if book else BookView(None, 0.0, None, 0.0, None, None, 0.0, 0.0)
 
     def book(self, token_id: str) -> OrderBook | None:
         return self.books.get(token_id)
@@ -201,6 +202,3 @@ class MarketDataService:
         if self._journal is not None:
             self._journal.write(kind, payload, ts)
 
-
-def _empty_view() -> BookView:
-    return BookView(None, 0.0, None, 0.0, None, None, 0.0, 0.0)

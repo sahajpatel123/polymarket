@@ -41,6 +41,73 @@ exit_urgency_s      = 900
 merge_min_size      = 20.0
 
 
+[profiles.political-longdated]
+# General-purpose long-dated political market profile: medium size, balanced
+# skew, moderate event sensitivity. Suitable for markets >30d to expiry with
+# 2-5 tick spreads and typical $50-500k liquidity. If unsure which profile to
+# use, start here.
+micro_levels        = 3
+flow_ewma_halflife_s = 120
+gamma               = 0.6
+delta_min_ticks     = 1
+c_vol               = 1.5
+c_tox               = 3.0
+vol_short_halflife_s = 10
+vol_long_halflife_s  = 900
+base_size_usdc      = 50.0
+q_max_usdc          = 250.0
+q_soft_frac         = 0.6
+layers              = 2
+layer_step_ticks    = 2
+reward_size_mult    = 1.0
+reprice_ticks       = 2
+resize_frac         = 0.2
+min_edge_ticks      = 1
+event_cooloff_s     = 60
+event_jump_ticks    = 6
+event_sweep_mult    = 4.0
+event_sweep_frac    = 0.8
+trend_flow_z        = 1.8
+trend_vol_ratio     = 3.0
+reduce_only_hours   = 24
+halt_before_hours   = 2
+exit_urgency_s      = 900
+merge_min_size      = 20.0
+
+
+[profiles.political-hot]
+# Hot (short-dated, high-volume) political market profile: smaller size,
+# tighter spread, more sensitive to flow/vol. For markets <30d to expiry
+# with tight spreads and active tape.
+micro_levels        = 3
+flow_ewma_halflife_s = 90
+gamma               = 0.8
+delta_min_ticks     = 1
+c_vol               = 2.0
+c_tox               = 4.0
+vol_short_halflife_s = 8
+vol_long_halflife_s  = 600
+base_size_usdc      = 30.0
+q_max_usdc          = 150.0
+q_soft_frac         = 0.5
+layers              = 1
+layer_step_ticks    = 3
+reward_size_mult    = 1.0
+reprice_ticks       = 1
+resize_frac         = 0.15
+min_edge_ticks      = 1
+event_cooloff_s     = 90
+event_jump_ticks    = 4
+event_sweep_mult    = 3.0
+event_sweep_frac    = 0.6
+trend_flow_z        = 1.2
+trend_vol_ratio     = 2.5
+reduce_only_hours   = 48
+halt_before_hours   = 6
+exit_urgency_s      = 600
+merge_min_size      = 20.0
+
+
 # romania-pm: "Next PM of Romania" — Alexandru Nazare leg. Live sample 2026-07-06:
 # price ~0.487/0.488 (near 50/50 -> max reward score, low extremity), tick 0.001,
 # 1-tick spread, ~$4k/day tape, rewards: min 50 shares/order, 4.5c band, ~$257/day

@@ -29,8 +29,14 @@ jobs:
       - name: Install dependencies
         run: uv sync --extra dev
 
-      - name: Run full unit test suite
-        run: uv run pytest -q
+      - name: Static type checking (mypy) — informational (pre-existing issues)
+        run: uv run mypy src/polymaker || echo "mypy_exit=$?"
+
+      - name: Lint check (ruff)
+        run: uv run ruff check src/polymaker tests
+
+      - name: Run full unit test suite with coverage
+        run: uv run pytest -q --cov=polymaker --cov-fail-under=70
 
       - name: Dependency audit
         run: uv run python scripts/deps_audit.py --fail-on-flags

@@ -200,13 +200,6 @@ def dashboard(
         f"spread={rep.realized_spread_usdc:.4f})"
     )
 
-    """Preflight checks: config, wallet auth, balance/allowance, WS reachability."""
-    from polymaker.doctor import run_doctor
-
-    cfg = Config.load(config_dir)
-    ok = asyncio.run(run_doctor(cfg, console))
-    raise typer.Exit(0 if ok else 1)
-
 
 @app.command()
 def run(

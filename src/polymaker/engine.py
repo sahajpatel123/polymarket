@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import dataclasses
 import time
 from datetime import datetime
 from pathlib import Path
@@ -36,6 +37,8 @@ from polymaker.logging import get_logger
 from polymaker.marketdata.parse import TradePrint
 from polymaker.marketdata.service import MarketDataService
 from polymaker.merge import Merger
+from polymaker.catalog.scoring import score_market
+from polymaker.marketdata.orderbook import BookView
 from polymaker.metrics import MetricsLogger, inventory_fields
 from polymaker.risk.manager import RiskManager
 from polymaker.state.store import StateStore
@@ -87,7 +90,6 @@ class Engine:
         self._token_cid: dict[str, str] = {}
         self._locks: dict[str, asyncio.Lock] = {}  # per-market: serialize recompute vs reconcile
         self._halted: set[str] = set()  # markets closed/resolved/not-accepting
-        self._last_quote_fv: dict[str, float] = {}  # requote suppression
         # supervised tasks: name -> (factory, task) so a dead task restarts
         self._task_specs: dict[str, Any] = {}
         self._tasks: dict[str, asyncio.Task[Any]] = {}
@@ -212,7 +214,6 @@ class Engine:
                 self._locks[meta.condition_id] = asyncio.Lock()
                 for tok in (meta.yes.token_id, meta.no.token_id):
                     self._token_cid[tok] = meta.condition_id
-                from polymaker.catalog.scoring import score_market
 
                 sc = score_market(meta)
                 self.metrics.emit(
@@ -511,7 +512,7 @@ class Engine:
         tq = construct_quotes(QuoteInputs(
             meta=meta, regime=regime, fv=fv, vol_short=est.vol.short,
             toxicity=est.markout.toxicity, yes_view=yes_book.view(),
-            no_view=(no_book.view() if no_book else _empty_view()),
+            no_view=(no_book.view() if no_book else BookView(None, 0.0, None, 0.0, None, None, 0.0, 0.0)),
             pos_yes=pos_yes, pos_no=pos_no, profile=p, now=now,
             risk_size_scale=rd.size_scale,
         ))
@@ -602,7 +603,6 @@ class Engine:
                     # orders we don't have ids for. Cancel everything on these
                     # tokens (idempotent) and resync — never risk an untracked order.
                     await self._quarantine(meta, reason="place_incomplete")
-        self._last_quote_fv[cid] = fv
         log.info("requote", condition_id=cid, cid=cid[:8], regime=regime.value, fv=round(fv, 4),
                  place=placed_n, cancel=len(plan.to_cancel),
                  pos_yes=round(pos_yes.size, 1), pos_no=round(pos_no.size, 1),
@@ -633,6 +633,8 @@ class Engine:
         if amount < p.merge_min_size or cid in self._merging or self.paper:
             return
         self._merging.add(cid)
+        # Prune any previously completed merge tasks to prevent unbounded list growth.
+        self._aux_tasks[:] = [t for t in self._aux_tasks if not t.done()]
         self._aux_tasks.append(asyncio.create_task(self._merge_task(cid, meta, amount)))
 
     async def _merge_task(self, cid: str, meta: MarketMeta, amount: float) -> None:
@@ -669,10 +671,20 @@ class Engine:
                 # order state, resync authoritatively, then resume quoting
                 self._hb_was_down = False
                 log.warning("heartbeat_recovered_resyncing")
+                # Hold per-market locks during recovery so no quoter can race
+                # between clear_orders() and the REST resync for its market.
+                # Without this, a quoter could wake, see empty orders, place new
+                # quotes, and then get overwritten by the stale REST snapshot.
                 self.state.clear_orders()
-                for meta in self.metas.values():
-                    with contextlib.suppress(Exception):
-                        await self._refresh_token_orders(meta, grace_s=0.0)
+                for cid, meta in self.metas.items():
+                    lock = self._locks.get(cid)
+                    if lock is not None:
+                        async with lock:
+                            with contextlib.suppress(Exception):
+                                await self._refresh_token_orders(meta, grace_s=0.0)
+                    else:
+                        with contextlib.suppress(Exception):
+                            await self._refresh_token_orders(meta, grace_s=0.0)
                 self._wake_all()
             await asyncio.sleep(self.cfg.engine.heartbeat_interval_s)
 
@@ -795,8 +807,6 @@ class Engine:
             self._apply_meta_refresh(cid, raw)
 
     def _apply_meta_refresh(self, cid: str, raw: dict[str, Any]) -> None:
-        import dataclasses
-
         old = self.metas[cid]
         fee = raw.get("feeSchedule") or {}
         rate = _fnum(fee.get("rate"))
@@ -907,8 +917,3 @@ def _hours_to_end(end_date_iso: str | None, now: float) -> float | None:
     except (ValueError, TypeError):
         return None
 
-
-def _empty_view() -> Any:
-    from polymaker.marketdata.orderbook import BookView
-
-    return BookView(None, 0.0, None, 0.0, None, None, 0.0, 0.0)

@@ -89,7 +89,10 @@ class Merger:
         from web3.middleware import ExtraDataToPOAMiddleware
 
         rpc = self._cfg.secrets.polygon_rpc or self._cfg.wallet.polygon_rpc
-        w3 = Web3(Web3.HTTPProvider(rpc))
+        kwargs: dict[str, Any] = {}
+        if self._cfg.proxy:
+            kwargs["proxies"] = {"http": self._cfg.proxy, "https": self._cfg.proxy}
+        w3 = Web3(Web3.HTTPProvider(rpc, request_kwargs=kwargs))
         w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
         self._w3 = w3
         self._account = Account.from_key(self._cfg.secrets.pk)
@@ -234,32 +237,45 @@ class Merger:
 
         self._ensure_web3()
         w3, sec = self._w3, self._cfg.secrets
-        # the relayer client uses bare `requests`, which only honors a proxy via env vars
+        # the relayer client uses bare `requests`, which only honors a proxy via env vars.
+        # Snapshot and restore prior values to avoid leaking proxy settings to the rest of the process.
+        _proxy_snapshot: dict[str, str | None] = {}
         if self._cfg.proxy:
-            for k in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
-                      "http_proxy", "https_proxy", "all_proxy"):
+            proxy_vars = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
+                          "http_proxy", "https_proxy", "all_proxy")
+            for k in proxy_vars:
+                _proxy_snapshot[k] = os.environ.get(k)
                 os.environ[k] = self._cfg.proxy
-        to, data = self._inner_merge_call(condition_id, amount_raw, neg_risk)
+        try:
+            to, data = self._inner_merge_call(condition_id, amount_raw, neg_risk)
 
-        creds = BuilderApiKeyCreds(
-            key=sec.builder_key, secret=sec.builder_secret, passphrase=sec.builder_passphrase)
-        client = RelayClient(
-            sec.relayer_url, self._cfg.wallet.chain_id, private_key=sec.pk,
-            builder_config=BuilderConfig(local_builder_creds=creds))
-        signer = self._account.address
-        nonce = client.get_nonce(signer, "WALLET")["nonce"]
-        deadline = str(int(_time.time()) + 3600)
-        call = DepositWalletCall(target=w3.to_checksum_address(to), value="0", data=data)
-        resp = client.execute_deposit_wallet_batch(
-            [call], w3.to_checksum_address(sec.browser_address), nonce, deadline)
-        h = str(getattr(resp, "transaction_hash", None) or getattr(resp, "hash", None))
-        receipt = w3.eth.wait_for_transaction_receipt(h, timeout=180)
-        status = receipt.get("status", 1)
-        log.info("merge_sent_deposit_wallet", condition=condition_id[:12],
-                 amount=amount_raw, tx=h[:14], status=status)
-        if status != 1:
-            raise RuntimeError(f"deposit-wallet merge reverted: {h}")
-        return h
+            creds = BuilderApiKeyCreds(
+                key=sec.builder_key, secret=sec.builder_secret, passphrase=sec.builder_passphrase)
+            client = RelayClient(
+                sec.relayer_url, self._cfg.wallet.chain_id, private_key=sec.pk,
+                builder_config=BuilderConfig(local_builder_creds=creds))
+            signer = self._account.address
+            nonce = client.get_nonce(signer, "WALLET")["nonce"]
+            deadline = str(int(_time.time()) + 3600)
+            call = DepositWalletCall(target=w3.to_checksum_address(to), value="0", data=data)
+            resp = client.execute_deposit_wallet_batch(
+                [call], w3.to_checksum_address(sec.browser_address), nonce, deadline)
+            h = str(getattr(resp, "transaction_hash", None) or getattr(resp, "hash", None))
+            receipt = w3.eth.wait_for_transaction_receipt(h, timeout=180)
+            status = receipt.get("status", 1)
+            log.info("merge_sent_deposit_wallet", condition=condition_id[:12],
+                     amount=amount_raw, tx=h[:14], status=status)
+            if status != 1:
+                raise RuntimeError(f"deposit-wallet merge reverted: {h}")
+            return h
+        finally:
+            # Restore proxy env vars to their prior state (if they were overwritten).
+            if _proxy_snapshot:
+                for k, v in _proxy_snapshot.items():
+                    if v is not None:
+                        os.environ[k] = v
+                    else:
+                        os.environ.pop(k, None)
 
 
 def _to_bytes32(hex_str: str) -> bytes:

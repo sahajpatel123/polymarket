@@ -331,9 +331,12 @@ class ExecutionGateway:
             abi = [{"name": "balanceOf", "type": "function", "stateMutability": "view",
                     "inputs": [{"name": "a", "type": "address"}, {"name": "id", "type": "uint256"}],
                     "outputs": [{"name": "", "type": "uint256"}]}]
+            rpc_kw: dict[str, Any] = {"timeout": 15}
+            if self._cfg.proxy:
+                rpc_kw["proxies"] = {"http": self._cfg.proxy, "https": self._cfg.proxy}
             for rpc in dict.fromkeys(rpcs):  # dedupe, keep order
                 try:
-                    w3 = Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 15}))
+                    w3 = Web3(Web3.HTTPProvider(rpc, request_kwargs=rpc_kw))
                     w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
                     ctf = w3.eth.contract(
                         address=Web3.to_checksum_address("0x4D97DCd97eC945f40cF65F87097ACe5EA0476045"),
@@ -371,10 +374,13 @@ class ExecutionGateway:
             abi = [{"name": "balanceOf", "type": "function", "stateMutability": "view",
                     "inputs": [{"name": "a", "type": "address"}, {"name": "id", "type": "uint256"}],
                     "outputs": [{"name": "", "type": "uint256"}]}]
+            rpc_kw: dict[str, Any] = {"timeout": 20}
+            if self._cfg.proxy:
+                rpc_kw["proxies"] = {"http": self._cfg.proxy, "https": self._cfg.proxy}
             funder = None
             for rpc in dict.fromkeys(rpcs):
                 try:
-                    w3 = Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 20}))
+                    w3 = Web3(Web3.HTTPProvider(rpc, request_kwargs=rpc_kw))
                     w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
                     ctf = w3.eth.contract(
                         address=Web3.to_checksum_address("0x4D97DCd97eC945f40cF65F87097ACe5EA0476045"),
