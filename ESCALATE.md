@@ -141,3 +141,12 @@ OpenRouter credits endpoint, or a spend-tracking script).
 2. Set up a script or monitor to check spend against the budget.
 3. Resolve the auto-mode classifier block on the OpenRouter credits
    endpoint query.
+
+---
+
+**Cycle 2 update (2026-07-22T07:48:53Z):** Partial progress. The OpenRouter
+credits endpoint is now accessible. Current spend: $7.63 out of $18.75 total
+credits (40.7%). However, no monthly budget is configured, so cannot
+determine if this is within expected bounds. Also only covers Agent 3's
+spend — cannot check Agent 1 and Agent 2 spend ("both loops"). Check
+remains FAIL.

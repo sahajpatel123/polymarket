@@ -115,3 +115,100 @@ See ESCALATE.md entry #7.
 | 7 | Agent API spend | FAIL |
 
 **4 failures, 3 passes.** All failures escalated to `ESCALATE.md`.
+
+---
+
+## Cycle 2 — 2026-07-22T07:48:53Z
+
+### 1. GitHub branch protection on main
+
+Same as cycle 1. No change.
+
+| Rule | Status |
+|------|--------|
+| Status checks required (pytest, strict) | ✅ active |
+| PR review required | ❌ NOT configured |
+| Enforce admins | ❌ false |
+| Allow force pushes | ✅ blocked |
+| Allow deletions | ✅ blocked |
+
+**Result: FAIL** — Same as cycle 1. PR reviews not required, enforce_admins false.
+
+### 2. API key scope and wallet balance
+
+Same as cycle 1. No `.env` file exists. No Polymarket API keys configured.
+
+**Result: FAIL** — Same as cycle 1. No `.env` file; cannot verify.
+
+### 3. Dependency audit
+
+Ran `uv run python scripts/deps_audit.py --fail-on-flags`.
+
+```
+status=OK packages=81 flagged=20 bumps=0
+```
+
+Same as cycle 1. No change. 0 baseline bumps, no post-install scripts.
+
+**Result: PASS** — Same as cycle 1.
+
+### 4. Alert fire-drill (monthly)
+
+Same as cycle 1. No `.env` file, no `ALERT_WEBHOOK_URL` configured.
+No record of a previous fire-drill.
+
+**Result: FAIL** — Same as cycle 1. Cannot perform fire-drill.
+
+### 5. Polymarket terms of service
+
+Attempted to fetch `https://polymarket.com/legal/terms-of-service` via
+`curl` — exit code 28 (timeout). Same as cycle 1.
+
+No previous ToS snapshot exists to diff against.
+
+**Result: FAIL** — Same as cycle 1. Cannot fetch ToS.
+
+### 6. Credential/certificate expiry
+
+Same as cycle 1. No `.env` file, no custom certificates, no GPG keys,
+no `~/.ssl` directory.
+
+**Result: PASS** — Same as cycle 1. No credentials to expire.
+
+### 7. Agent API spend
+
+`ANTHROPIC_API_KEY` is set in the environment (OpenRouter). Successfully
+queried the OpenRouter credits endpoint this cycle:
+
+```json
+{"data":{"total_credits":18.75,"total_usage":7.62539204}}
+```
+
+- Total credits: $18.75
+- Total usage: $7.63
+- Remaining: $11.12
+- Usage: 40.7% of total credits
+
+However, **no monthly budget is configured** in the project. Cannot
+determine if $7.63 is within expected bounds for the monthly budget.
+Also, this only covers Agent 3's spend — cannot check Agent 1 and
+Agent 2 spend ("both loops").
+
+**Result: FAIL** — Can check spend ($7.63/$18.75) but no monthly budget
+configured to compare against. See ESCALATE.md entry #7 (updated).
+
+---
+
+## Summary
+
+| # | Check | Cycle 1 | Cycle 2 |
+|---|-------|---------|---------|
+| 1 | Branch protection | FAIL | FAIL (no change) |
+| 2 | API key scope / wallet balance | FAIL | FAIL (no change) |
+| 3 | Dependency audit | PASS | PASS (no change) |
+| 4 | Alert fire-drill | FAIL | FAIL (no change) |
+| 5 | Polymarket ToS | FAIL | FAIL (no change) |
+| 6 | Credential/certificate expiry | PASS | PASS (no change) |
+| 7 | Agent API spend | FAIL | FAIL (partial progress — can now check spend, but no budget) |
+
+**Cycle 2: 4 failures, 3 passes.** Same as cycle 1. All failures persist.
