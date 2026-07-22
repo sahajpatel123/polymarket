@@ -72,6 +72,9 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
   suppress_frac by `trend_vol_ratio` — Newsom `3→0.44, 5→0.81, 8→1.0`;
   Vance `3→0.25, 5→0.50, 8→1.0`. Both markets fully clear vol-only TRENDING
   at 8; 5 is partial. Still no Tier-2 merge (gate + OOS).
+- **Update 2026-07-22T16:20Z:** evidence pack now embeds the counterfactual
+  sweep (`c01_counterfactual`); outage-friendly `--skip-validate` path.
+  Latest pack: both markets suppress_frac=1.0 at vol=8.
 
 ## C-02 Prefer higher-reward market weight (selection)
 

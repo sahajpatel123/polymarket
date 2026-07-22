@@ -18,8 +18,21 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from polymaker.metrics.log_discovery import DEFAULT_PAPER_CANDIDATES, pick_richest_log
 from polymaker.metrics.shadow_as import analyze_shadow_as
 from polymaker.replay import discover_condition_ids, infer_yes_no_tokens
+
+
+def _load_sweep():
+    import importlib.util
+
+    path = Path(__file__).resolve().parent / "trending_counterfactual.py"
+    spec = importlib.util.spec_from_file_location("trending_counterfactual", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("cannot load trending_counterfactual")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.sweep_counterfactual
 
 
 def _run(cmd: list[str]) -> dict[str, Any]:
@@ -74,6 +87,16 @@ def main() -> int:
         default=[],
         help="Forwarded to validate_knob_candidate (repeatable key=value)",
     )
+    ap.add_argument(
+        "--skip-validate",
+        action="store_true",
+        help="Skip journal replay validate (offline counterfactual + shadow only)",
+    )
+    ap.add_argument(
+        "--counterfactual-vols",
+        default="3,5,8",
+        help="Comma-separated trend_vol_ratio values for offline suppress sweep",
+    )
     ap.add_argument("--out", default="logs/candidate_evidence_pack.json")
     args = ap.parse_args()
 
@@ -83,6 +106,9 @@ def main() -> int:
         Path(args.metrics_log)
         if args.metrics_log
         else cfg / "logs" / "metrics-paper.jsonl"
+    )
+    paper_log = pick_richest_log(
+        [str(cfg / "logs" / "paper.jsonl"), *DEFAULT_PAPER_CANDIDATES]
     )
     if not journal.exists() or not metrics.exists():
         print(
@@ -100,55 +126,60 @@ def main() -> int:
         journal_freeze = Path(freeze_td) / "journal.jsonl"
         journal_freeze.write_bytes(journal.read_bytes())
 
-        for cid in cids:
-            yes, no = infer_yes_no_tokens(metrics, cid)
-            if not yes or not no:
-                markets.append({"condition_id": cid, "error": "token_infer_failed"})
-                continue
-            markets.append({"condition_id": cid, "yes": yes, "no": no})
-            cmd = [
-                sys.executable,
-                "scripts/validate_knob_candidate.py",
-                "--journal",
-                str(journal_freeze),
-                "--config-dir",
-                str(cfg),
-                "--baseline-profile",
-                args.baseline_profile,
-                "--knob",
-                args.knob,
-                "--values",
-                args.values,
-                "--holdout-frac",
-                str(args.holdout_frac),
-                "--split",
-                "events",
-                "--yes-token",
-                yes,
-                "--no-token",
-                no,
-                "--condition-id",
-                cid,
-                "--tick-size",
-                str(args.tick_size),
-            ]
-            for item in args.also_set:
-                cmd.extend(["--also-set", item])
-            proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
-            entry: dict[str, Any] = {
-                "condition_id": cid,
-                "returncode": proc.returncode,
-                "status_line": next(
-                    (ln for ln in proc.stderr.splitlines() if ln.startswith("status=")),
-                    None,
-                ),
-            }
-            try:
-                entry["result"] = json.loads(proc.stdout)
-            except json.JSONDecodeError:
-                entry["stdout_tail"] = proc.stdout[-2000:]
-                entry["stderr_tail"] = proc.stderr[-1000:]
-            validate_rows.append(entry)
+        if not args.skip_validate:
+            for cid in cids:
+                yes, no = infer_yes_no_tokens(metrics, cid)
+                if not yes or not no:
+                    markets.append({"condition_id": cid, "error": "token_infer_failed"})
+                    continue
+                markets.append({"condition_id": cid, "yes": yes, "no": no})
+                cmd = [
+                    sys.executable,
+                    "scripts/validate_knob_candidate.py",
+                    "--journal",
+                    str(journal_freeze),
+                    "--config-dir",
+                    str(cfg),
+                    "--baseline-profile",
+                    args.baseline_profile,
+                    "--knob",
+                    args.knob,
+                    "--values",
+                    args.values,
+                    "--holdout-frac",
+                    str(args.holdout_frac),
+                    "--split",
+                    "events",
+                    "--yes-token",
+                    yes,
+                    "--no-token",
+                    no,
+                    "--condition-id",
+                    cid,
+                    "--tick-size",
+                    str(args.tick_size),
+                ]
+                for item in args.also_set:
+                    cmd.extend(["--also-set", item])
+                proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+                entry: dict[str, Any] = {
+                    "condition_id": cid,
+                    "returncode": proc.returncode,
+                    "status_line": next(
+                        (ln for ln in proc.stderr.splitlines() if ln.startswith("status=")),
+                        None,
+                    ),
+                }
+                try:
+                    entry["result"] = json.loads(proc.stdout)
+                except json.JSONDecodeError:
+                    entry["stdout_tail"] = proc.stdout[-2000:]
+                    entry["stderr_tail"] = proc.stderr[-1000:]
+                validate_rows.append(entry)
+        else:
+            for cid in cids:
+                yes, no = infer_yes_no_tokens(metrics, cid)
+                markets.append({"condition_id": cid, "yes": yes, "no": no})
 
     shadow = analyze_shadow_as(metrics).as_dict()
     regime = _run([sys.executable, "scripts/paper_regime_report.py"])
@@ -161,6 +192,7 @@ def main() -> int:
         "values": args.values,
         "also_set": args.also_set,
         "journal_frozen": True,
+        "skipped_validate": bool(args.skip_validate),
         "markets": [],
     }
     any_oos = False
@@ -197,13 +229,45 @@ def main() -> int:
         })
     c01["any_oos_replicated"] = any_oos
 
+    counterfactual = None
+    cf_status = None
+    if paper_log is not None and paper_log.exists():
+        try:
+            sweep = _load_sweep()
+            vols = [float(x.strip()) for x in args.counterfactual_vols.split(",") if x.strip()]
+            counterfactual = sweep(
+                paper_log,
+                vol_values=vols,
+                trend_flow_z=1.2,
+                by_market=True,
+            )
+            # compact status fracs at vol=8 if present
+            fracs = []
+            for m in counterfactual.get("markets") or []:
+                hit = next(
+                    (
+                        r
+                        for r in m.get("sweep") or []
+                        if r.get("candidate_trend_vol_ratio") == 8.0
+                    ),
+                    None,
+                )
+                if hit is not None:
+                    fracs.append(f"{str(m.get('condition_id'))[:10]}={hit.get('would_suppress_frac')}")
+            cf_status = ",".join(fracs) if fracs else "ok"
+        except Exception as exc:  # noqa: BLE001
+            counterfactual = {"error": str(exc)}
+            cf_status = "error"
+
     pack = {
         "gate": gate.get("kv") or gate,
         "c01_trend_vol_ratio": c01,
+        "c01_counterfactual": counterfactual,
         "shadow_adverse_selection": shadow,
         "regime": regime.get("status_line") or regime.get("kv") or regime.get("stderr_tail"),
         "scorecard": scorecard.get("status_line") or scorecard.get("kv"),
         "markets_inferred": markets,
+        "paper_log": str(paper_log) if paper_log else None,
     }
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -216,6 +280,8 @@ def main() -> int:
         f"status=OK out={out} "
         f"tier2={gate_kv.get('tier2_allowed')} "
         f"c01_any_oos={any_oos} journal_frozen=true "
+        f"skip_validate={args.skip_validate} "
+        f"counterfactual={cf_status} "
         f"shadow_lifetimes={sh.get('n_quote_lifetimes')} "
         f"crossed_frac={sh.get('crossed_frac')} "
         f"markout_30s={((sh.get('markout_mean') or {}).get('30s'))}",

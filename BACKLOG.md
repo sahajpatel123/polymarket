@@ -356,6 +356,12 @@ done without evidence (script output / tests) from that cycle.
   C-01 threshold choice offline.
 - Evidence: Newsom 3/5/8 → 0.44/0.81/1.0; Vance → 0.25/0.50/1.0
 
+### T1-50 Evidence pack includes C-01 counterfactual (+ skip-validate)
+- Status: `done`
+- Done when: candidate_evidence_pack embeds per-market suppress sweep;
+  `--skip-validate` allows outage-time packs without journal replay.
+- Evidence: skip-validate pack counterfactual both markets=1.0 at vol=8
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
