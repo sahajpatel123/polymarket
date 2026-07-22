@@ -44,6 +44,8 @@ RECOMMENDED_KEYS = (
     "collector_pid",
     "deps_ok",
     "n_cycles",
+    "c01_status",
+    "c01_blockers",
 )
 
 

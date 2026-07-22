@@ -159,6 +159,18 @@ def _ensure_collector_fields(ensure: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _c01_blocker_fields(c01: dict[str, Any]) -> dict[str, Any]:
+    """Persist C-01 promotion blockers on the compact status (T1-95)."""
+    out: dict[str, Any] = {}
+    status = c01.get("status")
+    if status:
+        out["c01_status"] = status
+    blockers = c01.get("blockers")
+    if blockers not in (None, ""):
+        out["c01_blockers"] = blockers
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
@@ -254,6 +266,7 @@ def main() -> int:
     # Live paper_health overwrites trail-stale requote ages.
     merge_fields.update(_live_health_fields(report["steps"].get("health") or {}))
     merge_fields.update(_ensure_collector_fields(report["steps"].get("ensure") or {}))
+    merge_fields.update(_c01_blocker_fields(report["steps"].get("c01") or {}))
     conn = report["steps"].get("connectivity") or {}
     conn_line = str(conn.get("status_line") or "")
     if conn_line and conn.get("status") != "SKIPPED":

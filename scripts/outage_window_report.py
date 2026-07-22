@@ -148,6 +148,8 @@ PRESERVE_STATUS_KEYS = (
     "collector_pids",
     "collector_pid",
     "n_cycles",
+    "c01_status",
+    "c01_blockers",
 )
 
 

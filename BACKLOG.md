@@ -627,6 +627,12 @@ done without evidence (script output / tests) from that cycle.
   weekly + validate recommended include n_cycles; status line shows n_cycles=.
 - Evidence: live n_cycles≥79 during ~8.3h Polymarket outage
 
+### T1-95 Persist C-01 blockers in outage_status
+- Status: `done`
+- Done when: strategy_tick merges c01_status + c01_blockers into outage_status;
+  weekly/validate recommended include them.
+- Evidence: live c01_status=BLOCKED with hours_ok,health_ok,outage_closed,… during ~8.5h DOWN
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

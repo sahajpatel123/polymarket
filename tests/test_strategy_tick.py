@@ -67,3 +67,14 @@ def test_ensure_collector_fields() -> None:
     assert fields["ensure_status"] == "NEEDS_RESTART"
     assert fields["collector_pids"] == "[78216]"
     assert fields["collector_pid"] == 78216
+
+
+def test_c01_blocker_fields() -> None:
+    fields = tick._c01_blocker_fields({
+        "status": "BLOCKED",
+        "blockers": "hours_ok,health_ok,outage_closed",
+    })
+    assert fields == {
+        "c01_status": "BLOCKED",
+        "c01_blockers": "hours_ok,health_ok,outage_closed",
+    }

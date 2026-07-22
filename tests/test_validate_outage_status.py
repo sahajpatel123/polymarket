@@ -31,6 +31,8 @@ def _full(**overrides):
         "collector_pid": 78216,
         "deps_ok": True,
         "n_cycles": 79,
+        "c01_status": "BLOCKED",
+        "c01_blockers": "hours_ok,health_ok,outage_closed",
     }
     base.update(overrides)
     return base
