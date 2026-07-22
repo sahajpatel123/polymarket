@@ -112,6 +112,8 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
   (hours_to_tier2_gate / tier2_allowed). Still DOWN ~6.2h; no Tier-2 PR.
 - **Update 2026-07-22T21:50Z:** cycle trail now embeds `outage_status` per row;
   summarize surfaces hours_to_tier2_gate. Still DOWN ~6.3h; no Tier-2 PR.
+- **Update 2026-07-22T22:00Z:** `validate_outage_status` checks monitor schema;
+  strategy_tick reports `outage_status=OK`. Still DOWN ~6.5h; no Tier-2 PR.
 
 ## C-02 Prefer higher-reward market weight (selection)
 

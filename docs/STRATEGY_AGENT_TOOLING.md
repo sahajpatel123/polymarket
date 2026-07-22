@@ -15,6 +15,7 @@ uv run python scripts/paper_health.py            # fail if quotes go stale
 uv run python scripts/ensure_paper_collector.py --restart  # relaunch if STALE
 uv run python scripts/polymarket_connectivity.py  # REST+WS upstream probe
 uv run python scripts/outage_window_report.py     # STALE/DOWN duration from cycles
+uv run python scripts/validate_outage_status.py   # schema/freshness check for outage_status.json
 uv run python scripts/await_polymarket_recovery.py --once  # check / relaunch+append cycle when UP
 uv run python scripts/c01_promotion_checklist.py          # C-01 Tier-2 PR blockers
 ```
@@ -40,6 +41,7 @@ uv run python scripts/c01_promotion_checklist.py          # C-01 Tier-2 PR block
 | `scripts/ensure_paper_collector.py` | Diagnose STALE paper collector; optional `--restart` (refuses while upstream DOWN) |
 | `scripts/polymarket_connectivity.py` | REST + market WS upstream probe (outage vs local) |
 | `scripts/outage_window_report.py` | STALE/DOWN window durations; optional `--status-out` JSON (incl. `hours_to_tier2_gate`) |
+| `scripts/validate_outage_status.py` | Required-key + optional freshness check for `logs/outage_status.json` |
 | `scripts/await_polymarket_recovery.py` | Poll until REST+WS UP; collector restart + cycle append; refreshes `logs/outage_status.json` |
 | `scripts/write_weekly_report.py` | Overwrite WEEKLY_REPORT.md from gate/metrics/C-01/summarize/deps + outage_status |
 | `scripts/unused_knob_toml_scan.py` | Flag unused StrategyProfile knobs still set in TOML (C-04) |

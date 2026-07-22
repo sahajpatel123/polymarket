@@ -554,6 +554,12 @@ done without evidence (script output / tests) from that cycle.
   row; summarize surfaces last hours_to_tier2_gate / tier2_allowed.
 - Evidence: live append row includes outage_status; summarize shows gate hours
 
+### T1-83 Validate outage_status schema + freshness
+- Status: `done`
+- Done when: validate_outage_status checks required keys (+ optional max-age);
+  strategy_tick runs it after merging gate/connectivity.
+- Evidence: live status=OK on current outage_status during ~6.5h DOWN
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
