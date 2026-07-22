@@ -47,6 +47,10 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
   `false_trending_cancel_share≈0.72` (most cancels sit on those trips) while
   place share ≈0.02. Evidence pack: full_dn_quote −117/−15, holdout −3/0,
   still `thin_holdout` / `oos_replicated=false`. Do not promote.
+- **Update 2026-07-22T14:50Z:** requote logs now emit `vol_ratio` (T1-41) so
+  future TRENDING can be split flow_only vs vol_only vs both. Legacy tape
+  lacks the field (`missing_vol`); attribution fills in after collector
+  restart. Still no Tier-2 merge.
 
 ## C-02 Prefer higher-reward market weight (selection)
 

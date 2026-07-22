@@ -142,3 +142,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T14:30:00Z | Tier1 | T1-39 false_trending_frac in regime report — live frac=1.0 (all TRENDING are low flow_z) | pytest pass; C-01 smoking gun updated; still no Tier2 merge | merged
 
 2026-07-22T14:40:00Z | Tier1 | T1-40 false_trending cancel/place share + cycle wiring — live cancel_share≈0.72 | pytest pass; C-01 refreshed thin OOS; no Tier2 | merged
+
+2026-07-22T14:50:00Z | Tier1 | T1-41 requote vol_ratio + dual-path TRENDING attribution (flow/vol/both) | pytest pass; restart paper collector for new field; no Tier2 | merged

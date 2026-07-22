@@ -607,7 +607,8 @@ class Engine:
         log.info("requote", condition_id=cid, cid=cid[:8], regime=regime.value, fv=round(fv, 4),
                  place=placed_n, cancel=len(plan.to_cancel),
                  pos_yes=round(pos_yes.size, 1), pos_no=round(pos_no.size, 1),
-                 tox=round(est.markout.toxicity, 3), flowz=round(est.flow.z, 2))
+                 tox=round(est.markout.toxicity, 3), flowz=round(est.flow.z, 2),
+                 vol_ratio=round(est.vol.ratio, 3))
         self._maybe_merge(cid, meta, p, pos_yes.size, pos_no.size)
 
     async def _quarantine(self, meta: MarketMeta, reason: str) -> None:

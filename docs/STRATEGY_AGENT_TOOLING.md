@@ -22,7 +22,7 @@ uv run python scripts/paper_health.py            # fail if quotes go stale
 | `scripts/synth_regime_journal.py` | Quiet→jump→recovery synthetic tape (`--dense`) |
 | `scripts/rank_vs_realized.py` | Scanner vs realized vs liquidity-oracle ranks |
 | `scripts/reward_scorecard.py` | Per-market reward/hour + regime mix |
-| `scripts/paper_regime_report.py` | TRENDING/QUIET mix, false-TRENDING frac + cancel share |
+| `scripts/paper_regime_report.py` | TRENDING mix, false-TRENDING + vol_only path attribution |
 | `scripts/strategy_snapshot.py` | One-shot gate+metrics+reward+regime+synth A/B |
 | `scripts/shadow_adverse_selection.py` | Fill-independent quote-lifetime AS proxy |
 | `scripts/candidate_evidence_pack.py` | C-01 validate + shadow AS + regime JSON pack |

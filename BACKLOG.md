@@ -300,6 +300,12 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: live `false_trending_cancel_share≈0.72`; C-01 pack refreshed
   (~7.7h, still thin OOS)
 
+### T1-41 Log `vol_ratio` on requote + dual-path TRENDING attribution
+- Status: `done`
+- Done when: engine requote logs include `vol_ratio`; regime report
+  attributes TRENDING as flow_only / vol_only / both when present.
+- Evidence: pytest; collector restarted to emit field on new requotes
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
