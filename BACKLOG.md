@@ -584,6 +584,12 @@ done without evidence (script output / tests) from that cycle.
   with the live age (not stale cycle-trail value); surfaces health= on status line.
 - Evidence: live last_requote_age_s advances with wall clock (~7.2h outage)
 
+### T1-88 Weekly report includes Tier-1 done counts
+- Status: `done`
+- Done when: write_weekly_report counts CHANGELOG Tier1 lines + BACKLOG T1
+  Status:done; System table shows both; live WEEKLY_REPORT refreshed.
+- Evidence: live tier1_changelog / tier1_backlog_done printed on status line
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

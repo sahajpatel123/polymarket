@@ -236,3 +236,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T22:30:00Z | Tier1 | T1-86 persist tape_frozen/eta_paused/last_requote_age_s in outage_status; weekly refresh ~7h outage | STILL_DOWN; no Tier2 | merged
 
 2026-07-22T22:40:00Z | Tier1 | T1-87 live paper_health ages overwrite stale trail requote age in outage_status | ~7.2h DOWN; no Tier2 | merged
+
+2026-07-22T22:50:00Z | Tier1 | T1-88 WEEKLY_REPORT Tier-1 done counts from CHANGELOG+BACKLOG; refreshed ~7.3h outage | STILL_DOWN; no Tier2 | merged

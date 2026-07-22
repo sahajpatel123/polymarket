@@ -39,3 +39,25 @@ def test_outage_status_block(tmp_path) -> None:
     assert "hours_to_tier2_gate=15.63" in block
     assert "tier2_allowed=False" in block
     assert "gate_reason=need_hours>=24.0" in block
+
+
+def test_count_changelog_tier1(tmp_path) -> None:
+    path = tmp_path / "CHANGELOG_AGENT.md"
+    path.write_text(
+        "noise\n"
+        "2026-07-22T22:00:00Z | Tier1 | T1-83 foo | bar | merged\n"
+        "2026-07-22T22:10:00Z | Tier1 | T1-84 baz | qux | merged\n"
+        "2026-07-22T12:00:00Z | Tier2 | should not count | x | open\n"
+    )
+    assert wr._count_changelog_tier1(path) == 2
+
+
+def test_count_backlog_tier1_done(tmp_path) -> None:
+    path = tmp_path / "BACKLOG.md"
+    path.write_text(
+        "### T1-01 Foo\n- Status: `done`\n\n"
+        "### T1-02 Bar\n- Status: `todo`\n\n"
+        "### T1-03 Baz\n- Status: `done`\n\n"
+        "## Tier 2 — strategy\n### T2-01\n- Status: `done`\n"
+    )
+    assert wr._count_backlog_tier1_done(path) == 2

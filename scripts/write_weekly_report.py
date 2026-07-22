@@ -87,6 +87,37 @@ def _outage_status_block(path: Path) -> str:
     return "\n".join(lines) if lines else json.dumps(data, indent=2, sort_keys=True)
 
 
+def _count_changelog_tier1(path: Path) -> int:
+    """Count Tier-1 changelog lines (protocol weekly visibility; T1-88)."""
+    if not path.exists():
+        return 0
+    n = 0
+    for line in path.read_text().splitlines():
+        if "| Tier1 |" in line or "| Tier 1 |" in line:
+            n += 1
+    return n
+
+
+def _count_backlog_tier1_done(path: Path) -> int:
+    """Count BACKLOG ### T1-* items marked Status: done."""
+    if not path.exists():
+        return 0
+    text = path.read_text().splitlines()
+    n = 0
+    in_t1 = False
+    for line in text:
+        if line.startswith("## Tier 2"):
+            break
+        if line.startswith("### T1-"):
+            in_t1 = True
+            continue
+        if in_t1 and line.startswith("- Status:"):
+            if "`done`" in line:
+                n += 1
+            in_t1 = False
+    return n
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--out", default="WEEKLY_REPORT.md")
@@ -118,6 +149,8 @@ def main() -> int:
     sum_line = _status_line(summarize)
     outage_path = Path(args.outage_status)
     outage_block = _outage_status_block(outage_path)
+    tier1_changelog = _count_changelog_tier1(Path("CHANGELOG_AGENT.md"))
+    tier1_backlog_done = _count_backlog_tier1_done(Path("BACKLOG.md"))
 
     body = f"""# WEEKLY_REPORT
 
@@ -135,6 +168,8 @@ Generated: `{ts}` (via `scripts/write_weekly_report.py`)
 | Branch | `git log -1` → `{head}` |
 | Paper trading | `{pid}` |
 | Loop | 10m Agent-1 strategy-pricing cadence; Tier-2 gated on hours |
+| Tier-1 changelog lines | `{tier1_changelog}` (from `CHANGELOG_AGENT.md`) |
+| Tier-1 backlog done | `{tier1_backlog_done}` (from `BACKLOG.md` Status: done) |
 
 ### Tier-2 PRs
 
@@ -213,9 +248,16 @@ No expiry tracker in-repo. `.env` is gitignored; operator must rotate
 """
     path = Path(args.out)
     path.write_text(body)
-    print(json.dumps({"wrote": str(path), "ts": ts, "head": head}, indent=2))
+    print(json.dumps({
+        "wrote": str(path),
+        "ts": ts,
+        "head": head,
+        "tier1_changelog": tier1_changelog,
+        "tier1_backlog_done": tier1_backlog_done,
+    }, indent=2))
     print(
         f"status=OK wrote={path} ts={ts} "
+        f"tier1_changelog={tier1_changelog} tier1_backlog_done={tier1_backlog_done} "
         f"c01={c01_line.split()[0] if c01_line else '?'} "
         f"deps={deps_status.split()[0] if deps_status else '?'}",
         file=sys.stderr,
