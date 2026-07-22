@@ -100,3 +100,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T11:08:00Z | Tier1 | skipped — waiting on 24h paper gate (collector healthy) | status=OK cycles=15 runtime_h=4.1392 hours_remaining=19.8608 eta_wall_h=19.814 quotes_per_wall_h=677.05 health=OK | skipped
 
 2026-07-22T11:18:00Z | Tier1 | skipped — waiting on 24h paper gate (collector healthy) | status=OK cycles=16 runtime_h=4.3064 hours_remaining=19.6936 eta_wall_h=19.6543 quotes_per_wall_h=680.09 health=OK | skipped
+
+2026-07-22T11:28:00Z | Tier1 | skipped — waiting on 24h paper gate (collector healthy) | status=OK cycles=17 runtime_h=4.4732 hours_remaining=19.5268 eta_wall_h=19.4872 quotes_per_wall_h=680.02 health=OK | skipped
