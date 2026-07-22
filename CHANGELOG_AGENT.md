@@ -206,3 +206,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T20:00:00Z | Tier1 | T1-71 annotate config/strategy.toml C-04 unused knobs + strategy.md scan pointer; Polymarket STILL_DOWN ~4.5h | no Tier2 | merged
 
 2026-07-22T20:10:00Z | Tier1 | T1-72 record unused_set in strategy cycle trail; live unused_set=9 outage~4.7h | Polymarket STILL_DOWN; no Tier2 | merged
+
+2026-07-22T20:20:00Z | Tier1 | T1-73 refresh WEEKLY_REPORT for ~4.85h Polymarket outage; unused_set=9; deps ok bumps=0 | STILL_DOWN; no Tier2 | merged

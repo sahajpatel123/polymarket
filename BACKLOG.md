@@ -494,6 +494,12 @@ done without evidence (script output / tests) from that cycle.
   last_unused_set.
 - Evidence: live unused_set=9 on cycle append during outage
 
+### T1-73 Refresh WEEKLY_REPORT at ~5h Polymarket outage
+- Status: `done`
+- Done when: WEEKLY_REPORT overwritten with this-cycle gate/metrics/shadow/
+  regime/checklist/summarize/deps reflecting ~4.85h STALE outage.
+- Evidence: Generated 2026-07-22T20:20Z; unused_set=9; deps bumps=0
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

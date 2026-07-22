@@ -5,21 +5,22 @@ autonomous loop. Not an action request.
 
 ## Week of 2026-07-22 (UTC)
 
-Generated: `2026-07-22T19:10:00Z`
+Generated: `2026-07-22T20:20:00Z`
 
 ### System
 
 | Item | Status |
 |------|--------|
-| Branch | `strategy-pricing` / `main` @ `1408926` (T1-65 tape_frozen) |
-| Paper trading | **collector alive** (PID 78216) but **STALE** — Polymarket REST+WS DOWN ~3.7h; quotes frozen at 5529; `tape_frozen=true` |
+| Branch | `strategy-pricing` / `main` @ `dd7c27d` (T1-72 unused_set trail) |
+| Paper trading | **collector alive** (PID 78216) but **STALE** — Polymarket REST+WS DOWN ~4.85h; quotes frozen at 5529; `tape_frozen=true` |
 | Loop | 10m Agent-1 strategy-pricing cadence; Tier-2 gated on hours; ETA paused |
 
 ### Tier-1 completed (this build-out window)
 
-T1-01 … T1-65 `done` (metrics, replay, compare/synth, gate, shadow AS, knob
-audit, richest-log, cycle history, C-01 checklist/counterfactual/vol context,
-outage tooling, recovery append, tape_frozen).
+T1-01 … T1-72 `done` (metrics, replay, compare/synth, gate, shadow AS, knob
+audit, richest-log, cycle history, C-01 checklist/CF/vol context, outage
+tooling, recovery append, tape_frozen, strategy_tick, deps baseline,
+unused-knob scan + annotations, unused_set in trail).
 
 ### Tier-2 PRs
 
@@ -40,7 +41,7 @@ log_path=.../livecfg/logs/paper.jsonl
 status=OK
 runtime_basis=requote
 runtime_hours=8.3700
-runtime_hours_all_events=12.1498
+runtime_hours_all_events=13.3167
 quote_events=5529
 requote_lines=2843
 quotes_for_gate=5529
@@ -71,15 +72,15 @@ suggested_vol=2.489 path={'missing_vol': 102, 'vol_only': 20}
 
 ```
 status=BLOCKED blockers=hours_ok,health_ok,outage_closed,oos_replicated,holdout_not_thin
-runtime_h=8.3700 quotes=5529 health=STALE outage_alert=True
+runtime_h=8.3700 quotes=5529 health=STALE outage_alert=True outage_total_h≈4.85
 suppress_2=0.0 suppress_suggested=0.1875 suppress_target=1.0
 ```
 
 `uv run python scripts/summarize_strategy_cycles.py`:
 
 ```
-status=OK cycles=59 runtime_h=8.37 hours_remaining=15.63 eta_paused=True
-outage_open=True outage_total_h≈3.68 tape_frozen=True c01=BLOCKED
+status=OK cycles=68 runtime_h=8.37 hours_remaining=15.63 eta_paused=True
+outage_open=True outage_total_h≈4.85 tape_frozen=True unused_set=9 c01=BLOCKED
 ```
 
 ### Dependency / security audit
@@ -87,11 +88,11 @@ outage_open=True outage_total_h≈3.68 tape_frozen=True c01=BLOCKED
 `uv run python scripts/deps_audit.py`:
 
 ```
-status=FLAGS packages=83 flagged=21 bumps=2
+status=OK packages=83 flagged=21 bumps=0
 ```
 
-Most flags are informational `unpinned_direct` ranges. `ok=false` due to
-baseline drift (`bumps=2`) — track; not a strategy change.
+Most flags are informational `unpinned_direct` ranges. Baseline drift cleared
+(T1-68); `ok=true`.
 
 ### Credentials / certificates
 
@@ -100,7 +101,7 @@ No expiry tracker in-repo. `.env` is gitignored; operator must rotate
 
 ### Blockers (informational)
 
-- **Polymarket REST+WS outage** (~3.7h open): paper health STALE; requote
+- **Polymarket REST+WS outage** (~4.85h open): paper health STALE; requote
   runtime frozen at 8.37h; do not restart collector until UP
   (`SKIPPED_UPSTREAM_DOWN`). Recovery:
   `await_polymarket_recovery.py` (restarts + appends cycle).
@@ -108,6 +109,7 @@ No expiry tracker in-repo. `.env` is gitignored; operator must rotate
   **and** OOS replication on a non-thin holdout. ETA paused while STALE.
 - C-01 offline: suppress@2=0 / @suggested≈0.19 / @8=1.0 — still no PR
   while outage + thin holdout.
+- C-04: `unused_set=9` inert knobs remain in TOML (annotated; do not tune).
 - Paper mode still has **0 fills** — reward path is liquidity-accrual only;
   classic markouts empty; shadow AS on frozen tape is not live signal.
 - Live capital / size increases remain human-only (protocol boundary).
