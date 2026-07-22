@@ -81,6 +81,9 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
 - **Update 2026-07-22T16:40Z:** gate runtime no longer pads on outage noise
   (`get_full_book_failed` / `market_ws_dropped`). Live:
   `runtime_hours(requote)=8.37` vs `all_events=9.66` (T1-52).
+- **Update 2026-07-22T17:00Z:** `c01_promotion_checklist` → BLOCKED on
+  `hours_ok,health_ok,outage_closed,oos_replicated,holdout_not_thin`
+  (quotes already OK). No Tier-2 PR until Polymarket recovers + denser OOS.
 
 ## C-02 Prefer higher-reward market weight (selection)
 

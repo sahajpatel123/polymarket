@@ -380,6 +380,12 @@ done without evidence (script output / tests) from that cycle.
   outage-padded logs cannot shadow an active collector.
 - Evidence: pytest pick_richest ignores ws_dropped padding
 
+### T1-54 C-01 promotion readiness checklist
+- Status: `done`
+- Done when: c01_promotion_checklist aggregates gate/health/outage/
+  counterfactual/evidence-pack OOS into READY vs BLOCKED + blockers.
+- Evidence: live BLOCKED on hours/health/outage/oos/thin (expected)
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

@@ -168,3 +168,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T16:40:00Z | Tier1 | T1-52 paper_data_gate runtime from requote span only — stop outage noise padding toward 24h; live 8.37h vs all_events 9.66h | pytest pass; Polymarket still DOWN; no Tier2 | merged
 
 2026-07-22T16:50:00Z | Tier1 | T1-53 paper_log_score ranks by requote runtime (align with gate); ignore outage padding when picking richest log | pytest pass; Polymarket still DOWN; no Tier2 | merged
+
+2026-07-22T17:00:00Z | Tier1 | T1-54 C-01 promotion checklist (READY vs blockers); live BLOCKED hours/health/outage/oos/thin; quotes OK | pytest pass; evidence pack refreshed; no Tier2 | merged
