@@ -159,13 +159,23 @@ def main() -> int:
     if isinstance(compare, dict) and isinstance(compare.get("delta"), dict):
         d_quote = compare["delta"].get("n_quote")
     trending_frac = (regime_rep or {}).get("trending_frac") if isinstance(regime_rep, dict) else None
+    false_trending_frac = (
+        (regime_rep or {}).get("false_trending_frac") if isinstance(regime_rep, dict) else None
+    )
+    false_trending_cancel_share = (
+        (regime_rep or {}).get("false_trending_cancel_share")
+        if isinstance(regime_rep, dict)
+        else None
+    )
     top_rph = None
     if isinstance(reward_card, dict) and reward_card.get("markets"):
         top_rph = reward_card["markets"][0].get("reward_per_hour_usdc")
     print(
         f"status=OK gate={g_status} tier2={g_tier2} paper_quotes={nq} "
         f"reward_accrual_sum={reward_sum} top_reward_per_hour={top_rph} "
-        f"trending_frac={trending_frac} offline_dn_quote={d_quote}",
+        f"trending_frac={trending_frac} false_trending_frac={false_trending_frac} "
+        f"false_trending_cancel_share={false_trending_cancel_share} "
+        f"offline_dn_quote={d_quote}",
         file=sys.stderr,
     )
     return 0

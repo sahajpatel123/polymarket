@@ -94,6 +94,12 @@ def main() -> int:
         "last_shadow_lifetimes": (last.get("shadow") or {}).get("lifetimes"),
         "last_crossed_frac": (last.get("shadow") or {}).get("crossed_frac"),
         "last_markout_30s": (last.get("shadow") or {}).get("markout_30s"),
+        "last_false_trending_frac": (last.get("snapshot") or {}).get(
+            "false_trending_frac"
+        ),
+        "last_false_trending_cancel_share": (last.get("snapshot") or {}).get(
+            "false_trending_cancel_share"
+        ),
     }
     print(json.dumps(rep, indent=2, sort_keys=True))
     print(
@@ -101,7 +107,9 @@ def main() -> int:
         f"hours_remaining={rep['hours_remaining']} "
         f"eta_wall_h={rep['eta_wall_hours_to_gate']} "
         f"quotes_per_wall_h={rep['quotes_per_wall_hour']} health={rep['last_health']} "
-        f"crossed_frac={rep['last_crossed_frac']} markout_30s={rep['last_markout_30s']}",
+        f"crossed_frac={rep['last_crossed_frac']} markout_30s={rep['last_markout_30s']} "
+        f"false_trending_frac={rep['last_false_trending_frac']} "
+        f"false_trending_cancel_share={rep['last_false_trending_cancel_share']}",
         file=sys.stderr,
     )
     return 0

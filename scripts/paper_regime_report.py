@@ -41,6 +41,10 @@ def analyze_paper_log(
     trending_flowz: list[float] = []
     quiet_flowz: list[float] = []
     false_trending = 0
+    false_cancel = 0
+    false_place = 0
+    trend_cancel = 0
+    trend_place = 0
     n_bad = 0
     n_lines = 0
     thresh = abs(float(trend_flow_z))
@@ -66,17 +70,24 @@ def analyze_paper_log(
             cid = str(obj.get("condition_id") or obj.get("cid") or "unknown")
             regimes[regime] += 1
             regimes_by_cid[cid][regime] += 1
-            cancel_sum += int(obj.get("cancel") or 0)
-            place_sum += int(obj.get("place") or 0)
+            n_cancel = int(obj.get("cancel") or 0)
+            n_place = int(obj.get("place") or 0)
+            cancel_sum += n_cancel
+            place_sum += n_place
             try:
                 flowz = float(obj.get("flowz"))
             except (TypeError, ValueError):
                 flowz = None
+            if regime == "TRENDING":
+                trend_cancel += n_cancel
+                trend_place += n_place
             if flowz is not None:
                 if regime == "TRENDING":
                     trending_flowz.append(flowz)
                     if abs(flowz) < thresh:
                         false_trending += 1
+                        false_cancel += n_cancel
+                        false_place += n_place
                 elif regime == "QUIET":
                     quiet_flowz.append(flowz)
             prev = last_regime.get(cid)
@@ -107,6 +118,18 @@ def analyze_paper_log(
         "trend_flow_z_threshold": thresh,
         "false_trending_n": false_trending,
         "false_trending_frac": round(false_trending / n_trend, 6) if n_trend else 0.0,
+        # Share of all cancels/places that happened on false-TRENDING requotes —
+        # upper-bound C-01 churn impact if those trips were suppressed (T1-40).
+        "false_trending_cancel_sum": false_cancel,
+        "false_trending_place_sum": false_place,
+        "trending_cancel_sum": trend_cancel,
+        "trending_place_sum": trend_place,
+        "false_trending_cancel_share": (
+            round(false_cancel / cancel_sum, 6) if cancel_sum else 0.0
+        ),
+        "false_trending_place_share": (
+            round(false_place / place_sum, 6) if place_sum else 0.0
+        ),
     }
 
 
@@ -130,6 +153,8 @@ def main() -> int:
     print(
         f"status=OK requotes={rep['n_requote']} trending_frac={rep['trending_frac']} "
         f"false_trending_frac={rep['false_trending_frac']} "
+        f"false_trending_cancel_share={rep['false_trending_cancel_share']} "
+        f"false_trending_place_share={rep['false_trending_place_share']} "
         f"cancel_per_place={rep['cancel_per_place']} "
         f"transitions={sum(rep['regime_transitions'].values())}",
         file=sys.stderr,

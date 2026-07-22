@@ -43,6 +43,10 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
   livecfg → `false_trending_frac=1.0` (all TRENDING requotes have
   `|flow_z|<1.2`). Smoking gun for vol-ratio-only trips; promotion still
   blocked on OOS holdout quality.
+- **Update 2026-07-22T14:40Z (~7.7h):** false_trending still 1.0;
+  `false_trending_cancel_share≈0.72` (most cancels sit on those trips) while
+  place share ≈0.02. Evidence pack: full_dn_quote −117/−15, holdout −3/0,
+  still `thin_holdout` / `oos_replicated=false`. Do not promote.
 
 ## C-02 Prefer higher-reward market weight (selection)
 

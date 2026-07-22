@@ -293,6 +293,13 @@ done without evidence (script output / tests) from that cycle.
   `|flow_z| < trend_flow_z` as false_trending (C-01 smoking-gun metric).
 - Evidence: live `false_trending_frac=1.0` at threshold 1.2
 
+### T1-40 False-TRENDING cancel/place share + cycle wiring
+- Status: `done`
+- Done when: regime report exposes cancel/place share on false TRENDING;
+  snapshot/append/summarize surface the metric for longitudinal cycles.
+- Evidence: live `false_trending_cancel_share≈0.72`; C-01 pack refreshed
+  (~7.7h, still thin OOS)
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

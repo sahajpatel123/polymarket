@@ -13,18 +13,22 @@ def test_analyze_paper_log_counts_regimes_and_transitions(tmp_path: Path) -> Non
     rows = [
         {"event": "requote", "condition_id": "0xa", "regime": "QUIET", "cancel": 0, "place": 2, "flowz": 0.1},
         {"event": "requote", "condition_id": "0xa", "regime": "TRENDING", "cancel": 1, "place": 1, "flowz": 0.0},
+        {"event": "requote", "condition_id": "0xa", "regime": "TRENDING", "cancel": 3, "place": 3, "flowz": 2.5},
         {"event": "requote", "condition_id": "0xa", "regime": "QUIET", "cancel": 0, "place": 2, "flowz": -0.2},
         {"event": "other", "msg": "noise"},
     ]
     path.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
     rep = analyze_paper_log(path)
-    assert rep["n_requote"] == 3
+    assert rep["n_requote"] == 4
     assert rep["regimes"]["QUIET"] == 2
-    assert rep["regimes"]["TRENDING"] == 1
+    assert rep["regimes"]["TRENDING"] == 2
     assert rep["regime_transitions"]["QUIET->TRENDING"] == 1
     assert rep["regime_transitions"]["TRENDING->QUIET"] == 1
-    assert rep["cancel_sum"] == 1
-    assert rep["place_sum"] == 5
-    assert rep["trending_flowz_mean"] == 0.0
+    assert rep["cancel_sum"] == 4
+    assert rep["place_sum"] == 8
+    assert rep["trending_flowz_mean"] == 1.25
     assert rep["false_trending_n"] == 1
-    assert rep["false_trending_frac"] == 1.0
+    assert rep["false_trending_frac"] == 0.5
+    assert rep["false_trending_cancel_sum"] == 1
+    assert rep["false_trending_cancel_share"] == 0.25
+    assert rep["false_trending_place_share"] == 0.125

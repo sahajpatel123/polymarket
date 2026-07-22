@@ -88,6 +88,7 @@ def main() -> int:
     sh = row["shadow"]
     ch = row["churn"]
     sch = row["schema"]
+    snap = row["snapshot"]
     print(
         f"status=OK appended={out} runtime_h={g.get('runtime_hours')} "
         f"quotes={g.get('quotes_for_gate')} tier2={g.get('tier2_allowed')} "
@@ -96,7 +97,9 @@ def main() -> int:
         f"crossed_frac={sh.get('crossed_frac')} "
         f"markout_30s={sh.get('markout_30s')} "
         f"life_p50={ch.get('life_p50')} rq_p50={ch.get('rq_p50')} "
-        f"schema={sch.get('status')}",
+        f"schema={sch.get('status')} "
+        f"false_trending_frac={snap.get('false_trending_frac')} "
+        f"false_trending_cancel_share={snap.get('false_trending_cancel_share')}",
         file=sys.stderr,
     )
     # health returncode 1 = stale; still append evidence but surface non-zero
