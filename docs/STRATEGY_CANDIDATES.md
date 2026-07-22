@@ -38,3 +38,7 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
   realized). `reward_density` is nearly tied (0.044 vs 0.043).
 - **Status:** `watching` (needs multi-day window + fills before retuning
   score_market; n=2 and paper-no-fill regime bias the comparison)
+- **Update 2026-07-22T09:18Z:** `spearman_scanner_vs_liquidity_oracle=-1.0`
+  matches realized ranks under zero-fill / full in-band — scanner is not wrong
+  for rebate-inclusive ranking, but it is the wrong objective for current paper
+  evidence (liquidity rewards only).

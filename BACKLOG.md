@@ -183,6 +183,12 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: `scripts/append_strategy_cycle.py`; C-01 recheck full_dn_quote=-42
   still fails OOS
 
+### T1-24 Liquidity-reward oracle rank in rank report
+- Status: `done`
+- Done when: rank_vs_realized also ranks by rewards_daily_rate (oracle for
+  zero-fill / full in-band paper) and reports Spearman vs scanner.
+- Evidence: live spearman_scanner_vs_liquidity_oracle=-1.0 (same inversion)
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

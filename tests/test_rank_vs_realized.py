@@ -51,4 +51,9 @@ def test_build_report_flags_disagreement(tmp_path: Path) -> None:
     rep = build_report(db=db, metrics=metrics, paper_log=None)
     assert rep["n_markets"] == 2
     assert rep["spearman_scanner_vs_realized"] == -1.0
+    assert rep["spearman_scanner_vs_liquidity_oracle"] == -1.0
     assert len(rep["rank_disagreements"]) == 2
+    # higher daily_rate market should be oracle rank 1
+    by_oracle = {r["condition_id"]: r["liquidity_oracle_rank"] for r in rep["markets"]}
+    assert by_oracle["0xb"] == 1
+    assert by_oracle["0xa"] == 2

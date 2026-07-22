@@ -185,15 +185,26 @@ def build_report(
         key=lambda r: float(r["realized_reward_per_hour"]),
         reverse=True,
     )
+    by_oracle = sorted(
+        [r for r in rows if r.get("rewards_daily_rate") is not None],
+        key=lambda r: float(r["rewards_daily_rate"]),
+        reverse=True,
+    )
     for i, r in enumerate(by_scan, 1):
         r["scanner_rank"] = i
     for i, r in enumerate(by_real, 1):
         r["realized_rank"] = i
+    for i, r in enumerate(by_oracle, 1):
+        r["liquidity_oracle_rank"] = i
     # align for correlation
     aligned = [r for r in rows if r.get("scanner_score") is not None and r.get("realized_reward_per_hour") is not None]
     rho = spearman_rank_corr(
         [float(r["scanner_score"]) for r in aligned],
         [float(r["realized_reward_per_hour"]) for r in aligned],
+    )
+    rho_oracle = spearman_rank_corr(
+        [float(r["scanner_score"]) for r in aligned if r.get("rewards_daily_rate") is not None],
+        [float(r["rewards_daily_rate"]) for r in aligned if r.get("rewards_daily_rate") is not None],
     )
     disagree = [
         {
@@ -201,6 +212,7 @@ def build_report(
             "slug": r.get("slug"),
             "scanner_rank": r.get("scanner_rank"),
             "realized_rank": r.get("realized_rank"),
+            "liquidity_oracle_rank": r.get("liquidity_oracle_rank"),
         }
         for r in aligned
         if r.get("scanner_rank") != r.get("realized_rank")
@@ -211,8 +223,13 @@ def build_report(
         "runtime_hours": card.get("runtime_hours"),
         "n_markets": len(aligned),
         "spearman_scanner_vs_realized": rho,
+        "spearman_scanner_vs_liquidity_oracle": rho_oracle,
         "rank_disagreements": disagree,
         "markets": sorted(aligned, key=lambda r: float(r.get("realized_reward_per_hour") or 0), reverse=True),
+        "note": (
+            "liquidity_oracle_rank sorts by rewards_daily_rate only; when paper "
+            "fills=0 and in_band_frac≈1, realized ranks should match this oracle."
+        ),
     }
 
 
@@ -243,6 +260,7 @@ def main() -> int:
     print(json.dumps(rep, indent=2, sort_keys=True))
     print(
         f"status=OK n={rep['n_markets']} spearman={rep['spearman_scanner_vs_realized']} "
+        f"spearman_vs_oracle={rep['spearman_scanner_vs_liquidity_oracle']} "
         f"disagreements={len(rep['rank_disagreements'])}",
         file=sys.stderr,
     )
