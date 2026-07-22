@@ -125,3 +125,33 @@ def test_compare_holdout_window_runs(tmp_path: Path, meta) -> None:
     assert result.window["mode"] == "holdout"
     assert result.window["n_events"] < result.window["n_events_full"]
     assert result.baseline_replay["events_read"] == result.window["n_events"]
+
+
+def test_load_named_profile_newsom() -> None:
+    from polymaker.replay.compare import load_named_profile
+
+    p = load_named_profile("newsom-mm", config_dir="config")
+    assert p.gamma == 0.6
+    assert p.reward_size_mult == 1.5
+
+
+def test_regime_journal_compare_named_profiles(tmp_path: Path, meta) -> None:
+    from polymaker.replay.compare import load_named_profile
+    from polymaker.replay.synth import write_regime_journal
+
+    journal = tmp_path / "regime.jsonl"
+    info = write_regime_journal(
+        journal,
+        yes_token=meta.yes.token_id,
+        no_token=meta.no.token_id,
+        market=meta.condition_id,
+    )
+    assert info["n_events"] >= 10
+    baseline = StrategyProfile()
+    candidate = load_named_profile("newsom-mm", config_dir="config")
+    result = compare_profiles(
+        journal, meta, baseline, candidate, tmp_path / "named"
+    )
+    assert result.baseline_replay["n_quote"] >= 1
+    assert result.candidate_replay["n_quote"] >= 1
+    assert "n_quote" in result.delta

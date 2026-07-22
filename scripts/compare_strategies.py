@@ -9,6 +9,10 @@ Usage:
       --journal path/to/paper.jsonl \\
       --candidate-overrides '{"gamma": 0.8, "c_tox": 4.0}'
 
+  # Named profiles from strategy.toml:
+  uv run python scripts/compare_strategies.py --journal j.jsonl \\
+      --baseline-profile newsom-mm --candidate-profile romania-pm
+
   # Score only the last 30% of the timeline (OOS holdout):
   uv run python scripts/compare_strategies.py --journal j.jsonl \\
       --candidate-overrides '{"reprice_ticks": 3}' \\
@@ -24,7 +28,11 @@ from pathlib import Path
 
 from polymaker.config import StrategyProfile
 from polymaker.domain import MarketMeta, TokenMeta
-from polymaker.replay.compare import compare_profiles, profile_from_overrides
+from polymaker.replay.compare import (
+    compare_profiles,
+    load_named_profile,
+    profile_from_overrides,
+)
 
 
 def _default_meta() -> MarketMeta:
@@ -67,6 +75,12 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--journal", required=True, help="Journal JSONL (kind/ts/data)")
     ap.add_argument("--out-dir", default="logs/compare_strategies")
+    ap.add_argument("--config-dir", default="config",
+                    help="Config dir for named --*-profile lookup")
+    ap.add_argument("--baseline-profile", default=None,
+                    help="Named StrategyProfile from strategy.toml (else defaults)")
+    ap.add_argument("--candidate-profile", default=None,
+                    help="Named StrategyProfile from strategy.toml")
     ap.add_argument("--baseline-overrides", default=None,
                     help="JSON object of StrategyProfile field overrides")
     ap.add_argument("--baseline-overrides-file", default=None)
@@ -90,10 +104,14 @@ def main() -> int:
 
     base_over = _load_overrides(args.baseline_overrides, args.baseline_overrides_file)
     cand_over = _load_overrides(args.candidate_overrides, args.candidate_overrides_file)
-    if not cand_over and not args.candidate_overrides_file:
+    if (
+        not cand_over
+        and not args.candidate_overrides_file
+        and not args.candidate_profile
+    ):
         print(
-            "status=NEED_CANDIDATE provide --candidate-overrides or "
-            "--candidate-overrides-file",
+            "status=NEED_CANDIDATE provide --candidate-profile, "
+            "--candidate-overrides, or --candidate-overrides-file",
             file=sys.stderr,
         )
         return 2
@@ -118,8 +136,27 @@ def main() -> int:
         rebate_rate=meta0.rebate_rate,
     )
 
-    baseline = profile_from_overrides(StrategyProfile(), base_over)
-    candidate = profile_from_overrides(StrategyProfile(), cand_over)
+    try:
+        if args.baseline_profile:
+            baseline = load_named_profile(
+                args.baseline_profile,
+                config_dir=args.config_dir,
+                overrides=base_over,
+            )
+        else:
+            baseline = profile_from_overrides(StrategyProfile(), base_over)
+        if args.candidate_profile:
+            candidate = load_named_profile(
+                args.candidate_profile,
+                config_dir=args.config_dir,
+                overrides=cand_over,
+            )
+        else:
+            candidate = profile_from_overrides(StrategyProfile(), cand_over)
+    except KeyError as exc:
+        print(f"status=BAD_PROFILE {exc}", file=sys.stderr)
+        return 2
+
     result = compare_profiles(
         journal,
         meta,
@@ -130,6 +167,8 @@ def main() -> int:
         use_holdout=args.use_holdout,
     )
     payload = result.as_dict()
+    payload["baseline_profile"] = args.baseline_profile
+    payload["candidate_profile"] = args.candidate_profile
     payload["baseline_overrides"] = base_over
     payload["candidate_overrides"] = cand_over
     print(json.dumps(payload, indent=2, sort_keys=True))

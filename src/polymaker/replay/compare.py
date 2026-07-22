@@ -208,3 +208,19 @@ def profile_from_overrides(
 ) -> StrategyProfile:
     profile = base or StrategyProfile()
     return profile.with_overrides(overrides or {})
+
+
+def load_named_profile(
+    name: str,
+    *,
+    config_dir: str | Path = "config",
+    overrides: dict[str, Any] | None = None,
+) -> StrategyProfile:
+    """Load a named StrategyProfile from strategy.toml (no .env required)."""
+    from polymaker.config import Config
+
+    cfg = Config.load(config_dir, load_env=False)
+    if name not in cfg.profiles:
+        known = ", ".join(sorted(cfg.profiles)) or "(none)"
+        raise KeyError(f"unknown profile {name!r}; known: {known}")
+    return profile_from_overrides(cfg.profiles[name], overrides)

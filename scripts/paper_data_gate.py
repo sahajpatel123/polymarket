@@ -36,12 +36,20 @@ def _ts(obj: dict) -> float | None:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--log", default="logs/paper.jsonl")
+    ap.add_argument("--log", default=None,
+                    help="Paper JSONL (default: first existing among "
+                         "logs/paper.jsonl, livecfg/logs/paper.jsonl)")
     ap.add_argument("--min-hours", type=float, default=24.0)
     ap.add_argument("--min-quotes", type=int, default=500)
     args = ap.parse_args()
 
-    path = Path(args.log)
+    candidates = []
+    if args.log:
+        candidates.append(Path(args.log))
+    else:
+        candidates.extend([Path("logs/paper.jsonl"), Path("livecfg/logs/paper.jsonl")])
+
+    path = next((p for p in candidates if p.exists()), candidates[0])
     now = datetime.now(timezone.utc).isoformat()
     print(f"paper_data_gate now={now}")
     print(f"log_path={path.resolve()}")

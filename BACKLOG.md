@@ -82,6 +82,14 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: `src/polymaker/replay/compare.py`, `scripts/compare_strategies.py`,
   `tests/test_compare_strategies.py`
 
+### T1-10 Multi-regime synth journal + named-profile compare
+- Status: `done`
+- Done when: a deterministic quiet→jump→recovery journal can be generated and
+  compared across named strategy.toml profiles (e.g. newsom-mm vs romania-pm)
+  via the T1-09 harness; paper_data_gate discovers `livecfg/logs/paper.jsonl`.
+- Evidence: `src/polymaker/replay/synth.py`, `scripts/synth_regime_journal.py`,
+  `fixtures/regime_jump.jsonl`; compare status=OK dn_quote=-4.0
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
