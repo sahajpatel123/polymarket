@@ -90,6 +90,13 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: `src/polymaker/replay/synth.py`, `scripts/synth_regime_journal.py`,
   `fixtures/regime_jump.jsonl`; compare status=OK dn_quote=-4.0
 
+### T1-11 Strategy-loop snapshot script
+- Status: `done`
+- Done when: one command prints paper_data_gate + live paper metrics + offline
+  named-profile compare on the synth regime tape; paper_metrics auto-finds
+  livecfg logs.
+- Evidence: `scripts/strategy_snapshot.py`; status=OK with paper_quotes + reward_accrual_sum
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

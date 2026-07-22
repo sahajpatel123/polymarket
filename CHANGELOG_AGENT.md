@@ -46,3 +46,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T07:15:00Z | perf-agent | P1-03 optimize OrderBook.view() | _nth_bid/_nth_ask fast path (peekitem n=0/n=1), _top_size (islice), depth_within (direct loop); golden-output PASS (byte-identical); 142 tests pass; pure p95 16.4→13.2us (-19.5%) | merged
 2026-07-22T07:20:00Z | Tier1 | T1-09 strategy A/B compare harness + holdout slice (Tier2 gated NO_LOG) | `uv run pytest` → 140 passed, 2 skipped; `compare_strategies.py` status=OK window=full dn_quote=0.0 | merged
 2026-07-22T07:01:00Z | Tier1 | T1-10 synth regime journal + named-profile compare; paper gate finds livecfg logs; paper collector started | pytest 147 passed, 2 skipped; compare newsom-mm vs romania-pm dn_quote=-4.0; paper_data_gate status=OK requote_lines growing | merged
+
+2026-07-22T07:08:00Z | Tier1 | T1-11 strategy_snapshot + paper_metrics livecfg path; paper collecting (Tier2 gated) | strategy_snapshot status=OK; pytest green; reward_accrual on live paper | merged
