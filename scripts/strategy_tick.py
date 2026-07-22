@@ -107,9 +107,16 @@ def main() -> int:
     c01 = report["steps"].get("c01") or {}
     sm = report["steps"].get("summarize") or {}
     ap_step = report["steps"].get("append") or {}
+    conn_line = str(conn.get("status_line") or "")
+    if conn.get("status") == "SKIPPED":
+        conn_disp = "SKIPPED"
+    elif "STILL_DOWN" in conn_line or "TIMEOUT" in conn_line or "RECOVERED" in conn_line:
+        conn_disp = conn_line.split()[0].split("=", 1)[-1]
+    else:
+        conn_disp = conn.get("status") or conn_line or "UNKNOWN"
     print(
         f"status=OK "
-        f"connectivity={conn.get('status') or conn.get('status_line', 'SKIPPED')} "
+        f"connectivity={conn_disp} "
         f"c01={c01.get('status')} blockers={c01.get('blockers')} "
         f"outage_alert={c01.get('outage_alert')} "
         f"runtime_h={sm.get('runtime_h')} eta_paused={sm.get('eta_paused')} "

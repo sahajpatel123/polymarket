@@ -464,6 +464,12 @@ done without evidence (script output / tests) from that cycle.
   shot; optional --append; unit tests for status parsing.
 - Evidence: live status=OK with c01=BLOCKED outage_alert=True
 
+### T1-68 Refresh deps baseline after pytest-cov/coverage add
+- Status: `done`
+- Done when: deps_audit --write-baseline clears baseline_drift for intentional
+  coverage/pytest-cov additions; ok=true bumps=0.
+- Evidence: live status=OK packages=83 flagged=21 bumps=0
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
