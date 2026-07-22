@@ -116,6 +116,8 @@ def main() -> int:
         "last_false_trending_attr_frac": (last.get("snapshot") or {}).get(
             "false_trending_attr_frac"
         ),
+        "last_c01_status": (last.get("c01") or {}).get("status"),
+        "last_c01_blockers": (last.get("c01") or {}).get("blockers"),
         "last_paper_schema": (last.get("paper_schema") or {}).get("status"),
         "last_connectivity": (last.get("connectivity") or {}).get("status"),
     }
@@ -152,6 +154,7 @@ def main() -> int:
         f"trend_vol_min={rep['last_trend_vol_min']} "
         f"suggested_vol={rep['last_suggested_vol']} "
         f"false_trending_attr_frac={rep['last_false_trending_attr_frac']} "
+        f"c01={rep['last_c01_status']} c01_blockers={rep['last_c01_blockers']} "
         f"paper_schema={rep['last_paper_schema']}",
         file=sys.stderr,
     )

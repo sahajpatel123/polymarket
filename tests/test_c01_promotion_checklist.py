@@ -29,11 +29,10 @@ def test_parse_status_line_outage() -> None:
     assert kv["open"] == "True"
 
 
-def test_parse_status_line_vol_context() -> None:
+def test_parse_status_line_c01_blockers() -> None:
     kv = chk._parse_status_line(
-        "status=OK quiet_vol_max=1.99 trend_vol_min=2.03 vol_gap=0.04 "
-        "quiet_vol_p90=1.22 trend_vol_p50=3.11"
+        "status=BLOCKED blockers=hours_ok,health_ok vol_gap=0.04 suggested_vol=2.489"
     )
-    assert kv["quiet_vol_max"] == "1.99"
-    assert kv["trend_vol_min"] == "2.03"
-    assert kv["vol_gap"] == "0.04"
+    assert kv["status"] == "BLOCKED"
+    assert kv["blockers"] == "hours_ok,health_ok"
+    assert kv["suggested_vol"] == "2.489"

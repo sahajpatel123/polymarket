@@ -63,6 +63,7 @@ def main() -> int:
         ("churn", [py, "scripts/quote_churn_report.py"]),
         ("schema", [py, "scripts/verify_metrics_schema.py", "--tail", "50"]),
         ("paper_schema", [py, "scripts/verify_paper_schema.py", "--tail", "50"]),
+        ("c01", [py, "scripts/c01_promotion_checklist.py"]),
     ]
     if not args.skip_connectivity:
         cmds.append(
@@ -106,6 +107,7 @@ def main() -> int:
         "churn": statuses.get("churn", {}),
         "schema": statuses.get("schema", {}),
         "paper_schema": statuses.get("paper_schema", {}),
+        "c01": statuses.get("c01", {}),
         "connectivity": statuses.get(
             "connectivity",
             {"status": "SKIPPED"} if args.skip_connectivity else {},
@@ -127,6 +129,7 @@ def main() -> int:
     conn = row["connectivity"]
     snap = row["snapshot"]
     cf = row.get("counterfactual") or {}
+    c01 = row.get("c01") or {}
     print(
         f"status=OK appended={out} runtime_h={g.get('runtime_hours')} "
         f"quotes={g.get('quotes_for_gate')} tier2={g.get('tier2_allowed')} "
@@ -144,6 +147,7 @@ def main() -> int:
         f"trend_vol_min={snap.get('trend_vol_min')} "
         f"suggested_vol={snap.get('suggested_vol')} "
         f"false_trending_attr_frac={snap.get('false_trending_attr_frac')} "
+        f"c01={c01.get('status')} c01_blockers={c01.get('blockers')} "
         f"counterfactual={cf.get('status') or cf.get('mode') or '-'}",
         file=sys.stderr,
     )

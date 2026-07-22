@@ -404,6 +404,12 @@ done without evidence (script output / tests) from that cycle.
   false-TRENDING, and suggests quiet_max+0.5 as informational C-01 floor.
 - Evidence: live attr_frac=1.0 on vol-present rows; suggested_vol≈2.489
 
+### T1-58 Record C-01 checklist in strategy cycle trail
+- Status: `done`
+- Done when: append_strategy_cycle stores c01 status/blockers; summarize
+  surfaces last_c01_status / last_c01_blockers.
+- Evidence: live c01=BLOCKED with hours/health/outage/oos/thin blockers
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
