@@ -44,6 +44,8 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T06:50:00Z | perf-agent | P1-01 latency/throughput benchmark harness | scripts/bench_latency.py + tests/test_bench_latency.py (5 tests); baseline: replay p50=41.5us p95=71.2us p99=115.4us (26842 eps); pure p50=12.4us p95=16.4us p99=16.7us (77584 ops/s) | merged
 2026-07-22T07:00:00Z | perf-agent | P1-02 profile hot path (cProfile) | perf/profile_2026-07-22.txt; top 3: OrderBook.view() 19.1%, construct_quotes() 15.7%, reconcile() 7.1% | merged
 2026-07-22T07:15:00Z | perf-agent | P1-03 optimize OrderBook.view() | _nth_bid/_nth_ask fast path (peekitem n=0/n=1), _top_size (islice), depth_within (direct loop); golden-output PASS (byte-identical); 142 tests pass; pure p95 16.4→13.2us (-19.5%) | merged
+<<<<<<< perf-bench
+=======
 2026-07-22T07:20:00Z | Tier1 | T1-09 strategy A/B compare harness + holdout slice (Tier2 gated NO_LOG) | `uv run pytest` → 140 passed, 2 skipped; `compare_strategies.py` status=OK window=full dn_quote=0.0 | merged
 2026-07-22T07:01:00Z | Tier1 | T1-10 synth regime journal + named-profile compare; paper gate finds livecfg logs; paper collector started | pytest 147 passed, 2 skipped; compare newsom-mm vs romania-pm dn_quote=-4.0; paper_data_gate status=OK requote_lines growing | merged
 
@@ -116,3 +118,6 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-22T12:28:00Z | Tier1 | skipped — waiting on 24h paper gate (collector healthy) | status=OK cycles=23 runtime_h=5.469 hours_remaining=18.531 eta_wall_h=18.5204 quotes_per_wall_h=670.06 health=OK | skipped
 
 2026-07-22T12:38:00Z | Tier1 | skipped — waiting on 24h paper gate (collector healthy) | status=OK cycles=24 runtime_h=5.6346 hours_remaining=18.3654 eta_wall_h=18.3635 quotes_per_wall_h=668.91 health=OK | skipped
+>>>>>>> main
+
+2026-07-22T09:18:00Z | Tier1 | T1-24 liquidity-oracle rank; scanner vs oracle spearman=-1 under zero-fill paper (Tier2 gated) | rank_vs_realized spearman_vs_oracle=-1.0; pytest pass; gate quotes=1496 need_hours>=24 | merged
