@@ -28,6 +28,7 @@ REQUIRED_KEYS = (
     "outage_alert_prolonged",
     "outage_alert_critical",
     "outage_alert_imminent",
+    "outage_alert_final",
     "hours_to_tier2_gate",
     "runtime_h",
     "quotes",

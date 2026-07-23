@@ -316,6 +316,7 @@ def compact_status(rep: dict[str, Any]) -> dict[str, Any]:
         critical_at = _outage_critical_at(
             started_at, hours_to_critical=hours_crit, ts=ts
         )
+    minutes_crit = _minutes_to_critical(hours_crit)
     return {
         "ts": ts,
         "outage_open": open_now,
@@ -328,11 +329,15 @@ def compact_status(rep: dict[str, Any]) -> dict[str, Any]:
         "outage_alert_imminent": (
             hours_crit is not None and hours_crit <= 1.0 and total_h < 12.0
         ),
+        # Last 15 minutes before critical — T1-115.
+        "outage_alert_final": (
+            minutes_crit is not None and 0 < minutes_crit <= 15 and total_h < 12.0
+        ),
         "current_duration_s": cur.get("duration_s"),
         "runtime_h": runtime_h,
         "hours_to_tier2_gate": _hours_to_tier2_gate(runtime_h),
         "hours_to_critical": hours_crit,
-        "minutes_to_critical": _minutes_to_critical(hours_crit),
+        "minutes_to_critical": minutes_crit,
         "hours_to_imminent": hours_imm,
         "outage_started_at": started_at,
         "outage_critical_at": critical_at,
@@ -392,6 +397,7 @@ def main() -> int:
         f"outage_alert_prolonged={status['outage_alert_prolonged']} "
         f"outage_alert_critical={status['outage_alert_critical']} "
         f"outage_alert_imminent={status['outage_alert_imminent']} "
+        f"outage_alert_final={status['outage_alert_final']} "
         f"outage_imminent_since={status.get('outage_imminent_since') or '-'} "
         f"hours_in_imminent={status.get('hours_in_imminent')} "
         f"outage_critical_since={status.get('outage_critical_since') or '-'} "

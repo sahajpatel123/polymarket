@@ -77,6 +77,7 @@ def _mark_recovered(
         outage_alert_prolonged=False,
         outage_alert_critical=False,
         outage_alert_imminent=False,
+        outage_alert_final=False,
         outage_imminent_since=None,
         hours_in_imminent=None,
         outage_critical_since=None,

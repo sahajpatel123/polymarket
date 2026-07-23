@@ -763,6 +763,13 @@ done without evidence (script output / tests) from that cycle.
   validate requires it while outage_open; live value during final half-hour.
 - Evidence: unit + live during ~11.7h DOWN imminent window
 
+### T1-115 outage_alert_final last-15-minute flag
+- Status: `done`
+- Done when: compact status sets outage_alert_final when
+  0 < minutes_to_critical ≤ 15 and still under 12h; validate always requires
+  the key; live True during final quarter-hour.
+- Evidence: unit + live during ~11.8h DOWN (~10 min to critical)
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

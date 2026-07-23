@@ -56,10 +56,13 @@ Compact monitor snapshot written by `strategy_tick` / `outage_window_report`
 **Required** (fail if missing): `ts`, `outage_open`, `outage_total_h`,
 `outage_alert` (≥3h), `outage_alert_severe` (≥5h), `outage_alert_prolonged`
 (≥8h), `outage_alert_critical` (≥12h), `outage_alert_imminent` (11–12h window),
-`hours_to_tier2_gate`, `runtime_h`, `quotes` (int from live gate when available).
+`outage_alert_final` (last 15 min before critical), `hours_to_tier2_gate`,
+`runtime_h`, `quotes` (int from live gate when available).
 
 `outage_alert_imminent` is set when `1h >= hours_to_critical > 0` (i.e. outage
 age in [11h, 12h)) — final-hour warning before critical (T1-104).
+`outage_alert_final` is set when `0 < minutes_to_critical <= 15` and still under
+12h — last-quarter-hour warning (T1-115).
 `hours_to_imminent` counts down to that 11h threshold (T1-109). When imminent
 first trips, `outage_imminent_since` latches the UTC ISO timestamp and stays
 fixed until recovery clears it (T1-110). `hours_in_imminent` is age since that
