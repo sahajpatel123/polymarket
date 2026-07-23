@@ -82,6 +82,8 @@ RECOMMENDED_KEYS = (
     "metrics_log",
     "recovery_smoke",
     "recovery_smoke_blockers",
+    "frozen_tape_snapshot",
+    "frozen_tape_status",
 )
 
 

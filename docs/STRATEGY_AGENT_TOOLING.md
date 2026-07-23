@@ -17,6 +17,7 @@ uv run python scripts/polymarket_connectivity.py  # REST+WS upstream probe
 uv run python scripts/outage_window_report.py     # STALE/DOWN duration from cycles
 uv run python scripts/validate_outage_status.py   # schema/freshness check for outage_status.json
 uv run python scripts/outage_operator_brief.py    # one-line mode + next recovery action
+uv run python scripts/frozen_tape_snapshot.py     # latch quotes/runtime while tape STALE
 uv run python scripts/await_polymarket_recovery.py --once  # check / relaunch+append cycle when UP
 uv run python scripts/c01_promotion_checklist.py          # C-01 Tier-2 PR blockers
 ```
@@ -44,6 +45,7 @@ uv run python scripts/c01_promotion_checklist.py          # C-01 Tier-2 PR block
 | `scripts/outage_window_report.py` | STALE/DOWN window durations; optional `--status-out` JSON (incl. `hours_to_tier2_gate`) |
 | `scripts/validate_outage_status.py` | Required-key + optional freshness check for `logs/outage_status.json` |
 | `scripts/outage_operator_brief.py` | One-line mode (`CRITICAL_OPEN` / …) + next recovery action + exact CLI (T1-118/T1-124); also stamped into status as `operator_mode` / `operator_action` / `operator_recovery_cmd` (T1-119/T1-124) |
+| `scripts/frozen_tape_snapshot.py` | Latch `quotes_at_freeze` / `runtime_h_at_freeze` while STALE/outage open (T1-126) |
 | `scripts/await_polymarket_recovery.py` | Poll until REST+WS UP; collector restart + cycle append; refreshes `logs/outage_status.json` |
 | `scripts/write_weekly_report.py` | Overwrite WEEKLY_REPORT.md from gate/metrics/C-01/summarize/deps + outage_status |
 | `scripts/unused_knob_toml_scan.py` | Flag unused StrategyProfile knobs still set in TOML (C-04) |
@@ -96,7 +98,7 @@ status **before** `summarize_strategy_cycles`, which overlays live
 `last_requote_age_s`, `last_requote_at`, `health`, `ensure_status`,
 `collector_pid`, `deps_ok`, `n_cycles`, `c01_status`, `c01_blockers`,
 `paper_log`, `paper_log_files`, `metrics_log`, `recovery_smoke`,
-`recovery_smoke_blockers`.
+`recovery_smoke_blockers`, `frozen_tape_snapshot`, `frozen_tape_status`.
 
 While `outage_open=true`, validate also **requires** `hours_to_critical`,
 `minutes_to_critical`, `hours_to_imminent`, `outage_started_at`, and

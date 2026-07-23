@@ -76,6 +76,8 @@ def _outage_status_block(path: Path) -> str:
         "operator_mode",
         "operator_action",
         "operator_recovery_cmd",
+        "frozen_tape_snapshot",
+        "frozen_tape_status",
         "hours_to_critical",
         "minutes_to_critical",
         "hours_to_imminent",

@@ -833,6 +833,13 @@ done without evidence (script output / tests) from that cycle.
   CLI for mode/action; live CRITICAL_OPEN status passes.
 - Evidence: unit mismatch + live during ~13.5h DOWN critical
 
+### T1-126 Frozen tape snapshot latch for post-recovery compare
+- Status: `done`
+- Done when: scripts/frozen_tape_snapshot.py latches quotes_at_freeze on first
+  freeze and preserves across ticks; strategy_tick writes
+  logs/frozen_tape_snapshot.json and surfaces path; unit covers latch/clear.
+- Evidence: unit + live quotes_at_freeze=5529 during ~13.7h DOWN
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

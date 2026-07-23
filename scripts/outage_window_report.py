@@ -234,6 +234,8 @@ PRESERVE_STATUS_KEYS = (
     "operator_mode",
     "operator_action",
     "operator_recovery_cmd",
+    "frozen_tape_snapshot",
+    "frozen_tape_status",
     "recovery_smoke",
     "recovery_smoke_blockers",
 )

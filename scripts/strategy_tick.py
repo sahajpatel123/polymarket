@@ -361,6 +361,31 @@ def main() -> int:
         **_parse_kv(bline),
     }
 
+    code, fout, ferr = _run([
+        py,
+        "scripts/frozen_tape_snapshot.py",
+        "--status",
+        str(status_path),
+        "--out",
+        "logs/frozen_tape_snapshot.json",
+    ])
+    fline = _status_line(ferr, fout)
+    report["steps"]["frozen_tape"] = {
+        "rc": code,
+        "status_line": fline,
+        **_parse_kv(fline),
+    }
+    if status_path.exists() and code == 0:
+        _merge_outage_status(
+            status_path,
+            {
+                "frozen_tape_snapshot": "logs/frozen_tape_snapshot.json",
+                "frozen_tape_status": str(
+                    report["steps"]["frozen_tape"].get("status") or ""
+                ),
+            },
+        )
+
     code, dout, derr = _run([py, "scripts/deps_audit.py"])
     dline = _status_line(derr, dout)
     deps_ok = None
@@ -463,6 +488,7 @@ def main() -> int:
         f"operator_mode={ost.get('operator_mode') or brief.get('status') or '-'} "
         f"operator_action={ost.get('operator_action') or brief.get('action') or '-'} "
         f"operator_recovery_cmd={ost.get('operator_recovery_cmd') or '-'} "
+        f"frozen_tape={ost.get('frozen_tape_status') or report['steps'].get('frozen_tape', {}).get('status') or '-'} "
         f"quotes={ost.get('quotes', outage.get('quotes'))} "
         f"tier2_allowed={ost.get('tier2_allowed', gate.get('tier2_allowed'))} "
         f"gate_reason={ost.get('gate_reason', gate.get('gate_reason'))} "
