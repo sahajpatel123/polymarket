@@ -33,6 +33,7 @@ REQUIRED_KEYS = (
     "outage_alert_critical_hour",
     "operator_mode",
     "operator_action",
+    "operator_recovery_cmd",
     "hours_to_tier2_gate",
     "runtime_h",
     "quotes",

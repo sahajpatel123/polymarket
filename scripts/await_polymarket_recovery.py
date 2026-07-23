@@ -69,6 +69,7 @@ def _patch_outage_status(status_out: str, **fields: object) -> None:
             brief = mod.operator_brief(data)
             data["operator_mode"] = brief.get("mode")
             data["operator_action"] = brief.get("action")
+            data["operator_recovery_cmd"] = brief.get("recovery_cmd")
     except Exception:  # noqa: BLE001
         pass
     path.parent.mkdir(parents=True, exist_ok=True)

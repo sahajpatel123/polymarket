@@ -18,6 +18,22 @@ from pathlib import Path
 from typing import Any
 
 
+def recovery_cmd_for(action: str, *, quotes: Any = None) -> str:
+    """Exact next CLI for an operator_action (T1-124)."""
+    if action == "await_UP_then_full_recovery":
+        return "uv run python scripts/await_polymarket_recovery.py --once"
+    if action == "await_UP_diagnose_only":
+        return (
+            "uv run python scripts/await_polymarket_recovery.py --once "
+            "--no-restart-on-recover --no-append-cycle-on-recover "
+            "--no-smoke-on-recover"
+        )
+    if action == "run_recovery_smoke":
+        q = quotes if quotes not in (None, "") else 5529
+        return f"uv run python scripts/recovery_smoke.py --min-quotes {q}"
+    return "uv run python scripts/paper_data_gate.py"
+
+
 def operator_brief(status: dict[str, Any]) -> dict[str, Any]:
     """Derive a compact operator mode + next action from compact status."""
     open_outage = bool(status.get("outage_open"))
@@ -44,9 +60,11 @@ def operator_brief(status: dict[str, Any]) -> dict[str, Any]:
         mode = "QUIET"
         action = "continue_paper_gate"
 
+    recovery_cmd = recovery_cmd_for(action, quotes=status.get("quotes"))
     return {
         "mode": mode,
         "action": action,
+        "recovery_cmd": recovery_cmd,
         "outage_open": open_outage,
         "outage_total_h": status.get("outage_total_h"),
         "outage_alert_critical": critical,
@@ -86,6 +104,7 @@ def main() -> int:
     print(json.dumps(brief, indent=2, sort_keys=True))
     print(
         f"status={brief['mode']} action={brief['action']} "
+        f"recovery_cmd={brief['recovery_cmd']} "
         f"outage_total_h={brief['outage_total_h']} "
         f"minutes_past_critical={brief['minutes_past_critical']} "
         f"quotes={brief['quotes']} "

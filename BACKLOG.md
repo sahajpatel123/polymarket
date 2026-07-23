@@ -821,6 +821,12 @@ done without evidence (script output / tests) from that cycle.
   (≥30 / ≥60) or hour is set without aged; live ~70min status passes.
 - Evidence: unit mismatch + live during ~13.2h DOWN critical
 
+### T1-124 Stamp operator_recovery_cmd exact next CLI
+- Status: `done`
+- Done when: brief/status include operator_recovery_cmd for each mode;
+  validate requires the key; live CRITICAL_OPEN shows await --once command.
+- Evidence: unit + live during ~13.3h DOWN critical
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

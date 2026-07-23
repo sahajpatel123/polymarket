@@ -23,6 +23,11 @@ def _full(**overrides):
         "outage_alert_critical_hour": False,
         "operator_mode": "OUTAGE_OPEN",
         "operator_action": "await_UP_diagnose_only",
+        "operator_recovery_cmd": (
+            "uv run python scripts/await_polymarket_recovery.py --once "
+            "--no-restart-on-recover --no-append-cycle-on-recover "
+            "--no-smoke-on-recover"
+        ),
         "outage_imminent_since": None,
         "hours_in_imminent": None,
         "hours_to_tier2_gate": 15.63,
@@ -93,6 +98,7 @@ def test_validate_open_outage_requires_started_at() -> None:
         outage_alert_critical=False,
         operator_mode="QUIET",
         operator_action="continue_paper_gate",
+        operator_recovery_cmd="uv run python scripts/paper_data_gate.py",
         tape_frozen=False,
         eta_paused=False,
         health="OK",

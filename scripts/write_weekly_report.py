@@ -75,6 +75,7 @@ def _outage_status_block(path: Path) -> str:
         "outage_alert_critical_hour",
         "operator_mode",
         "operator_action",
+        "operator_recovery_cmd",
         "hours_to_critical",
         "minutes_to_critical",
         "hours_to_imminent",

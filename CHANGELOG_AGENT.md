@@ -282,3 +282,4 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-23T04:25:00Z | Tier1 | T1-121 outage_alert_critical_aged after ≥30min past critical latch | pytest outage/validate; ~12.8h DOWN aged=True; no Tier2 | merged
 2026-07-23T04:35:00Z | Tier1 | T1-122 outage_alert_critical_hour after ≥60min past critical latch | pytest outage/validate; ~13.0h DOWN hour=True; no Tier2 | merged
 2026-07-23T04:45:00Z | Tier1 | T1-123 validate critical aged/hour vs minutes_past_critical | pytest validate; ~13.2h DOWN hour=True; no Tier2 | merged
+2026-07-23T04:55:00Z | Tier1 | T1-124 stamp operator_recovery_cmd exact next CLI into outage_status | pytest brief/outage/validate; ~13.3h DOWN critical; no Tier2 | merged

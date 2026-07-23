@@ -212,6 +212,9 @@ def test_write_compact_status_latches_critical_since(tmp_path: Path) -> None:
     assert first["outage_alert_critical_hour"] is False
     assert first["operator_mode"] == "CRITICAL_OPEN"
     assert first["operator_action"] == "await_UP_then_full_recovery"
+    assert first["operator_recovery_cmd"] == (
+        "uv run python scripts/await_polymarket_recovery.py --once"
+    )
     # Imminent cleared when critical lit.
     assert first["outage_imminent_since"] is None
     second = write_compact_status(path, {
@@ -262,6 +265,7 @@ def test_write_compact_status_latches_critical_since(tmp_path: Path) -> None:
     assert recovered["outage_alert_critical_hour"] is False
     assert recovered["operator_mode"] == "RECOVERED"
     assert recovered["operator_action"] == "run_recovery_smoke"
+    assert "recovery_smoke.py --min-quotes" in recovered["operator_recovery_cmd"]
 
 
 def test_outage_window_report_cli(tmp_path: Path) -> None:

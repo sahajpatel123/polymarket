@@ -25,6 +25,9 @@ def test_operator_brief_critical_open() -> None:
     })
     assert brief["mode"] == "CRITICAL_OPEN"
     assert brief["action"] == "await_UP_then_full_recovery"
+    assert brief["recovery_cmd"] == (
+        "uv run python scripts/await_polymarket_recovery.py --once"
+    )
     assert brief["minutes_past_critical"] == 20
 
 
@@ -37,6 +40,7 @@ def test_operator_brief_outage_open() -> None:
     })
     assert brief["mode"] == "OUTAGE_OPEN"
     assert brief["action"] == "await_UP_diagnose_only"
+    assert "--no-restart-on-recover" in brief["recovery_cmd"]
 
 
 def test_operator_brief_recovered() -> None:
@@ -49,6 +53,9 @@ def test_operator_brief_recovered() -> None:
     })
     assert brief["mode"] == "RECOVERED"
     assert brief["action"] == "run_recovery_smoke"
+    assert brief["recovery_cmd"] == (
+        "uv run python scripts/recovery_smoke.py --min-quotes 5600"
+    )
 
 
 def test_operator_brief_quiet() -> None:
@@ -59,6 +66,7 @@ def test_operator_brief_quiet() -> None:
     })
     assert brief["mode"] == "QUIET"
     assert brief["action"] == "continue_paper_gate"
+    assert brief["recovery_cmd"] == "uv run python scripts/paper_data_gate.py"
 
 
 def test_operator_brief_cli(tmp_path: Path) -> None:

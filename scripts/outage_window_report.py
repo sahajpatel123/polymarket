@@ -233,6 +233,7 @@ PRESERVE_STATUS_KEYS = (
     "outage_alert_critical_hour",
     "operator_mode",
     "operator_action",
+    "operator_recovery_cmd",
     "recovery_smoke",
     "recovery_smoke_blockers",
 )
@@ -314,6 +315,7 @@ def _stamp_operator_brief(status: dict[str, Any]) -> None:
         brief = mod.operator_brief(status)
         status["operator_mode"] = brief.get("mode")
         status["operator_action"] = brief.get("action")
+        status["operator_recovery_cmd"] = brief.get("recovery_cmd")
     except Exception:  # noqa: BLE001
         # Brief is best-effort; never block status writes.
         return
@@ -450,6 +452,7 @@ def main() -> int:
         f"minutes_past_critical={status.get('minutes_past_critical')} "
         f"operator_mode={status.get('operator_mode') or '-'} "
         f"operator_action={status.get('operator_action') or '-'} "
+        f"operator_recovery_cmd={status.get('operator_recovery_cmd') or '-'} "
         f"status_out={args.status_out or '-'}",
         file=sys.stderr,
     )
