@@ -61,7 +61,9 @@ Compact monitor snapshot written by `strategy_tick` / `outage_window_report`
 After each `strategy_tick`, `quotes` / `runtime_h` / `hours_to_tier2_gate` are
 refreshed from the live `paper_data_gate` (T1-99), not only the cycle trail.
 The tick status line reads the merged `outage_status.json` so operators see
-int quotes and `hours_to_critical` (T1-100).
+int quotes and `hours_to_critical` (T1-100). `strategy_tick` refreshes outage
+status **before** `summarize_strategy_cycles`, which overlays live
+`hours_to_critical` / `outage_started_at` (T1-102).
 
 **Recommended** (warned if missing): `connectivity`, `tier2_allowed`,
 `gate_reason`, `runtime_basis`, `tape_frozen`, `eta_paused`,

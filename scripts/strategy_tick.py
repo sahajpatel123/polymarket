@@ -250,10 +250,6 @@ def main() -> int:
     line = _status_line(err, out)
     report["steps"]["c01"] = {"rc": code, "status_line": line, **_parse_kv(line)}
 
-    code, out, err = _run([py, "scripts/summarize_strategy_cycles.py"])
-    line = _status_line(err, out)
-    report["steps"]["summarize"] = {"rc": code, "status_line": line, **_parse_kv(line)}
-
     code, hout, herr = _run([py, "scripts/paper_health.py"])
     hline = _status_line(herr, hout)
     hkv = _parse_kv(hline)
@@ -289,9 +285,9 @@ def main() -> int:
         **{k: str(v) for k, v in gate_fields.items()},
     }
 
+    # Merge live probe/gate/health first so summarize can read a fresh
+    # outage_status.json for hours_to_critical / outage_started_at (T1-102).
     merge_fields: dict[str, Any] = dict(gate_fields)
-    merge_fields.update(_summarize_freeze_fields(report["steps"].get("summarize") or {}))
-    # Live paper_health overwrites trail-stale requote ages.
     merge_fields.update(_live_health_fields(report["steps"].get("health") or {}))
     merge_fields.update(_ensure_collector_fields(report["steps"].get("ensure") or {}))
     merge_fields.update(_c01_blocker_fields(report["steps"].get("c01") or {}))
@@ -309,6 +305,15 @@ def main() -> int:
         merge_fields["recovered"] = "RECOVERED" in conn_line
     if merge_fields:
         _merge_outage_status(status_path, merge_fields)
+
+    code, out, err = _run([py, "scripts/summarize_strategy_cycles.py"])
+    line = _status_line(err, out)
+    report["steps"]["summarize"] = {"rc": code, "status_line": line, **_parse_kv(line)}
+
+    # Second merge: trail-derived freeze / n_cycles after summarize.
+    freeze = _summarize_freeze_fields(report["steps"].get("summarize") or {})
+    if freeze:
+        _merge_outage_status(status_path, freeze)
 
     code, vout, verr = _run([
         py,

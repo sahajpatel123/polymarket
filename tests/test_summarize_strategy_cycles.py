@@ -73,3 +73,47 @@ def test_summarize_strategy_cycles_eta_paused_when_stale(tmp_path: Path) -> None
     assert payload["eta_wall_hours_to_gate"] is None
     assert "eta_paused=True" in proc.stderr
     assert "connectivity=DOWN" in proc.stderr
+
+
+def test_summarize_overlays_live_outage_status(tmp_path: Path) -> None:
+    log = tmp_path / "cycles.jsonl"
+    ost = tmp_path / "outage_status.json"
+    rows = [
+        {
+            "ts": "2026-07-22T09:00:00+00:00",
+            "gate": {"runtime_hours": "8.0", "quotes_for_gate": "5000"},
+            "health": {"status": "STALE"},
+            "connectivity": {"status": "DOWN"},
+            "outage_status": {
+                "hours_to_critical": 5.0,
+                "outage_started_at": "stale-from-trail",
+            },
+        },
+    ]
+    log.write_text(json.dumps(rows[0]) + "\n")
+    ost.write_text(json.dumps({
+        "hours_to_critical": 2.32,
+        "outage_started_at": "2026-07-22T15:27:53+00:00",
+        "outage_open": True,
+        "outage_total_h": 9.68,
+        "outage_alert_critical": False,
+    }) + "\n")
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "scripts/summarize_strategy_cycles.py",
+            "--log",
+            str(log),
+            "--outage-status",
+            str(ost),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(proc.stdout)
+    assert payload["last_hours_to_critical"] == 2.32
+    assert payload["last_outage_started_at"] == "2026-07-22T15:27:53+00:00"
+    assert "hours_to_critical=2.32" in proc.stderr
+    assert "outage_started_at=2026-07-22T15:27:53+00:00" in proc.stderr

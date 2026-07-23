@@ -672,6 +672,13 @@ done without evidence (script output / tests) from that cycle.
   clears started_at; live status shows ISO start during open outage.
 - Evidence: live outage_started_at present while ~9.5h DOWN
 
+### T1-102 Summarize after outage merge (live status overlay)
+- Status: `done`
+- Done when: strategy_tick runs outage/gate merge before summarize; summarize
+  overlays live outage_status for hours_to_critical/outage_started_at so the
+  status line is not one cycle stale.
+- Evidence: live summarize outage_started_at matches outage_status in same tick
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

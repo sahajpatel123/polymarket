@@ -36,6 +36,11 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--log", default="logs/strategy_cycles.jsonl")
     ap.add_argument("--min-hours", type=float, default=24.0)
+    ap.add_argument(
+        "--outage-status",
+        default="logs/outage_status.json",
+        help="Live outage_status.json to overlay (T1-102)",
+    )
     args = ap.parse_args()
     path = Path(args.log)
     if not path.exists():
@@ -165,6 +170,30 @@ def main() -> int:
             )
     except Exception:  # noqa: BLE001
         pass
+    # Prefer live outage_status.json over trail-lagged embedded copy (T1-102).
+    live_ost_path = Path(args.outage_status)
+    if live_ost_path.exists():
+        try:
+            live = json.loads(live_ost_path.read_text())
+        except json.JSONDecodeError:
+            live = {}
+        for src, dst in (
+            ("hours_to_critical", "last_hours_to_critical"),
+            ("outage_started_at", "last_outage_started_at"),
+            ("hours_to_tier2_gate", "last_hours_to_tier2_gate"),
+            ("outage_alert_critical", "last_outage_alert_critical"),
+            ("outage_alert_prolonged", "last_outage_alert_prolonged"),
+            ("outage_total_h", "last_outage_total_h"),
+            ("outage_open", "last_outage_open"),
+            ("tier2_allowed", "last_tier2_allowed"),
+            ("gate_reason", "last_gate_reason"),
+        ):
+            if src in live and live[src] is not None:
+                rep[dst] = live[src]
+        if "outage_open" in live:
+            rep["outage_open"] = live["outage_open"]
+        if "outage_total_h" in live:
+            rep["outage_total_h"] = live["outage_total_h"]
     print(json.dumps(rep, indent=2, sort_keys=True))
     print(
         f"status=OK cycles={rep['n_cycles']} runtime_h={h1} "
