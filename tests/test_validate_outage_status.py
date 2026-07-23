@@ -20,6 +20,7 @@ def _full(**overrides):
         "outage_alert_imminent": False,
         "outage_alert_final": False,
         "outage_alert_critical_aged": False,
+        "outage_alert_critical_hour": False,
         "operator_mode": "OUTAGE_OPEN",
         "operator_action": "await_UP_diagnose_only",
         "outage_imminent_since": None,

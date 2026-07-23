@@ -208,6 +208,7 @@ def main() -> int:
         f"outage_alert_imminent={c01.get('outage_alert_imminent')} "
         f"outage_alert_final={c01.get('outage_alert_final')} "
         f"outage_alert_critical_aged={c01.get('outage_alert_critical_aged')} "
+        f"outage_alert_critical_hour={c01.get('outage_alert_critical_hour')} "
         f"hours_to_tier2_gate={ost.get('hours_to_tier2_gate')} "
         f"unused_set={unused.get('n_set_unused')} "
         f"counterfactual={cf.get('status') or cf.get('mode') or '-'}",

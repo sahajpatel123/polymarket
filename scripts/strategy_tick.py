@@ -447,6 +447,7 @@ def main() -> int:
         f"outage_alert_imminent={ost.get('outage_alert_imminent')} "
         f"outage_alert_final={ost.get('outage_alert_final')} "
         f"outage_alert_critical_aged={ost.get('outage_alert_critical_aged')} "
+        f"outage_alert_critical_hour={ost.get('outage_alert_critical_hour')} "
         f"outage_imminent_since={ost.get('outage_imminent_since') or '-'} "
         f"hours_in_imminent={ost.get('hours_in_imminent')} "
         f"outage_total_h={ost.get('outage_total_h', outage.get('total_h'))} "

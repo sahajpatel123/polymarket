@@ -809,6 +809,12 @@ done without evidence (script output / tests) from that cycle.
   ~50min past critical.
 - Evidence: unit + live during ~12.8h DOWN critical
 
+### T1-122 outage_alert_critical_hour after 60min past latch
+- Status: `done`
+- Done when: stamp sets outage_alert_critical_hour when
+  minutes_past_critical ≥ 60; validate requires the key; live True at ~60min.
+- Evidence: unit + live during ~13.0h DOWN critical
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

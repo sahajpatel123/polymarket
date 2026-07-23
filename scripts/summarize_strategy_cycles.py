@@ -145,6 +145,9 @@ def main() -> int:
         "last_outage_alert_critical_aged": (last.get("outage_status") or {}).get(
             "outage_alert_critical_aged"
         ),
+        "last_outage_alert_critical_hour": (last.get("outage_status") or {}).get(
+            "outage_alert_critical_hour"
+        ),
         "last_outage_open": (last.get("outage") or {}).get("open"),
         "last_outage_total_h": (last.get("outage") or {}).get("total_h"),
         "last_hours_to_tier2_gate": (last.get("outage_status") or {}).get(
@@ -218,6 +221,7 @@ def main() -> int:
             ("outage_alert_imminent", "last_outage_alert_imminent"),
             ("outage_alert_final", "last_outage_alert_final"),
             ("outage_alert_critical_aged", "last_outage_alert_critical_aged"),
+            ("outage_alert_critical_hour", "last_outage_alert_critical_hour"),
             ("outage_alert_prolonged", "last_outage_alert_prolonged"),
             ("outage_total_h", "last_outage_total_h"),
             ("outage_open", "last_outage_open"),
@@ -243,6 +247,7 @@ def main() -> int:
         f"outage_alert_imminent={rep['last_outage_alert_imminent']} "
         f"outage_alert_final={rep.get('last_outage_alert_final')} "
         f"outage_alert_critical_aged={rep.get('last_outage_alert_critical_aged')} "
+        f"outage_alert_critical_hour={rep.get('last_outage_alert_critical_hour')} "
         f"hours_to_tier2_gate={rep['last_hours_to_tier2_gate']} "
         f"hours_to_critical={rep['last_hours_to_critical']} "
         f"minutes_to_critical={rep.get('last_minutes_to_critical')} "

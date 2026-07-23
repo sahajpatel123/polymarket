@@ -230,6 +230,7 @@ PRESERVE_STATUS_KEYS = (
     "hours_past_critical",
     "minutes_past_critical",
     "outage_alert_critical_aged",
+    "outage_alert_critical_hour",
     "operator_mode",
     "operator_action",
     "recovery_smoke",
@@ -267,6 +268,7 @@ def _stamp_critical_since(status: dict[str, Any], prev: dict[str, Any]) -> None:
         status["hours_past_critical"] = None
         status["minutes_past_critical"] = None
         status["outage_alert_critical_aged"] = False
+        status["outage_alert_critical_hour"] = False
         return
     prev_since = prev.get("outage_critical_since")
     if prev_since not in (None, ""):
@@ -284,14 +286,18 @@ def _stamp_critical_since(status: dict[str, Any], prev: dict[str, Any]) -> None:
     else:
         status["hours_past_critical"] = None
         status["minutes_past_critical"] = None
-    # ≥30 minutes past the critical latch (T1-121).
+    # ≥30 minutes past the critical latch (T1-121); ≥60 minutes (T1-122).
     mpc = status.get("minutes_past_critical")
     try:
-        status["outage_alert_critical_aged"] = (
-            mpc is not None and int(mpc) >= 30
-        )
+        minutes = int(mpc) if mpc is not None else None
     except (TypeError, ValueError):
-        status["outage_alert_critical_aged"] = False
+        minutes = None
+    status["outage_alert_critical_aged"] = (
+        minutes is not None and minutes >= 30
+    )
+    status["outage_alert_critical_hour"] = (
+        minutes is not None and minutes >= 60
+    )
 
 
 def _stamp_operator_brief(status: dict[str, Any]) -> None:
@@ -436,6 +442,7 @@ def main() -> int:
         f"outage_alert_imminent={status['outage_alert_imminent']} "
         f"outage_alert_final={status['outage_alert_final']} "
         f"outage_alert_critical_aged={status.get('outage_alert_critical_aged')} "
+        f"outage_alert_critical_hour={status.get('outage_alert_critical_hour')} "
         f"outage_imminent_since={status.get('outage_imminent_since') or '-'} "
         f"hours_in_imminent={status.get('hours_in_imminent')} "
         f"outage_critical_since={status.get('outage_critical_since') or '-'} "
