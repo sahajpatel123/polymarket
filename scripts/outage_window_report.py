@@ -178,6 +178,8 @@ PRESERVE_STATUS_KEYS = (
     "hours_to_critical",
     "outage_started_at",
     "outage_alert_imminent",
+    "recovery_smoke",
+    "recovery_smoke_blockers",
 )
 
 

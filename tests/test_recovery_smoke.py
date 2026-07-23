@@ -12,7 +12,7 @@ from scripts.recovery_smoke import evaluate_recovery
 
 def _recovered(**overrides):
     base = {
-        "connectivity": "status=UP rest_ok=True ws_ok=True",
+        "connectivity": "status=OK rest_ok=True ws_ok=True",
         "recovered": True,
         "outage_open": False,
         "health": "OK",
@@ -35,6 +35,12 @@ def test_evaluate_recovery_pass() -> None:
     rep = evaluate_recovery(_recovered(), min_quotes=5529)
     assert rep["ok"] is True
     assert rep["blockers"] == []
+
+
+def test_evaluate_recovery_accepts_status_ok() -> None:
+    rep = evaluate_recovery(_recovered(recovered=False))
+    assert rep["ok"] is True
+    assert rep["checks"]["connectivity_up"] is True
 
 
 def test_evaluate_recovery_fails_while_down() -> None:

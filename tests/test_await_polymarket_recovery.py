@@ -97,9 +97,21 @@ def test_recover_appends_cycle(tmp_path: Path, monkeypatch, capsys) -> None:
             return 0, "", "status=OK appended=logs/strategy_cycles.jsonl"
         if "outage_window_report.py" in joined:
             status_path.write_text(
-                json.dumps({"outage_open": True, "duration_h": 5.5}) + "\n"
+                json.dumps({
+                    "outage_open": True,
+                    "duration_h": 5.5,
+                    "health": "OK",
+                    "tape_frozen": False,
+                    "runtime_basis": "requote",
+                    "paper_log": "livecfg/logs/paper.jsonl",
+                    "paper_log_files": 1,
+                    "quotes": 5600,
+                })
+                + "\n"
             )
             return 0, "", "status=OK open=True duration_h=5.5"
+        if "recovery_smoke.py" in joined:
+            return 0, "", "status=PASS blockers=- health=OK outage_open=False"
         return 1, "", "status=UNKNOWN"
 
     monkeypatch.setattr(await_mod, "_run", fake_run)
@@ -120,8 +132,11 @@ def test_recover_appends_cycle(tmp_path: Path, monkeypatch, capsys) -> None:
     assert "status=RECOVERED" in err
     assert "append=status=OK" in err
     assert "ensure=status=RESTARTED_OK" in err
+    assert "smoke=status=PASS" in err
     assert any("outage_window_report.py" in c for c in calls)
+    assert any("recovery_smoke.py" in c for c in calls)
     data = json.loads(status_path.read_text())
     assert data["recovered"] is True
     assert data["outage_open"] is False
     assert data["connectivity"] == "status=OK rest_ok=True ws_ok=True"
+    assert data["recovery_smoke"] == "PASS"

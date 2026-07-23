@@ -265,3 +265,4 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-23T01:35:00Z | Tier1 | T1-104 outage_alert_imminent when ≤1h to critical (11–12h window) | pytest outage/validate; ~10.0h DOWN imminent=False; no Tier2 | merged
 2026-07-23T01:45:00Z | Tier1 | T1-105 last_requote_at/last_quote_at ISO from live health ages in outage_status | pytest strategy_tick/validate; ~10.2h DOWN; no Tier2 | merged
 2026-07-23T01:55:00Z | Tier1 | T1-106 recovery_smoke checklist (PASS recovered / FAIL while DOWN); playbook updated | pytest test_recovery_smoke; live FAIL connectivity_up; ~10.3h DOWN; no Tier2 | merged
+2026-07-23T02:05:00Z | Tier1 | T1-107 await recovery runs recovery_smoke; accept connectivity status=OK as UP | pytest await/recovery_smoke; ~10.5h DOWN; no Tier2 | merged

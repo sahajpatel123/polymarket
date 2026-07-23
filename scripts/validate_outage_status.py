@@ -58,6 +58,8 @@ RECOMMENDED_KEYS = (
     "paper_log_files",
     "metrics_log",
     "outage_alert_imminent",
+    "recovery_smoke",
+    "recovery_smoke_blockers",
 )
 
 

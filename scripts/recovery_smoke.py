@@ -31,7 +31,17 @@ def evaluate_recovery(
     blockers: list[str] = []
 
     conn = str(status.get("connectivity") or "")
-    up = ("status=UP" in conn) or (status.get("recovered") is True)
+    # polymarket_connectivity prints status=OK when REST+WS are up (not status=UP).
+    up = (
+        status.get("recovered") is True
+        or "status=UP" in conn
+        or (
+            "status=OK" in conn
+            and "rest_ok=True" in conn
+            and "ws_ok=True" in conn
+        )
+        or (conn.startswith("status=OK") and "rest_ok=False" not in conn)
+    )
     checks["connectivity_up"] = up
     if not up:
         blockers.append("connectivity_up")

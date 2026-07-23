@@ -102,13 +102,15 @@ pricing/selection changes until `paper_data_gate` reports `tier2_allowed=true`
 ## Recovery playbook (Polymarket REST/WS DOWN)
 
 1. `uv run python scripts/await_polymarket_recovery.py --once`
-   — if UP: restarts collector + appends a cycle (disable with
-   `--no-restart-on-recover` / `--no-append-cycle-on-recover`); always
-   refreshes `logs/outage_status.json` (disable with `--status-out ''`).
+   — if UP: restarts collector + appends a cycle + runs `recovery_smoke.py`
+   (disable with `--no-restart-on-recover` / `--no-append-cycle-on-recover` /
+   `--no-smoke-on-recover`); always refreshes `logs/outage_status.json`
+   (disable with `--status-out ''`). On success writes
+   `recovery_smoke=PASS|FAIL` into the status file (T1-107).
 2. `uv run python scripts/recovery_smoke.py --min-quotes 5529`
-   — PASS only when connectivity UP, outage closed, health OK, tape unfrozen,
-   requote runtime basis, paper-log family present, and outage alerts cleared
-   (T1-106). Use `--allow-stale-health` only for diagnose-during-DOWN.
+   — PASS only when connectivity OK (REST+WS), outage closed, health OK, tape
+   unfrozen, requote runtime basis, paper-log family present, and outage alerts
+   cleared (T1-106). Use `--allow-stale-health` only for diagnose-during-DOWN.
 3. Confirm `paper_health` is OK (not STALE) and `tape_frozen=false` on the
    latest cycle line.
 4. Re-run `c01_promotion_checklist.py` once quotes advance; do not promote

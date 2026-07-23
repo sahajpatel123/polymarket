@@ -61,9 +61,15 @@ def _patch_outage_status(status_out: str, **fields: object) -> None:
     path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
 
 
-def _mark_recovered(status_out: str, *, connectivity: str, waited_s: float) -> None:
-    _patch_outage_status(
-        status_out,
+def _mark_recovered(
+    status_out: str,
+    *,
+    connectivity: str,
+    waited_s: float,
+    recovery_smoke: str | None = None,
+    recovery_smoke_blockers: str | None = None,
+) -> None:
+    fields: dict = dict(
         recovered=True,
         outage_open=False,
         outage_alert=False,
@@ -78,6 +84,11 @@ def _mark_recovered(status_out: str, *, connectivity: str, waited_s: float) -> N
         connectivity=connectivity,
         waited_s=waited_s,
     )
+    if recovery_smoke is not None:
+        fields["recovery_smoke"] = recovery_smoke
+    if recovery_smoke_blockers is not None:
+        fields["recovery_smoke_blockers"] = recovery_smoke_blockers
+    _patch_outage_status(status_out, **fields)
 
 
 def main() -> int:
@@ -97,15 +108,27 @@ def main() -> int:
         help="Skip append_strategy_cycle after a successful recovery",
     )
     ap.add_argument(
+        "--no-smoke-on-recover",
+        action="store_true",
+        help="Skip recovery_smoke.py after a successful recovery (T1-107)",
+    )
+    ap.add_argument(
         "--status-out",
         default="logs/outage_status.json",
         help="Compact outage status JSON path (empty string disables)",
     )
     ap.add_argument("--wait-s", type=float, default=45.0,
                     help="ensure_paper_collector post-restart health wait")
+    ap.add_argument(
+        "--smoke-min-quotes",
+        type=int,
+        default=None,
+        help="Pass through to recovery_smoke --min-quotes",
+    )
     args = ap.parse_args()
     restart = not args.no_restart_on_recover
     append_cycle = not args.no_append_cycle_on_recover
+    run_smoke = not args.no_smoke_on_recover
     status_out = (args.status_out or "").strip()
 
     py = sys.executable
@@ -159,11 +182,31 @@ def main() -> int:
                     connectivity=line,
                     waited_s=float(report["waited_s"]),
                 )
+            smoke_line = "skipped"
+            if run_smoke and status_out:
+                smoke_cmd = [py, "scripts/recovery_smoke.py", "--status", status_out]
+                if args.smoke_min_quotes is not None:
+                    smoke_cmd.extend(["--min-quotes", str(args.smoke_min_quotes)])
+                scode, sout, serr = _run(smoke_cmd)
+                smoke_line = _status_line(serr, sout)
+                report["smoke_rc"] = scode
+                report["smoke"] = smoke_line
+                blockers = "-"
+                for part in smoke_line.split():
+                    if part.startswith("blockers="):
+                        blockers = part.partition("=")[2]
+                        break
+                _patch_outage_status(
+                    status_out,
+                    recovery_smoke="PASS" if scode == 0 else "FAIL",
+                    recovery_smoke_blockers=blockers,
+                )
             print(json.dumps(report, indent=2, sort_keys=True))
             print(
                 f"status=RECOVERED waited_s={report['waited_s']} "
                 f"ensure={report.get('ensure', 'skipped')} "
                 f"append={report.get('append', 'skipped')} "
+                f"smoke={smoke_line} "
                 f"status_out={status_out or '-'}",
                 file=sys.stderr,
             )
@@ -171,6 +214,8 @@ def main() -> int:
             if restart and report.get("ensure_rc") != 0:
                 ok = False
             if append_cycle and report.get("append_rc") != 0:
+                ok = False
+            if run_smoke and status_out and report.get("smoke_rc") not in (0, None):
                 ok = False
             return 0 if ok else 1
 

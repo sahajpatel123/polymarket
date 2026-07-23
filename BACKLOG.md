@@ -708,6 +708,13 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: pytest test_recovery_smoke; live status=FAIL blockers include
   connectivity_up
 
+### T1-107 Wire recovery_smoke into await recover path
+- Status: `done`
+- Done when: await_polymarket_recovery runs recovery_smoke after UP (unless
+  --no-smoke-on-recover); writes recovery_smoke=PASS|FAIL; accepts
+  connectivity status=OK; unit test asserts smoke call on recover.
+- Evidence: test_recover_appends_cycle sees recovery_smoke.py + PASS
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
