@@ -79,8 +79,12 @@ class OrderBook:
         ts: float,
         book_hash: str | None = None,
     ) -> None:
-        self.bids = SortedDict({p: s for p, s in bids if s > 0})
-        self.asks = SortedDict({p: s for p, s in asks if s > 0})
+        # Reuse existing SortedDicts (clear + update) instead of allocating new
+        # ones — avoids ~2010 object allocations per 5k-event replay.
+        self.bids.clear()
+        self.bids.update({p: s for p, s in bids if s > 0})
+        self.asks.clear()
+        self.asks.update({p: s for p, s in asks if s > 0})
         self.last_update_ts = ts
         self.local_ts = time.time()
         self.book_hash = book_hash
@@ -122,17 +126,20 @@ class OrderBook:
         microprice intuition: price is dragged toward the side with less size).
         Returns None if either side is empty.
         """
-        bb = self.best_bid()
-        ba = self.best_ask()
-        if bb is None or ba is None:
+        bids = self.bids
+        asks = self.asks
+        if not bids or not asks:
             return None
-        bid_sz = self._top_size(self.bids, levels, from_high=True)
-        ask_sz = self._top_size(self.asks, levels, from_high=False)
+        bb_p = bids.peekitem(-1)[0]
+        ba_p = asks.peekitem(0)[0]
+        # inline _top_size: use sum+islice to match original float accumulation
+        bid_sz = float(sum(bids[k] for k in itertools.islice(reversed(bids), levels)))
+        ask_sz = float(sum(asks[k] for k in itertools.islice(asks, levels)))
         total = bid_sz + ask_sz
         if total <= 0:
-            return (bb.price + ba.price) / 2.0
+            return (bb_p + ba_p) / 2.0
         # weight best_ask by bid size and best_bid by ask size
-        return (ba.price * bid_sz + bb.price * ask_sz) / total
+        return (ba_p * bid_sz + bb_p * ask_sz) / total
 
     def best_with_min_size(
         self, side: Side, min_size: float

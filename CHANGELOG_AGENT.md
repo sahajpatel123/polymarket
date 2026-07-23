@@ -286,3 +286,4 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-23T05:05:00Z | Tier1 | T1-125 validate operator_recovery_cmd matches expected CLI for action | pytest validate; ~13.5h DOWN critical; no Tier2 | merged
 2026-07-23T05:15:00Z | Tier1 | T1-126 frozen_tape_snapshot latch quotes_at_freeze for post-recovery compare | pytest frozen_tape; ~13.7h DOWN; no Tier2 | merged
 2026-07-23T05:25:00Z | Tier1 | T1-127 recovery_smoke requires quotes past frozen quotes_at_freeze | pytest recovery_smoke; ~13.8h DOWN; no Tier2 | merged
+2026-07-23T11:50:00Z | Tier1 | Hot-path perf: reuse OrderBook.view() in engine+replay, inline microprice, reuse SortedDicts in apply_snapshot, integer tick multiples in _add_layers, drop default=str in metrics json.dumps; fix test_validate_outage_status missing recommended keys | pytest 245 passed, 2 skipped; ruff ok; mypy pre-existing only | merged

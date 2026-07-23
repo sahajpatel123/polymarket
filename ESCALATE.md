@@ -150,3 +150,45 @@ credits (40.7%). However, no monthly budget is configured, so cannot
 determine if this is within expected bounds. Also only covers Agent 3's
 spend — cannot check Agent 1 and Agent 2 spend ("both loops"). Check
 remains FAIL.
+
+---
+
+## Entry 8 — Dependency audit baseline drift: 2 new packages in lockfile not in baseline
+
+**Check:** #3 Dependency audit
+**Date:** 2026-07-22T15:01:43Z
+**Severity:** MEDIUM
+
+**What was found:**
+The dependency audit script (`scripts/deps_audit.py --fail-on-flags`) now
+reports `status=FLAGS` with exit code 2 (was `status=OK` with exit code 0
+in cycles 1–17). Two new baseline bumps were detected:
+
+- `coverage` added at version 7.15.2
+- `pytest-cov` added at version 7.1.0
+
+The `uv.lock` file (file mtime: `Jul 22 19:10:15 2026`) contains these
+packages, but `deps/baseline.json` (file mtime: `Jul 22 12:19:08 2026`)
+does NOT. The baseline was not updated to reflect the lockfile changes.
+
+Package counts also changed: 83 total packages (was 81), 21 flagged as
+`unpinned_direct` (was 20). The `baseline_drift:2` flag is new.
+
+All packages still have artifact hashes in `uv.lock`. No post-install
+scripts detected. No git/url/path sources (except local `polymaker`).
+
+**Expected:**
+Either:
+- Update `deps/baseline.json` to include `coverage` 7.15.2 and
+  `pytest-cov` 7.1.0 (if these additions are intentional), OR
+- Remove `coverage` and `pytest-cov` from `uv.lock` if they were added
+  unintentionally.
+
+**Action needed:**
+1. Determine whether `coverage` and `pytest-cov` were intentionally added
+   to the lockfile (e.g., via `uv sync` or `uv add`).
+2. If intentional, update `deps/baseline.json` by running the baseline
+   regeneration command (see `scripts/deps_audit.py` or `deps/` README).
+3. If unintentional, remove them from the lockfile.
+4. Re-run `uv run python scripts/deps_audit.py --fail-on-flags` to confirm
+   `status=OK`.

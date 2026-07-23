@@ -65,6 +65,8 @@ def _full(**overrides):
         "metrics_log": "livecfg/logs/metrics-paper.jsonl",
         "recovery_smoke": "FAIL",
         "recovery_smoke_blockers": "connectivity_up",
+        "frozen_tape_snapshot": None,
+        "frozen_tape_status": "INACTIVE",
     }
     base.update(overrides)
     return base

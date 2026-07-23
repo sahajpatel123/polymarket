@@ -1622,3 +1622,313 @@ No monthly budget configured. Cannot determine if spend is within bounds.
 
 **Cycle 17: 4 failures, 3 passes.** Same as cycles 1–16. All failures persist
 with no changes. API spend unchanged at $7.63/$18.75 (40.7%).
+
+---
+
+## Cycle 18 — 2026-07-22T15:01:43Z
+
+### 1. GitHub branch protection on main
+
+Checked via `gh api repos/sahajpatel123/polymarket/branches/main/protection`.
+
+| Rule | Status |
+|------|--------|
+| Status checks required (pytest, strict) | ✅ active |
+| PR review required | ❌ NOT configured |
+| Enforce admins | ❌ false (admins can bypass) |
+| Allow force pushes | ✅ blocked |
+| Allow deletions | ✅ blocked |
+| Required linear history | ❌ not required |
+| Required conversation resolution | ❌ not required |
+
+**Result: FAIL** — Same as cycles 1–17. PR reviews not required, enforce_admins false.
+
+### 2. API key scope and wallet balance
+
+Same as cycles 1–17. No `.env` file exists (only `.env.example`). No Polymarket
+API keys (PK, BROWSER_ADDRESS, POLY_BUILDER_KEY/SECRET/PASSPHRASE) configured.
+
+**Result: FAIL** — Same as cycles 1–17. No `.env` file; cannot verify.
+
+### 3. Dependency audit
+
+Ran `uv run python scripts/deps_audit.py --fail-on-flags`.
+
+```
+status=FLAGS packages=83 flagged=21 bumps=2
+```
+
+- 83 packages (was 81 in cycles 1–17).
+- 21 packages flagged as `unpinned_direct` (was 20).
+- **2 baseline bumps** (was 0): `coverage` added at 7.15.2, `pytest-cov` added at 7.1.0.
+- `baseline_drift:2` flag is new.
+- Exit code 2 (was 0). `ok: false` (was OK).
+- All packages still have artifact hashes in `uv.lock`.
+- No post-install scripts detected.
+
+The `uv.lock` file was modified at `Jul 22 19:10:15 2026` (file mtime),
+adding `coverage==7.15.2` and `pytest-cov==7.1.0`. The `deps/baseline.json`
+was last modified at `Jul 22 12:19:08 2026` and does NOT contain these
+packages. The baseline was not updated to reflect the lockfile changes.
+
+**Result: FAIL** — CHANGED from PASS (cycles 1–17). Baseline drift detected:
+2 new packages in lockfile not present in baseline. See ESCALATE.md entry #8.
+
+### 4. Alert fire-drill (monthly)
+
+Same as cycles 1–17. No `.env` file, no `ALERT_WEBHOOK_URL` configured.
+No record of a previous fire-drill. Less than one month has elapsed since
+the first cycle (2026-07-22T07:13:40Z), so the monthly fire-drill is not yet
+due.
+
+**Result: FAIL** — Same as cycles 1–17. Cannot perform fire-drill.
+
+### 5. Polymarket terms of service
+
+Attempted to fetch `https://polymarket.com/legal/terms-of-service` via
+`curl` — HTTP code `000` (connection failed/timeout). Same as cycles 1–17.
+
+No previous ToS snapshot exists to diff against.
+
+**Result: FAIL** — Same as cycles 1–17. Cannot fetch ToS.
+
+### 6. Credential/certificate expiry
+
+Same as cycles 1–17. No `.env` file, no custom certificates, no GPG keys,
+no `~/.ssl` directory.
+
+**Result: PASS** — Same as cycles 1–17. No credentials to expire.
+
+### 7. Agent API spend
+
+`ANTHROPIC_API_KEY` is set in the environment (OpenRouter). Queried the
+OpenRouter credits endpoint:
+
+```json
+{"data":{"total_credits":18.75,"total_usage":7.62539204}}
+```
+
+- Total credits: $18.75
+- Total usage: $7.63 (unchanged from cycles 2–17)
+- Remaining: $11.12
+- Usage: 40.7% of total credits
+
+No monthly budget configured. Cannot determine if spend is within bounds.
+Also only covers Agent 3's spend — cannot check Agent 1 and Agent 2 spend.
+
+**Result: FAIL** — Same as cycles 2–17. Can check spend but no budget configured.
+
+---
+
+## Summary
+
+| # | Check | C1 | C2 | C3 | C4 | C5 | C6 | C7 | C8 | C9 | C10 | C11 | C12 | C13 | C14 | C15 | C16 | C17 | C18 |
+|---|-------|----|----|----|----|----|----|----|----|----|-----|-----|-----|-----|-----|-----|-----|-----|-----|
+| 1 | Branch protection | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL |
+| 2 | API key scope / wallet balance | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL |
+| 3 | Dependency audit | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | **FAIL** |
+| 4 | Alert fire-drill | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL |
+| 5 | Polymarket ToS | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL |
+| 6 | Credential/certificate expiry | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
+| 7 | Agent API spend | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL |
+
+**Cycle 18: 4 failures, 3 passes.** Check 3 (Dependency audit) changed from
+PASS to FAIL — baseline drift detected (2 new packages: coverage 7.15.2,
+pytest-cov 7.1.0). All other checks unchanged from cycle 17. API spend
+unchanged at $7.63/$18.75 (40.7%).
+
+---
+
+## Cycle 19 — 2026-07-22T15:32:59Z
+
+### 1. GitHub branch protection on main
+
+Same as cycles 1–18. No change.
+
+| Rule | Status |
+|------|--------|
+| Status checks required (pytest, strict) | ✅ active |
+| PR review required | ❌ NOT configured |
+| Enforce admins | ❌ false |
+| Allow force pushes | ✅ blocked |
+| Allow deletions | ✅ blocked |
+
+**Result: FAIL** — Same as cycles 1–18.
+
+### 2. API key scope and wallet balance
+
+Same as cycles 1–18. No `.env` file exists. No Polymarket API keys configured.
+
+**Result: FAIL** — Same as cycles 1–18.
+
+### 3. Dependency audit
+
+Ran `uv run python scripts/deps_audit.py --fail-on-flags`.
+
+```
+status=FLAGS packages=83 flagged=21 bumps=2
+```
+
+Same as cycle 18. No change. 2 baseline bumps (coverage 7.15.2, pytest-cov
+7.1.0). Exit code 2. `ok: false`.
+
+**Result: FAIL** — Same as cycle 18. Baseline drift persists. See ESCALATE.md
+entry #8.
+
+### 4. Alert fire-drill (monthly)
+
+Same as cycles 1–18. No `.env` file, no `ALERT_WEBHOOK_URL` configured.
+No record of a previous fire-drill. Less than one month has elapsed since
+the first cycle (2026-07-22T07:13:40Z).
+
+**Result: FAIL** — Same as cycles 1–18. Cannot perform fire-drill.
+
+### 5. Polymarket terms of service
+
+Attempted to fetch `https://polymarket.com/legal/terms-of-service` via
+`curl` — HTTP code `000` (connection failed/timeout). Same as cycles 1–18.
+
+No previous ToS snapshot exists to diff against.
+
+**Result: FAIL** — Same as cycles 1–18. Cannot fetch ToS.
+
+### 6. Credential/certificate expiry
+
+Same as cycles 1–18. No `.env` file, no custom certificates, no GPG keys,
+no `~/.ssl` directory.
+
+**Result: PASS** — Same as cycles 1–18. No credentials to expire.
+
+### 7. Agent API spend
+
+`ANTHROPIC_API_KEY` is set in the environment (OpenRouter). Queried the
+OpenRouter credits endpoint:
+
+```json
+{"data":{"total_credits":18.75,"total_usage":7.62539204}}
+```
+
+- Total credits: $18.75
+- Total usage: $7.63 (unchanged from cycles 2–18)
+- Remaining: $11.12
+- Usage: 40.7% of total credits
+
+No monthly budget configured. Cannot determine if spend is within bounds.
+Also only covers Agent 3's spend — cannot check Agent 1 and Agent 2 spend.
+
+**Result: FAIL** — Same as cycles 2–18. Can check spend but no budget configured.
+
+---
+
+## Summary
+
+| # | Check | C1 | C2 | C3 | C4 | C5 | C6 | C7 | C8 | C9 | C10 | C11 | C12 | C13 | C14 | C15 | C16 | C17 | C18 | C19 |
+|---|-------|----|----|----|----|----|----|----|----|----|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|
+| 1 | Branch protection | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL |
+| 2 | API key scope / wallet balance | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL |
+| 3 | Dependency audit | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | FAIL | FAIL |
+| 4 | Alert fire-drill | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL |
+| 5 | Polymarket ToS | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL |
+| 6 | Credential/certificate expiry | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
+| 7 | Agent API spend | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL |
+
+**Cycle 19: 4 failures, 3 passes.** Same as cycle 18. All failures persist
+with no changes. API spend unchanged at $7.63/$18.75 (40.7%).
+
+---
+
+## Cycle 20 — 2026-07-22T15:48:18Z
+
+### 1. GitHub branch protection on main
+
+Same as cycles 1–19. No change.
+
+| Rule | Status |
+|------|--------|
+| Status checks required (pytest, strict) | ✅ active |
+| PR review required | ❌ NOT configured |
+| Enforce admins | ❌ false |
+| Allow force pushes | ✅ blocked |
+| Allow deletions | ✅ blocked |
+
+**Result: FAIL** — Same as cycles 1–19.
+
+### 2. API key scope and wallet balance
+
+Same as cycles 1–19. No `.env` file exists. No Polymarket API keys configured.
+
+**Result: FAIL** — Same as cycles 1–19.
+
+### 3. Dependency audit
+
+Ran `uv run python scripts/deps_audit.py --fail-on-flags`.
+
+```
+status=FLAGS packages=83 flagged=21 bumps=2
+```
+
+Same as cycles 18–19. No change. 2 baseline bumps (coverage 7.15.2,
+pytest-cov 7.1.0). Exit code 2. `ok: false`.
+
+**Result: FAIL** — Same as cycles 18–19. Baseline drift persists. See
+ESCALATE.md entry #8.
+
+### 4. Alert fire-drill (monthly)
+
+Same as cycles 1–19. No `.env` file, no `ALERT_WEBHOOK_URL` configured.
+No record of a previous fire-drill. Less than one month has elapsed since
+the first cycle (2026-07-22T07:13:40Z).
+
+**Result: FAIL** — Same as cycles 1–19. Cannot perform fire-drill.
+
+### 5. Polymarket terms of service
+
+Attempted to fetch `https://polymarket.com/legal/terms-of-service` via
+`curl` — HTTP code `000` (connection failed/timeout). Same as cycles 1–19.
+
+No previous ToS snapshot exists to diff against.
+
+**Result: FAIL** — Same as cycles 1–19. Cannot fetch ToS.
+
+### 6. Credential/certificate expiry
+
+Same as cycles 1–19. No `.env` file, no custom certificates, no GPG keys,
+no `~/.ssl` directory.
+
+**Result: PASS** — Same as cycles 1–19. No credentials to expire.
+
+### 7. Agent API spend
+
+`ANTHROPIC_API_KEY` is set in the environment (OpenRouter). Queried the
+OpenRouter credits endpoint:
+
+```json
+{"data":{"total_credits":18.75,"total_usage":7.62539204}}
+```
+
+- Total credits: $18.75
+- Total usage: $7.63 (unchanged from cycles 2–19)
+- Remaining: $11.12
+- Usage: 40.7% of total credits
+
+No monthly budget configured. Cannot determine if spend is within bounds.
+Also only covers Agent 3's spend — cannot check Agent 1 and Agent 2 spend.
+
+**Result: FAIL** — Same as cycles 2–19. Can check spend but no budget configured.
+
+---
+
+## Summary
+
+| # | Check | C1 | C2 | C3 | C4 | C5 | C6 | C7 | C8 | C9 | C10 | C11 | C12 | C13 | C14 | C15 | C16 | C17 | C18 | C19 | C20 |
+|---|-------|----|----|----|----|----|----|----|----|----|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|
+| 1 | Branch protection | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL |
+| 2 | API key scope / wallet balance | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL |
+| 3 | Dependency audit | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | FAIL | FAIL | FAIL |
+| 4 | Alert fire-drill | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL |
+| 5 | Polymarket ToS | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL |
+| 6 | Credential/certificate expiry | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
+| 7 | Agent API spend | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL | FAIL |
+
+**Cycle 20: 4 failures, 3 passes.** Same as cycles 1–19. All failures persist
+with no changes. API spend unchanged at $7.63/$18.75 (40.7%).

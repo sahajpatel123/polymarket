@@ -187,10 +187,13 @@ def _add_layers(
         per = reward_floor  # bump each order up to scoring size
     if per < exchange_min or per <= 0:
         return
+    # Compute prices as integer tick multiples to avoid per-layer round() calls.
+    # top_price is already tick-aligned (from round_to_tick); stepping by
+    # step_ticks*tick keeps every layer on-grid. round() only cleans FP residue.
+    n = round(top_price / tick)
     for i in range(layers):
-        offset = i * step_ticks * tick
-        price = top_price - offset if down else top_price + offset
-        price = round(price, dec)
+        ni = n - i * step_ticks if down else n + i * step_ticks
+        price = round(ni * tick, dec)
         if 0 < price < 1:
             quotes.append(Quote(token_id, side, price, per))
 

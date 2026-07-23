@@ -40,7 +40,9 @@ class MetricsLogger:
         if not self.enabled or self._fh is None:
             return
         row = {"ts": fields.pop("ts", time.time()), "event": event, **fields}
-        self._buffer.append(json.dumps(row, default=str))
+        # All metrics fields are basic types (str/float/int/bool); default=str
+        # adds a per-value serializability check overhead with no benefit here.
+        self._buffer.append(json.dumps(row))
         if event in self._FLUSH_EVENTS or len(self._buffer) >= self._BATCH_SIZE:
             self._flush()
 

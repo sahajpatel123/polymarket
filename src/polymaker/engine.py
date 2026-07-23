@@ -423,9 +423,13 @@ class Engine:
         if yes_book is None or yes_book.is_empty:
             return
 
-        # crossed/locked or one-sided book -> FV is unreliable; skip this tick
-        bb, ba = yes_book.best_bid(), yes_book.best_ask()
-        if bb is None or ba is None or bb.price >= ba.price:
+        # crossed/locked or one-sided book -> FV is unreliable; skip this tick.
+        # Compute view once and reuse for the check + construct_quotes to avoid
+        # redundant best_bid()/best_ask() calls on the hot path.
+        yes_view = yes_book.view()
+        if yes_view.best_bid is None or yes_view.best_ask is None:
+            return
+        if yes_view.best_bid >= yes_view.best_ask:
             return
 
         now = time.time()
@@ -511,7 +515,7 @@ class Engine:
 
         tq = construct_quotes(QuoteInputs(
             meta=meta, regime=regime, fv=fv, vol_short=est.vol.short,
-            toxicity=est.markout.toxicity, yes_view=yes_book.view(),
+            toxicity=est.markout.toxicity, yes_view=yes_view,
             no_view=(no_book.view() if no_book else BookView(None, 0.0, None, 0.0, None, None, 0.0, 0.0)),
             pos_yes=pos_yes, pos_no=pos_no, profile=p, now=now,
             risk_size_scale=rd.size_scale,
