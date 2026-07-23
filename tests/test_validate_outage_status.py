@@ -25,6 +25,8 @@ def _full(**overrides):
         "hours_to_imminent": 1.66,
         "outage_started_at": "2026-07-22T15:30:00+00:00",
         "outage_critical_at": "2026-07-23T03:30:00+00:00",
+        "outage_critical_since": None,
+        "hours_past_critical": None,
         "runtime_h": 8.37,
         "quotes": 5529,
         "connectivity": "status=DOWN",
@@ -118,6 +120,31 @@ def test_validate_imminent_requires_since() -> None:
         hours_in_imminent=0.3,
         hours_to_critical=0.5,
         hours_to_imminent=0.0,
+    ))
+    assert ok["ok"] is True
+
+
+def test_validate_critical_requires_since() -> None:
+    rep = validate_status(_full(
+        outage_alert_critical=True,
+        outage_alert_imminent=False,
+        outage_total_h=12.1,
+        hours_to_critical=0.0,
+        hours_to_imminent=0.0,
+        outage_critical_since=None,
+        hours_past_critical=None,
+    ))
+    assert rep["ok"] is False
+    assert "outage_critical_since" in rep["missing"]
+    assert "hours_past_critical" in rep["missing"]
+    ok = validate_status(_full(
+        outage_alert_critical=True,
+        outage_alert_imminent=False,
+        outage_total_h=12.1,
+        hours_to_critical=0.0,
+        hours_to_imminent=0.0,
+        outage_critical_since="2026-07-23T03:28:00+00:00",
+        hours_past_critical=0.2,
     ))
     assert ok["ok"] is True
 

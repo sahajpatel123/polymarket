@@ -47,6 +47,12 @@ IMMINENT_REQUIRED_KEYS = (
     "hours_in_imminent",
 )
 
+# Required while the ≥12h critical alert is lit (T1-113).
+CRITICAL_REQUIRED_KEYS = (
+    "outage_critical_since",
+    "hours_past_critical",
+)
+
 RECOMMENDED_KEYS = (
     "connectivity",
     "tier2_allowed",
@@ -105,6 +111,10 @@ def validate_status(
                 missing.append(key)
     if bool(data.get("outage_alert_imminent")):
         for key in IMMINENT_REQUIRED_KEYS:
+            if not _present(data, key) and key not in missing:
+                missing.append(key)
+    if bool(data.get("outage_alert_critical")):
+        for key in CRITICAL_REQUIRED_KEYS:
             if not _present(data, key) and key not in missing:
                 missing.append(key)
     recommended_missing = [k for k in RECOMMENDED_KEYS if k not in data]

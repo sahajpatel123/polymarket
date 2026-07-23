@@ -66,7 +66,10 @@ fixed until recovery clears it (T1-110). `hours_in_imminent` is age since that
 latch; while imminent is True, validate requires `outage_imminent_since` and
 `hours_in_imminent` (T1-111/T1-112). `outage_critical_at` is the UTC ISO when
 the 12h critical alert will trip (`outage_started_at + 12h`, with fallback to
-`ts + hours_to_critical`) and is required while `outage_open` (T1-112).
+`ts + hours_to_critical`) and is required while `outage_open` (T1-112). When
+`outage_alert_critical` first trips, `outage_critical_since` latches and
+`hours_past_critical` ages from that edge; validate requires both while
+critical is lit (T1-113).
 
 After each `strategy_tick`, `quotes` / `runtime_h` / `hours_to_tier2_gate` are
 refreshed from the live `paper_data_gate` (T1-99), not only the cycle trail.
@@ -86,7 +89,9 @@ While `outage_open=true`, validate also **requires** `hours_to_critical`,
 `hours_to_imminent`, `outage_started_at`, and `outage_critical_at`
 (T1-103/T1-109/T1-112) — empty/null counts as missing. While
 `outage_alert_imminent=true`, validate also **requires**
-`outage_imminent_since` and `hours_in_imminent` (T1-111/T1-112).
+`outage_imminent_since` and `hours_in_imminent` (T1-111/T1-112). While
+`outage_alert_critical=true`, validate also **requires**
+`outage_critical_since` and `hours_past_critical` (T1-113).
 
 `last_requote_at` / `last_quote_at` are UTC ISO timestamps derived from live
 paper_health ages (T1-105).

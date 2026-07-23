@@ -438,6 +438,8 @@ def main() -> int:
         f"hours_to_imminent={ost.get('hours_to_imminent')} "
         f"outage_started_at={ost.get('outage_started_at') or '-'} "
         f"outage_critical_at={ost.get('outage_critical_at') or '-'} "
+        f"outage_critical_since={ost.get('outage_critical_since') or '-'} "
+        f"hours_past_critical={ost.get('hours_past_critical')} "
         f"quotes={ost.get('quotes', outage.get('quotes'))} "
         f"tier2_allowed={ost.get('tier2_allowed', gate.get('tier2_allowed'))} "
         f"gate_reason={ost.get('gate_reason', gate.get('gate_reason'))} "

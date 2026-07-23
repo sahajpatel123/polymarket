@@ -164,6 +164,48 @@ def test_write_compact_status_latches_imminent_since(tmp_path: Path) -> None:
     assert cleared["hours_in_imminent"] is None
 
 
+def test_write_compact_status_latches_critical_since(tmp_path: Path) -> None:
+    path = tmp_path / "outage_status.json"
+    # Pre-critical: no latch.
+    pre = write_compact_status(path, {
+        "ts": "2026-07-23T03:20:00+00:00",
+        "outage_open": True,
+        "outage_alert_critical": False,
+        "outage_alert_imminent": True,
+        "hours_to_critical": 0.1,
+    })
+    assert pre["outage_critical_since"] is None
+    assert pre["hours_past_critical"] is None
+    first = write_compact_status(path, {
+        "ts": "2026-07-23T03:28:00+00:00",
+        "outage_open": True,
+        "outage_alert_critical": True,
+        "outage_alert_imminent": False,
+        "hours_to_critical": 0.0,
+    })
+    assert first["outage_critical_since"] == "2026-07-23T03:28:00+00:00"
+    assert first["hours_past_critical"] == 0.0
+    # Imminent cleared when critical lit.
+    assert first["outage_imminent_since"] is None
+    second = write_compact_status(path, {
+        "ts": "2026-07-23T03:40:00+00:00",
+        "outage_open": True,
+        "outage_alert_critical": True,
+        "outage_alert_imminent": False,
+        "hours_to_critical": 0.0,
+    })
+    assert second["outage_critical_since"] == "2026-07-23T03:28:00+00:00"
+    assert second["hours_past_critical"] == 0.2
+    recovered = write_compact_status(path, {
+        "ts": "2026-07-23T04:00:00+00:00",
+        "outage_open": False,
+        "outage_alert_critical": False,
+        "outage_alert_imminent": False,
+    })
+    assert recovered["outage_critical_since"] is None
+    assert recovered["hours_past_critical"] is None
+
+
 def test_outage_window_report_cli(tmp_path: Path) -> None:
     log = tmp_path / "cycles.jsonl"
     rows = [

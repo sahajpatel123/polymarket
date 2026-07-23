@@ -750,6 +750,13 @@ done without evidence (script output / tests) from that cycle.
   hours_in_imminent while imminent; live critical_at set during imminent window.
 - Evidence: unit + live during ~11.3h DOWN
 
+### T1-113 Latch outage_critical_since + hours_past_critical
+- Status: `done`
+- Done when: write_compact_status latches outage_critical_since on first
+  critical=True and preserves across ticks; clears on recovery; validate
+  requires since + hours_past_critical while critical lit; unit covers latch.
+- Evidence: unit latch/preserve/clear; ready for live ≥12h edge
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

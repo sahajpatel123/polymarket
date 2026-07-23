@@ -215,6 +215,8 @@ PRESERVE_STATUS_KEYS = (
     "outage_alert_imminent",
     "outage_imminent_since",
     "hours_in_imminent",
+    "outage_critical_since",
+    "hours_past_critical",
     "recovery_smoke",
     "recovery_smoke_blockers",
 )
@@ -242,6 +244,28 @@ def _stamp_imminent_since(status: dict[str, Any], prev: dict[str, Any]) -> None:
         status["hours_in_imminent"] = None
 
 
+def _stamp_critical_since(status: dict[str, Any], prev: dict[str, Any]) -> None:
+    """Latch outage_critical_since on first critical edge (T1-113)."""
+    critical = bool(status.get("outage_alert_critical"))
+    if not critical:
+        status["outage_critical_since"] = None
+        status["hours_past_critical"] = None
+        return
+    prev_since = prev.get("outage_critical_since")
+    if prev_since not in (None, ""):
+        status["outage_critical_since"] = prev_since
+    else:
+        status["outage_critical_since"] = status.get("ts") or datetime.now(
+            timezone.utc
+        ).isoformat()
+    since_ts = _parse_ts(status.get("outage_critical_since"))
+    now_ts = _parse_ts(status.get("ts"))
+    if since_ts is not None and now_ts is not None:
+        status["hours_past_critical"] = round(max(0.0, (now_ts - since_ts) / 3600.0), 4)
+    else:
+        status["hours_past_critical"] = None
+
+
 def write_compact_status(path: Path, status: dict[str, Any]) -> dict[str, Any]:
     """Write compact status, preserving probe/gate fields from a prior file (T1-80)."""
     prev: dict[str, Any] = {}
@@ -254,6 +278,7 @@ def write_compact_status(path: Path, status: dict[str, Any]) -> dict[str, Any]:
         if key in prev and key not in status:
             status[key] = prev[key]
     _stamp_imminent_since(status, prev)
+    _stamp_critical_since(status, prev)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(status, indent=2, sort_keys=True) + "\n")
     return status
@@ -356,6 +381,8 @@ def main() -> int:
         f"outage_alert_imminent={status['outage_alert_imminent']} "
         f"outage_imminent_since={status.get('outage_imminent_since') or '-'} "
         f"hours_in_imminent={status.get('hours_in_imminent')} "
+        f"outage_critical_since={status.get('outage_critical_since') or '-'} "
+        f"hours_past_critical={status.get('hours_past_critical')} "
         f"status_out={args.status_out or '-'}",
         file=sys.stderr,
     )
