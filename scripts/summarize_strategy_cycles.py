@@ -153,6 +153,9 @@ def main() -> int:
         "last_outage_started_at": (last.get("outage_status") or {}).get(
             "outage_started_at"
         ),
+        "last_outage_critical_at": (last.get("outage_status") or {}).get(
+            "outage_critical_at"
+        ),
         "last_tier2_allowed": (last.get("outage_status") or {}).get("tier2_allowed"),
         "last_gate_reason": (last.get("outage_status") or {}).get("gate_reason"),
         "last_unused_set": (last.get("unused_knobs") or {}).get("n_set_unused"),
@@ -187,6 +190,7 @@ def main() -> int:
             ("hours_to_critical", "last_hours_to_critical"),
             ("hours_to_imminent", "last_hours_to_imminent"),
             ("outage_started_at", "last_outage_started_at"),
+            ("outage_critical_at", "last_outage_critical_at"),
             ("hours_to_tier2_gate", "last_hours_to_tier2_gate"),
             ("outage_alert_critical", "last_outage_alert_critical"),
             ("outage_alert_imminent", "last_outage_alert_imminent"),
@@ -217,6 +221,7 @@ def main() -> int:
         f"hours_to_critical={rep['last_hours_to_critical']} "
         f"hours_to_imminent={rep['last_hours_to_imminent']} "
         f"outage_started_at={rep['last_outage_started_at']} "
+        f"outage_critical_at={rep.get('last_outage_critical_at')} "
         f"tier2_allowed={rep['last_tier2_allowed']} "
         f"quotes_per_wall_h={rep['quotes_per_wall_hour']} health={rep['last_health']} "
         f"last_requote_age_s={rep['last_requote_age_s']} "

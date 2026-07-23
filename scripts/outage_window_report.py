@@ -159,6 +159,29 @@ def _iso_ts(raw: Any) -> str | None:
         return None
 
 
+def _outage_critical_at(
+    started_at: Any,
+    *,
+    hours_to_critical: Any = None,
+    ts: Any = None,
+) -> str | None:
+    """UTC ISO when outage_alert_critical (≥12h) trips (T1-112).
+
+    Prefer ``outage_started_at + 12h``; fall back to ``ts + hours_to_critical``.
+    """
+    started = _parse_ts(started_at)
+    if started is not None:
+        return datetime.fromtimestamp(started + 12.0 * 3600.0, tz=timezone.utc).isoformat()
+    now_ts = _parse_ts(ts)
+    try:
+        h = float(hours_to_critical) if hours_to_critical is not None else None
+    except (TypeError, ValueError):
+        h = None
+    if now_ts is not None and h is not None:
+        return datetime.fromtimestamp(now_ts + h * 3600.0, tz=timezone.utc).isoformat()
+    return None
+
+
 PRESERVE_STATUS_KEYS = (
     "connectivity",
     "recovered",
@@ -187,6 +210,7 @@ PRESERVE_STATUS_KEYS = (
     "metrics_log",
     "hours_to_critical",
     "outage_started_at",
+    "outage_critical_at",
     "hours_to_imminent",
     "outage_alert_imminent",
     "outage_imminent_since",
@@ -248,9 +272,17 @@ def compact_status(rep: dict[str, Any]) -> dict[str, Any]:
             pass
     hours_crit = _hours_to_critical(total_h)
     hours_imm = _hours_to_imminent(total_h)
+    ts = datetime.now(timezone.utc).isoformat()
+    started_at = _iso_ts(cur.get("t_start"))
+    open_now = bool(rep.get("outage_open"))
+    critical_at = None
+    if open_now or started_at:
+        critical_at = _outage_critical_at(
+            started_at, hours_to_critical=hours_crit, ts=ts
+        )
     return {
-        "ts": datetime.now(timezone.utc).isoformat(),
-        "outage_open": bool(rep.get("outage_open")),
+        "ts": ts,
+        "outage_open": open_now,
         "outage_total_h": rep.get("outage_total_h"),
         "outage_alert": total_h >= 3.0,
         "outage_alert_severe": total_h >= 5.0,
@@ -265,7 +297,8 @@ def compact_status(rep: dict[str, Any]) -> dict[str, Any]:
         "hours_to_tier2_gate": _hours_to_tier2_gate(runtime_h),
         "hours_to_critical": hours_crit,
         "hours_to_imminent": hours_imm,
-        "outage_started_at": _iso_ts(cur.get("t_start")),
+        "outage_started_at": started_at,
+        "outage_critical_at": critical_at,
         "quotes": quotes,
         "n_outage_windows": rep.get("n_outage_windows"),
     }
@@ -315,6 +348,7 @@ def main() -> int:
         f"hours_to_critical={status['hours_to_critical']} "
         f"hours_to_imminent={status['hours_to_imminent']} "
         f"outage_started_at={status.get('outage_started_at') or '-'} "
+        f"outage_critical_at={status.get('outage_critical_at') or '-'} "
         f"outage_alert={status['outage_alert']} "
         f"outage_alert_severe={status['outage_alert_severe']} "
         f"outage_alert_prolonged={status['outage_alert_prolonged']} "

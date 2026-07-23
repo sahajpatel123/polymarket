@@ -63,27 +63,30 @@ age in [11h, 12h)) — final-hour warning before critical (T1-104).
 `hours_to_imminent` counts down to that 11h threshold (T1-109). When imminent
 first trips, `outage_imminent_since` latches the UTC ISO timestamp and stays
 fixed until recovery clears it (T1-110). `hours_in_imminent` is age since that
-latch; while imminent is True, validate requires `outage_imminent_since`
-(T1-111).
+latch; while imminent is True, validate requires `outage_imminent_since` and
+`hours_in_imminent` (T1-111/T1-112). `outage_critical_at` is the UTC ISO when
+the 12h critical alert will trip (`outage_started_at + 12h`, with fallback to
+`ts + hours_to_critical`) and is required while `outage_open` (T1-112).
 
 After each `strategy_tick`, `quotes` / `runtime_h` / `hours_to_tier2_gate` are
 refreshed from the live `paper_data_gate` (T1-99), not only the cycle trail.
 The tick status line reads the merged `outage_status.json` so operators see
 int quotes and `hours_to_critical` (T1-100). `strategy_tick` refreshes outage
 status **before** `summarize_strategy_cycles`, which overlays live
-`hours_to_critical` / `outage_started_at` (T1-102).
+`hours_to_critical` / `outage_started_at` / `outage_critical_at` (T1-102/T1-112).
 
 **Recommended** (warned if missing): `connectivity`, `tier2_allowed`,
 `gate_reason`, `runtime_basis`, `tape_frozen`, `eta_paused`,
 `last_requote_age_s`, `last_requote_at`, `health`, `ensure_status`,
 `collector_pid`, `deps_ok`, `n_cycles`, `c01_status`, `c01_blockers`,
 `paper_log`, `paper_log_files`, `metrics_log`, `recovery_smoke`,
-`recovery_smoke_blockers`, `hours_in_imminent`.
+`recovery_smoke_blockers`.
 
 While `outage_open=true`, validate also **requires** `hours_to_critical`,
-`hours_to_imminent`, and `outage_started_at` (T1-103/T1-109) — empty/null
-counts as missing. While `outage_alert_imminent=true`, validate also
-**requires** `outage_imminent_since` (T1-111).
+`hours_to_imminent`, `outage_started_at`, and `outage_critical_at`
+(T1-103/T1-109/T1-112) — empty/null counts as missing. While
+`outage_alert_imminent=true`, validate also **requires**
+`outage_imminent_since` and `hours_in_imminent` (T1-111/T1-112).
 
 `last_requote_at` / `last_quote_at` are UTC ISO timestamps derived from live
 paper_health ages (T1-105).

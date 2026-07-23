@@ -19,10 +19,12 @@ def _full(**overrides):
         "outage_alert_critical": False,
         "outage_alert_imminent": False,
         "outage_imminent_since": None,
+        "hours_in_imminent": None,
         "hours_to_tier2_gate": 15.63,
         "hours_to_critical": 2.66,
         "hours_to_imminent": 1.66,
         "outage_started_at": "2026-07-22T15:30:00+00:00",
+        "outage_critical_at": "2026-07-23T03:30:00+00:00",
         "runtime_h": 8.37,
         "quotes": 5529,
         "connectivity": "status=DOWN",
@@ -62,10 +64,13 @@ def test_validate_status_ok() -> None:
 
 
 def test_validate_open_outage_requires_started_at() -> None:
-    rep = validate_status(_full(outage_started_at=None, hours_to_critical=None))
+    rep = validate_status(_full(
+        outage_started_at=None, hours_to_critical=None, outage_critical_at=None
+    ))
     assert rep["ok"] is False
     assert "outage_started_at" in rep["missing"]
     assert "hours_to_critical" in rep["missing"]
+    assert "outage_critical_at" in rep["missing"]
     # Closed outages do not require the open-window fields.
     data = _full(
         outage_open=False,
@@ -81,6 +86,7 @@ def test_validate_open_outage_requires_started_at() -> None:
     data.pop("outage_started_at", None)
     data.pop("hours_to_critical", None)
     data.pop("hours_to_imminent", None)
+    data.pop("outage_critical_at", None)
     closed = validate_status(data)
     assert closed["ok"] is True
     assert "outage_started_at" not in closed["missing"]
@@ -90,14 +96,26 @@ def test_validate_imminent_requires_since() -> None:
     rep = validate_status(_full(
         outage_alert_imminent=True,
         outage_imminent_since=None,
+        hours_in_imminent=None,
         hours_to_critical=0.5,
         hours_to_imminent=0.0,
     ))
     assert rep["ok"] is False
     assert "outage_imminent_since" in rep["missing"]
+    assert "hours_in_imminent" in rep["missing"]
+    missing_hours = validate_status(_full(
+        outage_alert_imminent=True,
+        outage_imminent_since="2026-07-23T02:30:25+00:00",
+        hours_in_imminent=None,
+        hours_to_critical=0.5,
+        hours_to_imminent=0.0,
+    ))
+    assert missing_hours["ok"] is False
+    assert "hours_in_imminent" in missing_hours["missing"]
     ok = validate_status(_full(
         outage_alert_imminent=True,
         outage_imminent_since="2026-07-23T02:30:25+00:00",
+        hours_in_imminent=0.3,
         hours_to_critical=0.5,
         hours_to_imminent=0.0,
     ))

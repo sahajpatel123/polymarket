@@ -46,6 +46,7 @@ def test_compact_status_alert_thresholds() -> None:
     assert mild["hours_to_critical"] == 8.5
     assert mild["hours_to_imminent"] == 7.5
     assert mild["outage_started_at"] is None
+    assert mild["outage_critical_at"] is not None  # fallback: ts + hours_to_critical
     assert mild["hours_to_tier2_gate"] is None
     severe = compact_status({
         "outage_open": True,
@@ -63,6 +64,7 @@ def test_compact_status_alert_thresholds() -> None:
     assert severe["hours_to_critical"] == 6.5
     assert severe["hours_to_imminent"] == 5.5
     assert severe["outage_started_at"] == "2024-07-22T12:00:00+00:00"
+    assert severe["outage_critical_at"] == "2024-07-23T00:00:00+00:00"  # started+12h
     assert severe["quotes"] == 5529
     assert isinstance(severe["quotes"], int)
     prolonged = compact_status({
@@ -77,6 +79,7 @@ def test_compact_status_alert_thresholds() -> None:
     assert prolonged["hours_to_critical"] == 3.99
     assert prolonged["hours_to_imminent"] == 2.99
     assert prolonged["quotes"] == 5529
+    assert prolonged["outage_critical_at"] is not None
     imminent = compact_status({
         "outage_open": True,
         "outage_total_h": 11.2,
@@ -108,6 +111,7 @@ def test_compact_status_alert_thresholds() -> None:
     assert gated["hours_to_critical"] == 12.0
     assert gated["hours_to_imminent"] == 11.0
     assert gated["outage_alert_imminent"] is False
+    assert gated["outage_critical_at"] is None
 
 
 def test_write_compact_status_preserves_probe_fields(tmp_path: Path) -> None:

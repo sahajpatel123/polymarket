@@ -743,6 +743,13 @@ done without evidence (script output / tests) from that cycle.
   imminent=True.
 - Evidence: unit + live during ~11.2h DOWN imminent window
 
+### T1-112 outage_critical_at + require hours_in_imminent while imminent
+- Status: `done`
+- Done when: compact status includes outage_critical_at (=started+12h, else
+  ts+hours_to_critical); validate requires it while outage_open and requires
+  hours_in_imminent while imminent; live critical_at set during imminent window.
+- Evidence: unit + live during ~11.3h DOWN
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

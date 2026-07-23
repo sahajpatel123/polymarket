@@ -270,3 +270,4 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-23T02:25:00Z | Tier1 | T1-109 hours_to_imminent countdown; require outage_alert_imminent in validate | pytest outage/validate; ~10.8h DOWN; no Tier2 | merged
 2026-07-23T02:35:00Z | Tier1 | T1-110 latch outage_imminent_since on first imminent edge; live imminent=True at ~11.0h DOWN | pytest outage_window; no Tier2 | merged
 2026-07-23T02:45:00Z | Tier1 | T1-111 hours_in_imminent + require outage_imminent_since while imminent lit | pytest outage/validate; ~11.2h DOWN imminent=True; no Tier2 | merged
+2026-07-23T02:55:00Z | Tier1 | T1-112 outage_critical_at ETA + require hours_in_imminent while imminent | pytest outage/validate; ~11.3h DOWN imminent=True; no Tier2 | merged
