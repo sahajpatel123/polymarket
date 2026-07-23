@@ -102,6 +102,20 @@ def _present(data: dict[str, Any], key: str) -> bool:
     return True
 
 
+def _expected_operator_brief(data: dict[str, Any]) -> tuple[str, str]:
+    """Mirror outage_operator_brief.operator_brief mode/action (T1-120)."""
+    open_outage = bool(data.get("outage_open"))
+    critical = bool(data.get("outage_alert_critical"))
+    recovered = bool(data.get("recovered"))
+    if recovered:
+        return "RECOVERED", "run_recovery_smoke"
+    if critical and open_outage:
+        return "CRITICAL_OPEN", "await_UP_then_full_recovery"
+    if open_outage:
+        return "OUTAGE_OPEN", "await_UP_diagnose_only"
+    return "QUIET", "continue_paper_gate"
+
+
 def validate_status(
     data: dict[str, Any],
     *,
@@ -144,6 +158,14 @@ def validate_status(
                     inconsistencies.append("hours_to_critical_nonzero")
             except (TypeError, ValueError):
                 inconsistencies.append("hours_to_critical_invalid")
+    # Operator mode/action must match outage state (T1-120).
+    expected_mode, expected_action = _expected_operator_brief(data)
+    mode = data.get("operator_mode")
+    action = data.get("operator_action")
+    if mode not in (None, "") and mode != expected_mode:
+        inconsistencies.append("operator_mode_mismatch")
+    if action not in (None, "") and action != expected_action:
+        inconsistencies.append("operator_action_mismatch")
     recommended_missing = [k for k in RECOMMENDED_KEYS if k not in data]
     age_s: float | None = None
     stale = False

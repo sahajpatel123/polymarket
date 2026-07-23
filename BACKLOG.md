@@ -796,6 +796,12 @@ done without evidence (script output / tests) from that cycle.
   operator_action; validate requires both keys; live CRITICAL_OPEN in status.
 - Evidence: unit + live during ~12.5h DOWN critical
 
+### T1-120 Validate operator_mode/action match outage state
+- Status: `done`
+- Done when: validate fails on operator_mode/action mismatch vs expected brief
+  mapping; live CRITICAL_OPEN status passes.
+- Evidence: unit mismatch + live during ~12.7h DOWN critical
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

@@ -195,6 +195,42 @@ def test_validate_critical_state_consistency() -> None:
     assert "hours_to_critical_nonzero" in rep["inconsistencies"]
 
 
+def test_validate_operator_mode_consistency() -> None:
+    bad = validate_status(_full(
+        outage_alert_critical=True,
+        outage_alert_imminent=False,
+        outage_alert_final=False,
+        operator_mode="OUTAGE_OPEN",
+        operator_action="await_UP_diagnose_only",
+        outage_total_h=12.1,
+        hours_to_critical=0.0,
+        minutes_to_critical=0,
+        hours_to_imminent=0.0,
+        outage_critical_since="2026-07-23T03:28:00+00:00",
+        hours_past_critical=0.5,
+        minutes_past_critical=30,
+    ))
+    assert bad["ok"] is False
+    assert "operator_mode_mismatch" in bad["inconsistencies"]
+    assert "operator_action_mismatch" in bad["inconsistencies"]
+    ok = validate_status(_full(
+        outage_alert_critical=True,
+        outage_alert_imminent=False,
+        outage_alert_final=False,
+        operator_mode="CRITICAL_OPEN",
+        operator_action="await_UP_then_full_recovery",
+        outage_total_h=12.1,
+        hours_to_critical=0.0,
+        minutes_to_critical=0,
+        hours_to_imminent=0.0,
+        outage_critical_since="2026-07-23T03:28:00+00:00",
+        hours_past_critical=0.5,
+        minutes_past_critical=30,
+    ))
+    assert ok["ok"] is True
+    assert ok["inconsistencies"] == []
+
+
 def test_validate_status_missing_keys() -> None:
     rep = validate_status({"ts": "2026-07-22T21:00:00+00:00", "outage_open": True})
     assert rep["ok"] is False
