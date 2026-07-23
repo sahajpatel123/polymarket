@@ -146,6 +146,8 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
 
 - **Update 2026-07-23T00:35Z (T1-98):** Gate/health now union active+rotated ``paper.jsonl`` so midnight rotation cannot freeze the 24h clock after recovery. Still blocked on outage (~9h DOWN, quotes=5529).
 
+- **Update 2026-07-23T00:45Z (T1-99):** `outage_alert_critical` (≥12h) + live gate overwrites `quotes`/`runtime_h` in status. Still ~9.2h DOWN; C-01 blocked.
+
 ## C-02 Prefer higher-reward market weight (selection)
 
 - **Hypothesis:** live scorecard shows one market earning ~2× reward/hour of

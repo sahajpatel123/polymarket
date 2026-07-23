@@ -128,6 +128,9 @@ def main() -> int:
         "last_outage_alert_prolonged": (last.get("c01") or {}).get(
             "outage_alert_prolonged"
         ),
+        "last_outage_alert_critical": (last.get("c01") or {}).get(
+            "outage_alert_critical"
+        ),
         "last_outage_open": (last.get("outage") or {}).get("open"),
         "last_outage_total_h": (last.get("outage") or {}).get("total_h"),
         "last_hours_to_tier2_gate": (last.get("outage_status") or {}).get(
@@ -165,6 +168,7 @@ def main() -> int:
         f"outage_alert={rep['last_outage_alert']} "
         f"outage_alert_severe={rep['last_outage_alert_severe']} "
         f"outage_alert_prolonged={rep['last_outage_alert_prolonged']} "
+        f"outage_alert_critical={rep['last_outage_alert_critical']} "
         f"hours_to_tier2_gate={rep['last_hours_to_tier2_gate']} "
         f"tier2_allowed={rep['last_tier2_allowed']} "
         f"quotes_per_wall_h={rep['quotes_per_wall_hour']} health={rep['last_health']} "

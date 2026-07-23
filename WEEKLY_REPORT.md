@@ -5,17 +5,17 @@ autonomous loop. Not an action request.
 
 ## Week of 2026-07-23 (UTC)
 
-Generated: `2026-07-23T00:33:53Z` (via `scripts/write_weekly_report.py`)
+Generated: `2026-07-23T00:40:53Z` (via `scripts/write_weekly_report.py`)
 
 ### System
 
 | Item | Status |
 |------|--------|
-| Branch | `git log -1` → `4bda367 Surface selected paper_log path in outage_status (T1-97).` |
+| Branch | `git log -1` → `d3ffafd Union rotated paper.jsonl family for gate runtime (T1-98).` |
 | Paper trading | `78216 /Users/sahajpatel/Code/polymarket/.venv/bin/python3 /Users/sahajpatel/Code/polymarket/.venv/bin/polymaker run --paper --config-dir livecfg` |
 | Loop | 10m Agent-1 strategy-pricing cadence; Tier-2 gated on hours |
-| Tier-1 changelog lines | `142` (from `CHANGELOG_AGENT.md`) |
-| Tier-1 backlog done | `98` (from `BACKLOG.md` Status: done) |
+| Tier-1 changelog lines | `144` (from `CHANGELOG_AGENT.md`) |
+| Tier-1 backlog done | `99` (from `BACKLOG.md` Status: done) |
 
 ### Tier-2 PRs
 
@@ -30,16 +30,17 @@ Open candidates: `docs/STRATEGY_CANDIDATES.md` (C-01…C-04).
 `logs/outage_status.json`:
 
 ```
-ts=2026-07-23T00:33:28.443339+00:00
+ts=2026-07-23T00:40:28.666183+00:00
 connectivity=status=DOWN rest_ok=False ws_ok=False
 outage_open=True
-outage_total_h=9.0932
+outage_total_h=9.2099
 outage_alert=True
 outage_alert_severe=True
 outage_alert_prolonged=True
+outage_alert_critical=False
 runtime_h=8.37
 hours_to_tier2_gate=15.63
-quotes=5529.0
+quotes=5529
 tier2_allowed=False
 gate_reason=need_hours>=24.0
 runtime_basis=requote
@@ -49,13 +50,13 @@ deps_bumps=0
 deps_flagged=21
 tape_frozen=True
 eta_paused=True
-last_requote_age_s=33088.715
-last_quote_age_s=33088.717
+last_requote_age_s=33509.086
+last_quote_age_s=33509.088
 health=STALE
 ensure_status=NEEDS_RESTART
 collector_pid=78216
 collector_pids=[78216]
-n_cycles=80
+n_cycles=81
 c01_status=BLOCKED
 c01_blockers=hours_ok,health_ok,outage_closed,oos_replicated,holdout_not_thin
 paper_log=/Users/sahajpatel/Code/polymarket/livecfg/logs/paper.jsonl.2026-07-22
@@ -72,10 +73,10 @@ log_path=/Users/sahajpatel/Code/polymarket/livecfg/logs/paper.jsonl.2026-07-22
 log_files=2
 log_paths=/Users/sahajpatel/Code/polymarket/livecfg/logs/paper.jsonl,/Users/sahajpatel/Code/polymarket/livecfg/logs/paper.jsonl.2026-07-22
 metrics_path=/Users/sahajpatel/Code/polymarket/livecfg/logs/metrics-paper.jsonl
-status=OK lines=5687 json_lines=5687 bad_lines=0
+status=OK lines=5707 json_lines=5707 bad_lines=0
 runtime_basis=requote
 runtime_hours=8.3700
-runtime_hours_all_events=17.5691
+runtime_hours_all_events=17.6841
 quote_events=5529
 requote_lines=2843
 quotes_for_gate=5529
@@ -103,13 +104,13 @@ status=OK requotes=2843 trending_frac=0.042912 false_trending_frac=1.0 false_tre
 `uv run python scripts/c01_promotion_checklist.py`:
 
 ```
-status=BLOCKED blockers=hours_ok,health_ok,outage_closed,oos_replicated,holdout_not_thin runtime_h=8.3700 quotes=5529 health=STALE last_requote_age_s=33119.378 outage_open=True outage_total_h=9.1007 outage_alert=True outage_alert_severe=True outage_alert_prolonged=True oos=False thin=True vol_gap=0.04 quiet_vol_max=1.989 trend_vol_min=2.029 suggested_vol=2.489 suppress_2=0.0 suppress_suggested=0.1875 suppress_target=1.0 false_trending_attr_frac=1.0 boundary_tight=True
+status=BLOCKED blockers=hours_ok,health_ok,outage_closed,oos_replicated,holdout_not_thin runtime_h=8.3700 quotes=5529 health=STALE last_requote_age_s=33539.551 outage_open=True outage_total_h=9.2174 outage_alert=True outage_alert_severe=True outage_alert_prolonged=True outage_alert_critical=False oos=False thin=True vol_gap=0.04 quiet_vol_max=1.989 trend_vol_min=2.029 suggested_vol=2.489 suppress_2=0.0 suppress_suggested=0.1875 suppress_target=1.0 false_trending_attr_frac=1.0 boundary_tight=True
 ```
 
 `uv run python scripts/summarize_strategy_cycles.py`:
 
 ```
-status=OK cycles=81 runtime_h=8.37 hours_remaining=15.63 eta_wall_h=None eta_paused=True outage_open=True outage_total_h=9.1007 outage_alert=True outage_alert_severe=True outage_alert_prolonged=True hours_to_tier2_gate=15.63 tier2_allowed=False quotes_per_wall_h=268.25 health=STALE last_requote_age_s=33090.415 tape_frozen=True connectivity=DOWN crossed_frac=0.0000 markout_30s=0.000006 false_trending_frac=0.0 false_trending_cancel_share=0.0 vol_only_frac=None vol_gap=None quiet_vol_max=None trend_vol_min=None suggested_vol=None false_trending_attr_frac=None c01=BLOCKED c01_blockers=hours_ok,health_ok,outage_closed,oos_replicated,holdout_not_thin suppress_2=0.0 suppress_suggested=0.1875 suppress_target=1.0 unused_set=9 paper_schema=OK
+status=OK cycles=82 runtime_h=8.37 hours_remaining=15.63 eta_wall_h=None eta_paused=True outage_open=True outage_total_h=9.2174 outage_alert=True outage_alert_severe=True outage_alert_prolonged=True outage_alert_critical=False hours_to_tier2_gate=15.63 tier2_allowed=False quotes_per_wall_h=266.24 health=STALE last_requote_age_s=33510.729 tape_frozen=True connectivity=DOWN crossed_frac=0.0000 markout_30s=0.000006 false_trending_frac=0.0 false_trending_cancel_share=0.0 vol_only_frac=None vol_gap=None quiet_vol_max=None trend_vol_min=None suggested_vol=None false_trending_attr_frac=None c01=BLOCKED c01_blockers=hours_ok,health_ok,outage_closed,oos_replicated,holdout_not_thin suppress_2=0.0 suppress_suggested=0.1875 suppress_target=1.0 unused_set=9 paper_schema=OK
 ```
 
 ### Dependency / security audit

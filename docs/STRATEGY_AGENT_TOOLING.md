@@ -55,7 +55,11 @@ Compact monitor snapshot written by `strategy_tick` / `outage_window_report`
 
 **Required** (fail if missing): `ts`, `outage_open`, `outage_total_h`,
 `outage_alert` (≥3h), `outage_alert_severe` (≥5h), `outage_alert_prolonged`
-(≥8h), `hours_to_tier2_gate`, `runtime_h`, `quotes`.
+(≥8h), `outage_alert_critical` (≥12h), `hours_to_tier2_gate`, `runtime_h`,
+`quotes` (int from live gate when available).
+
+After each `strategy_tick`, `quotes` / `runtime_h` / `hours_to_tier2_gate` are
+refreshed from the live `paper_data_gate` (T1-99), not only the cycle trail.
 
 **Recommended** (warned if missing): `connectivity`, `tier2_allowed`,
 `gate_reason`, `runtime_basis`, `tape_frozen`, `eta_paused`,

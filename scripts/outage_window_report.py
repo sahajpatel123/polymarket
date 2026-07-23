@@ -177,6 +177,12 @@ def compact_status(rep: dict[str, Any]) -> dict[str, Any]:
     cur = rep.get("current") or {}
     total_h = float(rep.get("outage_total_h") or 0.0)
     runtime_h = cur.get("runtime_hours_end")
+    quotes = cur.get("quotes_end")
+    if quotes is not None:
+        try:
+            quotes = int(float(quotes))
+        except (TypeError, ValueError):
+            pass
     return {
         "ts": datetime.now(timezone.utc).isoformat(),
         "outage_open": bool(rep.get("outage_open")),
@@ -184,10 +190,11 @@ def compact_status(rep: dict[str, Any]) -> dict[str, Any]:
         "outage_alert": total_h >= 3.0,
         "outage_alert_severe": total_h >= 5.0,
         "outage_alert_prolonged": total_h >= 8.0,
+        "outage_alert_critical": total_h >= 12.0,
         "current_duration_s": cur.get("duration_s"),
         "runtime_h": runtime_h,
         "hours_to_tier2_gate": _hours_to_tier2_gate(runtime_h),
-        "quotes": cur.get("quotes_end"),
+        "quotes": quotes,
         "n_outage_windows": rep.get("n_outage_windows"),
     }
 
@@ -236,6 +243,7 @@ def main() -> int:
         f"outage_alert={status['outage_alert']} "
         f"outage_alert_severe={status['outage_alert_severe']} "
         f"outage_alert_prolonged={status['outage_alert_prolonged']} "
+        f"outage_alert_critical={status['outage_alert_critical']} "
         f"status_out={args.status_out or '-'}",
         file=sys.stderr,
     )

@@ -653,6 +653,12 @@ done without evidence (script output / tests) from that cycle.
   → union 3h; outage_status may carry paper_log_files.
 - Evidence: unit test runtime_hours=3.0000; live log_files=2 while DOWN
 
+### T1-99 Live gate quotes/runtime + critical (≥12h) outage alert
+- Status: `done`
+- Done when: strategy_tick maps gate quotes/runtime into outage_status ints;
+  outage_alert_critical fires at ≥12h; validate requires the key; quotes not float.
+- Evidence: live quotes=5529 (int), outage_alert_critical=False at ~9.2h DOWN
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

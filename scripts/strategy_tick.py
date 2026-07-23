@@ -45,7 +45,7 @@ def _parse_kv(line: str) -> dict[str, str]:
 
 
 def _parse_gate_stdout(stdout: str) -> dict[str, Any]:
-    """Pull Tier-2 gate fields from paper_data_gate stdout (T1-80/T1-97)."""
+    """Pull Tier-2 gate fields from paper_data_gate stdout (T1-80/T1-97/T1-99)."""
     kv: dict[str, str] = {}
     wanted = {
         "tier2_allowed",
@@ -101,6 +101,16 @@ def _parse_gate_stdout(stdout: str) -> dict[str, Any]:
             out["paper_log_files"] = int(kv["log_files"])
         except ValueError:
             out["paper_log_files"] = kv["log_files"]
+    # Prefer live gate values for the canonical outage_status keys (T1-99).
+    if "gate_quotes" in out:
+        out["quotes"] = out["gate_quotes"]
+    if "gate_runtime_h" in out:
+        out["runtime_h"] = out["gate_runtime_h"]
+        try:
+            rh = float(out["gate_runtime_h"])
+            out["hours_to_tier2_gate"] = round(max(0.0, 24.0 - rh), 2)
+        except (TypeError, ValueError):
+            pass
     return out
 
 
@@ -388,6 +398,7 @@ def main() -> int:
         f"outage_alert={c01.get('outage_alert') or outage.get('outage_alert')} "
         f"outage_alert_severe={c01.get('outage_alert_severe') or outage.get('outage_alert_severe')} "
         f"outage_alert_prolonged={c01.get('outage_alert_prolonged') or outage.get('outage_alert_prolonged')} "
+        f"outage_alert_critical={c01.get('outage_alert_critical') or outage.get('outage_alert_critical')} "
         f"outage_total_h={outage.get('total_h')} "
         f"hours_to_tier2_gate={outage.get('hours_to_tier2_gate')} "
         f"quotes={outage.get('quotes')} "

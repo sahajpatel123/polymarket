@@ -32,6 +32,9 @@ def test_parse_gate_stdout() -> None:
     assert fields["runtime_basis"] == "requote"
     assert fields["gate_runtime_h"] == 8.37
     assert fields["gate_quotes"] == 5529
+    assert fields["quotes"] == 5529
+    assert fields["runtime_h"] == 8.37
+    assert fields["hours_to_tier2_gate"] == 15.63
     assert fields["paper_log"].endswith("paper.jsonl.2026-07-22")
     assert fields["paper_log_files"] == 2
     assert fields["metrics_log"].endswith("metrics-paper.jsonl")
