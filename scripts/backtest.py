@@ -192,24 +192,17 @@ def main() -> int:
     # Discover condition IDs from the journal
     cids = discover_condition_ids(journal_path)
     if not cids:
-        # Try extracting from journal rows (market field used as condition_id)
+        # Try extracting ALL market IDs from journal rows
         from polymaker.replay import load_journal
 
         rows = load_journal(journal_path)
+        seen: set[str] = set()
         for row in rows:
             if isinstance(row.get("data"), dict):
                 cid = str(row["data"].get("market", ""))
                 if cid and cid not in ("0xreplay", ""):
-                    cids = [cid]
-                    break
-        if not cids:
-            # Fall back to "0xreplay" for synthetic journals
-            for row in rows:
-                if isinstance(row.get("data"), dict):
-                    cid = str(row["data"].get("market", ""))
-                    if cid:
-                        cids = [cid]
-                        break
+                    seen.add(cid)
+        cids = sorted(seen)
         if not cids:
             print("ERROR: no condition IDs found in journal", file=sys.stderr)
             return 1
