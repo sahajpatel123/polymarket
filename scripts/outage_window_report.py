@@ -163,6 +163,8 @@ PRESERVE_STATUS_KEYS = (
     "eta_paused",
     "last_requote_age_s",
     "last_quote_age_s",
+    "last_requote_at",
+    "last_quote_at",
     "health",
     "ensure_status",
     "collector_pids",

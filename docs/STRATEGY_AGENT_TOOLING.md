@@ -70,12 +70,15 @@ status **before** `summarize_strategy_cycles`, which overlays live
 
 **Recommended** (warned if missing): `connectivity`, `tier2_allowed`,
 `gate_reason`, `runtime_basis`, `tape_frozen`, `eta_paused`,
-`last_requote_age_s`, `health`, `ensure_status`, `collector_pid`, `deps_ok`,
+`last_requote_age_s`, `last_requote_at`, `health`, `ensure_status`, `collector_pid`, `deps_ok`,
 `n_cycles`, `c01_status`, `c01_blockers`, `paper_log`, `paper_log_files`,
 `metrics_log`, `outage_alert_imminent`.
 
 While `outage_open=true`, validate also **requires** `hours_to_critical` and
 `outage_started_at` (T1-103) — empty/null counts as missing.
+
+`last_requote_at` / `last_quote_at` are UTC ISO timestamps derived from live
+paper_health ages (T1-105).
 
 **Paper log rotation:** `TimedRotatingFileHandler` rolls
 `livecfg/logs/paper.jsonl` to `paper.jsonl.YYYY-MM-DD` at midnight. Richest-log

@@ -30,6 +30,7 @@ def _full(**overrides):
         "tape_frozen": True,
         "eta_paused": True,
         "last_requote_age_s": 28000.0,
+        "last_requote_at": "2026-07-22T13:13:20+00:00",
         "health": "STALE",
         "ensure_status": "NEEDS_RESTART",
         "collector_pid": 78216,

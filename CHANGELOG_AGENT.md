@@ -263,3 +263,4 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-23T01:15:00Z | Tier1 | T1-102 reorder strategy_tick: merge outage_status before summarize; overlay live critical countdown | ~9.7h DOWN; no Tier2 | merged
 2026-07-23T01:25:00Z | Tier1 | T1-103 validate requires hours_to_critical+outage_started_at while outage_open | pytest validate_outage_status; ~9.8h DOWN; no Tier2 | merged
 2026-07-23T01:35:00Z | Tier1 | T1-104 outage_alert_imminent when ≤1h to critical (11–12h window) | pytest outage/validate; ~10.0h DOWN imminent=False; no Tier2 | merged
+2026-07-23T01:45:00Z | Tier1 | T1-105 last_requote_at/last_quote_at ISO from live health ages in outage_status | pytest strategy_tick/validate; ~10.2h DOWN; no Tier2 | merged

@@ -66,6 +66,15 @@ def test_live_health_fields_overwrite_stale_age() -> None:
     assert fields["tape_frozen"] is True
     assert fields["last_requote_age_s"] == 25845.5
     assert fields["last_quote_age_s"] == 25840.1
+    assert "last_requote_at" in fields
+    assert "last_quote_at" in fields
+    assert fields["last_requote_at"].endswith("+00:00") or fields["last_requote_at"].endswith("Z")
+    # Age → absolute: requote_at should be ~age seconds before now.
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc).timestamp()
+    req_ts = datetime.fromisoformat(fields["last_requote_at"]).timestamp()
+    assert abs((now - req_ts) - 25845.5) < 2.0
 
 
 def test_ensure_collector_fields() -> None:

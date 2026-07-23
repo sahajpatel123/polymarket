@@ -73,6 +73,8 @@ def _mark_recovered(status_out: str, *, connectivity: str, waited_s: float) -> N
         outage_alert_imminent=False,
         outage_started_at=None,
         hours_to_critical=12.0,
+        last_requote_at=None,
+        last_quote_at=None,
         connectivity=connectivity,
         waited_s=waited_s,
     )

@@ -86,6 +86,8 @@ def _outage_status_block(path: Path) -> str:
         "eta_paused",
         "last_requote_age_s",
         "last_quote_age_s",
+        "last_requote_at",
+        "last_quote_at",
         "health",
         "ensure_status",
         "collector_pid",

@@ -46,6 +46,7 @@ RECOMMENDED_KEYS = (
     "tape_frozen",
     "eta_paused",
     "last_requote_age_s",
+    "last_requote_at",
     "health",
     "ensure_status",
     "collector_pid",

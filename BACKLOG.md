@@ -693,6 +693,13 @@ done without evidence (script output / tests) from that cycle.
   11.2h→True and 12.01h→False; live False at ~10h with hours_to_critical≈2.
 - Evidence: unit + live outage_alert_imminent=False at ~10.0h DOWN
 
+### T1-105 last_requote_at ISO in outage_status
+- Status: `done`
+- Done when: strategy_tick derives last_requote_at/last_quote_at from live
+  health ages; preserve+recommend keys; recovery clears them; live status
+  shows ISO while STALE.
+- Evidence: live last_requote_at present during ~10.2h DOWN
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

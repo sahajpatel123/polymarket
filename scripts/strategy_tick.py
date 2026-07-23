@@ -154,16 +154,33 @@ def _summarize_freeze_fields(sm: dict[str, Any]) -> dict[str, Any]:
 
 
 def _live_health_fields(health: dict[str, Any]) -> dict[str, Any]:
-    """Prefer live paper_health ages over stale cycle-trail values (T1-87)."""
+    """Prefer live paper_health ages over stale cycle-trail values (T1-87/T1-105)."""
     out: dict[str, Any] = {}
     status = str(health.get("status") or "")
     if status in {"OK", "STALE"}:
         out["health"] = status
         out["tape_frozen"] = status == "STALE"
+    now = datetime.now(timezone.utc)
     if health.get("last_requote_age_s") not in (None, ""):
-        out["last_requote_age_s"] = _coerce_status_value(str(health["last_requote_age_s"]))
+        age = _coerce_status_value(str(health["last_requote_age_s"]))
+        out["last_requote_age_s"] = age
+        try:
+            age_f = float(age)
+            out["last_requote_at"] = datetime.fromtimestamp(
+                now.timestamp() - age_f, tz=timezone.utc
+            ).isoformat()
+        except (TypeError, ValueError, OSError, OverflowError):
+            pass
     if health.get("last_quote_age_s") not in (None, ""):
-        out["last_quote_age_s"] = _coerce_status_value(str(health["last_quote_age_s"]))
+        age = _coerce_status_value(str(health["last_quote_age_s"]))
+        out["last_quote_age_s"] = age
+        try:
+            age_f = float(age)
+            out["last_quote_at"] = datetime.fromtimestamp(
+                now.timestamp() - age_f, tz=timezone.utc
+            ).isoformat()
+        except (TypeError, ValueError, OSError, OverflowError):
+            pass
     return out
 
 
@@ -426,6 +443,7 @@ def main() -> int:
         f"collector_pid={ost.get('collector_pid', ensure.get('pids'))} "
         f"n_cycles={ost.get('n_cycles', sm.get('cycles'))} "
         f"last_requote_age_s={ost.get('last_requote_age_s', health.get('last_requote_age_s') or sm.get('last_requote_age_s'))} "
+        f"last_requote_at={ost.get('last_requote_at') or '-'} "
         f"runtime_h={ost.get('runtime_h', sm.get('runtime_h'))} "
         f"eta_paused={ost.get('eta_paused', sm.get('eta_paused'))} "
         f"tape_frozen={ost.get('tape_frozen', sm.get('tape_frozen'))} "
