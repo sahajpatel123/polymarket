@@ -89,6 +89,8 @@ def test_validate_open_outage_requires_started_at() -> None:
         outage_alert_severe=False,
         outage_alert_prolonged=False,
         outage_alert_critical=False,
+        operator_mode="QUIET",
+        operator_action="continue_paper_gate",
         tape_frozen=False,
         eta_paused=False,
         health="OK",
