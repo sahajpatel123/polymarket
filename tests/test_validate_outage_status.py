@@ -44,6 +44,7 @@ def _full(**overrides):
         "metrics_log": "livecfg/logs/metrics-paper.jsonl",
         "recovery_smoke": "FAIL",
         "recovery_smoke_blockers": "connectivity_up",
+        "outage_imminent_since": None,
     }
     base.update(overrides)
     return base

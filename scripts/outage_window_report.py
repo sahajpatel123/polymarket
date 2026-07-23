@@ -189,9 +189,25 @@ PRESERVE_STATUS_KEYS = (
     "outage_started_at",
     "hours_to_imminent",
     "outage_alert_imminent",
+    "outage_imminent_since",
     "recovery_smoke",
     "recovery_smoke_blockers",
 )
+
+
+def _stamp_imminent_since(status: dict[str, Any], prev: dict[str, Any]) -> None:
+    """Latch outage_imminent_since on first imminent edge (T1-110)."""
+    imminent = bool(status.get("outage_alert_imminent"))
+    if not imminent:
+        status["outage_imminent_since"] = None
+        return
+    prev_since = prev.get("outage_imminent_since")
+    if prev_since not in (None, ""):
+        status["outage_imminent_since"] = prev_since
+    else:
+        status["outage_imminent_since"] = status.get("ts") or datetime.now(
+            timezone.utc
+        ).isoformat()
 
 
 def write_compact_status(path: Path, status: dict[str, Any]) -> dict[str, Any]:
@@ -205,6 +221,7 @@ def write_compact_status(path: Path, status: dict[str, Any]) -> dict[str, Any]:
     for key in PRESERVE_STATUS_KEYS:
         if key in prev and key not in status:
             status[key] = prev[key]
+    _stamp_imminent_since(status, prev)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(status, indent=2, sort_keys=True) + "\n")
     return status
@@ -295,6 +312,7 @@ def main() -> int:
         f"outage_alert_prolonged={status['outage_alert_prolonged']} "
         f"outage_alert_critical={status['outage_alert_critical']} "
         f"outage_alert_imminent={status['outage_alert_imminent']} "
+        f"outage_imminent_since={status.get('outage_imminent_since') or '-'} "
         f"status_out={args.status_out or '-'}",
         file=sys.stderr,
     )

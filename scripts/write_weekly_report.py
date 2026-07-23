@@ -75,6 +75,7 @@ def _outage_status_block(path: Path) -> str:
         "outage_started_at",
         "recovery_smoke",
         "recovery_smoke_blockers",
+        "outage_imminent_since",
         "runtime_h",
         "hours_to_tier2_gate",
         "quotes",

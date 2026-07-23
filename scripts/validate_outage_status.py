@@ -61,6 +61,7 @@ RECOMMENDED_KEYS = (
     "metrics_log",
     "recovery_smoke",
     "recovery_smoke_blockers",
+    "outage_imminent_since",
 )
 
 

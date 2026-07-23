@@ -268,3 +268,4 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-23T02:05:00Z | Tier1 | T1-107 await recovery runs recovery_smoke; accept connectivity status=OK as UP | pytest await/recovery_smoke; ~10.5h DOWN; no Tier2 | merged
 2026-07-23T02:15:00Z | Tier1 | T1-108 diagnose-only await probe (UP_DIAGNOSE) must not clear outage_open; strategy_tick passes --no-smoke | pytest await; ~10.7h DOWN; no Tier2 | merged
 2026-07-23T02:25:00Z | Tier1 | T1-109 hours_to_imminent countdown; require outage_alert_imminent in validate | pytest outage/validate; ~10.8h DOWN; no Tier2 | merged
+2026-07-23T02:35:00Z | Tier1 | T1-110 latch outage_imminent_since on first imminent edge; live imminent=True at ~11.0h DOWN | pytest outage_window; no Tier2 | merged

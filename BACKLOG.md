@@ -729,6 +729,13 @@ done without evidence (script output / tests) from that cycle.
   requires hours_to_imminent; live countdown ~0.16h before imminent.
 - Evidence: unit + live hours_to_imminent during ~10.8h DOWN
 
+### T1-110 Latch outage_imminent_since on first imminent edge
+- Status: `done`
+- Done when: write_compact_status stamps outage_imminent_since on first
+  imminent=True and preserves it across ticks; clears on imminent=False /
+  recovery; live status shows since after crossing 11h.
+- Evidence: live outage_alert_imminent=True at ~11.0h with outage_imminent_since set
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

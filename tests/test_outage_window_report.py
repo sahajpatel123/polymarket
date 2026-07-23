@@ -122,12 +122,39 @@ def test_write_compact_status_preserves_probe_fields(tmp_path: Path) -> None:
         "outage_open": True,
         "outage_total_h": 6.0,
         "hours_to_tier2_gate": 15.63,
+        "outage_alert_imminent": False,
     })
     assert written["connectivity"] == "status=DOWN"
     assert written["recovered"] is False
     assert written["tier2_allowed"] is False
     assert written["gate_reason"] == "need_hours>=24.0"
     assert written["outage_open"] is True
+    assert written["outage_imminent_since"] is None
+
+
+def test_write_compact_status_latches_imminent_since(tmp_path: Path) -> None:
+    path = tmp_path / "outage_status.json"
+    first = write_compact_status(path, {
+        "ts": "2026-07-23T02:28:00+00:00",
+        "outage_open": True,
+        "outage_alert_imminent": True,
+        "hours_to_critical": 0.99,
+    })
+    assert first["outage_imminent_since"] == "2026-07-23T02:28:00+00:00"
+    second = write_compact_status(path, {
+        "ts": "2026-07-23T02:40:00+00:00",
+        "outage_open": True,
+        "outage_alert_imminent": True,
+        "hours_to_critical": 0.8,
+    })
+    # Latched — must not advance with later ticks.
+    assert second["outage_imminent_since"] == "2026-07-23T02:28:00+00:00"
+    cleared = write_compact_status(path, {
+        "ts": "2026-07-23T03:00:00+00:00",
+        "outage_open": False,
+        "outage_alert_imminent": False,
+    })
+    assert cleared["outage_imminent_since"] is None
 
 
 def test_outage_window_report_cli(tmp_path: Path) -> None:
