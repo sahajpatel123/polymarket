@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC
+
 import scripts.strategy_tick as tick
 
 
@@ -70,9 +72,9 @@ def test_live_health_fields_overwrite_stale_age() -> None:
     assert "last_quote_at" in fields
     assert fields["last_requote_at"].endswith("+00:00") or fields["last_requote_at"].endswith("Z")
     # Age → absolute: requote_at should be ~age seconds before now.
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    now = datetime.now(timezone.utc).timestamp()
+    now = datetime.now(UTC).timestamp()
     req_ts = datetime.fromisoformat(fields["last_requote_at"]).timestamp()
     assert abs((now - req_ts) - 25845.5) < 2.0
 
