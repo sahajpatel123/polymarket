@@ -41,6 +41,26 @@ class EngineConfig(BaseModel):
     heartbeat_interval_s: float = 5.0
     journal: bool = True
     loop: str = "uvloop"
+    # ── auto market discovery ──
+    # When enabled, the engine periodically re-scans Gamma for new markets that
+    # pass the score filter and auto-adds them to the live trade list. No
+    # manual `markets-add` needed — the bot finds and trades new markets on
+    # its own. When disabled, the engine only trades markets listed in
+    # markets.toml at startup (legacy behavior).
+    auto_discovery_enabled: bool = False
+    # Seconds between auto-discovery scans. 3600 = hourly, 900 = every 15 min.
+    auto_discovery_interval_s: float = 3600.0
+    # Gamma tag slugs to scan (e.g. ("politics", "sports", "crypto")).
+    auto_discovery_tags: tuple[str, ...] = ("politics",)
+    # Minimum scanner score to auto-add a market (filters junk).
+    auto_discovery_min_score: float = 0.01
+    # Maximum number of auto-discovered markets to trade simultaneously.
+    # Hard cap to prevent resource exhaustion from market spam.
+    auto_discovery_max_markets: int = 20
+    # Profile to assign to auto-discovered markets.
+    auto_discovery_profile: str = "political-longdated"
+    # Hot-reload markets.toml when it changes on disk (via watchfiles).
+    auto_discovery_hot_reload: bool = True
 
 
 class RiskConfig(BaseModel):

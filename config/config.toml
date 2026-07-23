@@ -29,6 +29,19 @@ heartbeat = true                # exchange dead-man switch
 heartbeat_interval_s = 5
 journal = true                  # append raw WS/orders to journal/ for backtest
 loop = "uvloop"                 # "uvloop" | "asyncio"
+# ── auto market discovery (self-trading new markets) ──
+# When enabled, the engine periodically re-scans Gamma for new markets across
+# the configured tags, filters by score, and auto-adds them to the live trade
+# list. The bot finds and trades new markets on its own — no manual
+# `polymaker markets-add` needed. Off by default for safety; turn on once
+# you've validated the scanner score filter on your target categories.
+auto_discovery_enabled = false
+auto_discovery_interval_s = 3600.0    # hourly re-scan (3600s)
+auto_discovery_tags = ["politics"]    # Gamma tag slugs to scan
+auto_discovery_min_score = 0.01        # min scanner score to auto-add
+auto_discovery_max_markets = 20        # cap on auto-discovered markets
+auto_discovery_profile = "political-longdated"
+auto_discovery_hot_reload = true       # watch markets.toml for manual edits
 
 [risk]
 max_total_exposure_usdc = 450.0     # sum of filled inventory notional (intentionally excludes open buy notional to avoid self-churn)
