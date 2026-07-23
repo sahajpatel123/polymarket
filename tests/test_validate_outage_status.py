@@ -22,6 +22,7 @@ def _full(**overrides):
         "hours_in_imminent": None,
         "hours_to_tier2_gate": 15.63,
         "hours_to_critical": 2.66,
+        "minutes_to_critical": 160,
         "hours_to_imminent": 1.66,
         "outage_started_at": "2026-07-22T15:30:00+00:00",
         "outage_critical_at": "2026-07-23T03:30:00+00:00",
@@ -67,11 +68,15 @@ def test_validate_status_ok() -> None:
 
 def test_validate_open_outage_requires_started_at() -> None:
     rep = validate_status(_full(
-        outage_started_at=None, hours_to_critical=None, outage_critical_at=None
+        outage_started_at=None,
+        hours_to_critical=None,
+        minutes_to_critical=None,
+        outage_critical_at=None,
     ))
     assert rep["ok"] is False
     assert "outage_started_at" in rep["missing"]
     assert "hours_to_critical" in rep["missing"]
+    assert "minutes_to_critical" in rep["missing"]
     assert "outage_critical_at" in rep["missing"]
     # Closed outages do not require the open-window fields.
     data = _full(
@@ -87,6 +92,7 @@ def test_validate_open_outage_requires_started_at() -> None:
     )
     data.pop("outage_started_at", None)
     data.pop("hours_to_critical", None)
+    data.pop("minutes_to_critical", None)
     data.pop("hours_to_imminent", None)
     data.pop("outage_critical_at", None)
     closed = validate_status(data)

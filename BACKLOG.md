@@ -757,6 +757,12 @@ done without evidence (script output / tests) from that cycle.
   requires since + hours_past_critical while critical lit; unit covers latch.
 - Evidence: unit latch/preserve/clear; ready for live ≥12h edge
 
+### T1-114 minutes_to_critical countdown
+- Status: `done`
+- Done when: compact status includes minutes_to_critical (=round(hours*60));
+  validate requires it while outage_open; live value during final half-hour.
+- Evidence: unit + live during ~11.7h DOWN imminent window
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

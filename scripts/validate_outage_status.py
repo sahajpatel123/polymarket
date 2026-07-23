@@ -33,9 +33,10 @@ REQUIRED_KEYS = (
     "quotes",
 )
 
-# Required only while an outage window is open (T1-103/T1-109/T1-112).
+# Required only while an outage window is open (T1-103/T1-109/T1-112/T1-114).
 OPEN_OUTAGE_REQUIRED_KEYS = (
     "hours_to_critical",
+    "minutes_to_critical",
     "outage_started_at",
     "outage_critical_at",
     "hours_to_imminent",
@@ -136,6 +137,7 @@ def validate_status(
         "outage_total_h": data.get("outage_total_h"),
         "hours_to_tier2_gate": data.get("hours_to_tier2_gate"),
         "hours_to_critical": data.get("hours_to_critical"),
+        "minutes_to_critical": data.get("minutes_to_critical"),
         "outage_started_at": data.get("outage_started_at"),
         "outage_critical_at": data.get("outage_critical_at"),
         "tier2_allowed": data.get("tier2_allowed"),
@@ -181,6 +183,7 @@ def main() -> int:
         f"outage_open={rep['outage_open']} "
         f"hours_to_tier2_gate={rep['hours_to_tier2_gate']} "
         f"hours_to_critical={rep['hours_to_critical']} "
+        f"minutes_to_critical={rep.get('minutes_to_critical')} "
         f"outage_started_at={rep['outage_started_at']} "
         f"outage_critical_at={rep.get('outage_critical_at')} "
         f"tier2_allowed={rep['tier2_allowed']}",

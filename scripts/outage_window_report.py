@@ -139,6 +139,16 @@ def _hours_to_critical(total_h: Any) -> float | None:
         return None
 
 
+def _minutes_to_critical(hours_crit: Any) -> int | None:
+    """Whole minutes until outage_alert_critical trips (T1-114)."""
+    if hours_crit is None:
+        return None
+    try:
+        return int(max(0, round(float(hours_crit) * 60.0)))
+    except (TypeError, ValueError):
+        return None
+
+
 def _hours_to_imminent(total_h: Any) -> float | None:
     """Hours until outage_alert_imminent (≥11h) trips (T1-109)."""
     if total_h is None:
@@ -209,6 +219,7 @@ PRESERVE_STATUS_KEYS = (
     "paper_log_files",
     "metrics_log",
     "hours_to_critical",
+    "minutes_to_critical",
     "outage_started_at",
     "outage_critical_at",
     "hours_to_imminent",
@@ -321,6 +332,7 @@ def compact_status(rep: dict[str, Any]) -> dict[str, Any]:
         "runtime_h": runtime_h,
         "hours_to_tier2_gate": _hours_to_tier2_gate(runtime_h),
         "hours_to_critical": hours_crit,
+        "minutes_to_critical": _minutes_to_critical(hours_crit),
         "hours_to_imminent": hours_imm,
         "outage_started_at": started_at,
         "outage_critical_at": critical_at,
@@ -371,6 +383,7 @@ def main() -> int:
         f"runtime_h={status.get('runtime_h')} quotes={status.get('quotes')} "
         f"hours_to_tier2_gate={status['hours_to_tier2_gate']} "
         f"hours_to_critical={status['hours_to_critical']} "
+        f"minutes_to_critical={status.get('minutes_to_critical')} "
         f"hours_to_imminent={status['hours_to_imminent']} "
         f"outage_started_at={status.get('outage_started_at') or '-'} "
         f"outage_critical_at={status.get('outage_critical_at') or '-'} "
