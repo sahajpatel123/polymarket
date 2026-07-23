@@ -49,10 +49,11 @@ IMMINENT_REQUIRED_KEYS = (
     "hours_in_imminent",
 )
 
-# Required while the ≥12h critical alert is lit (T1-113).
+# Required while the ≥12h critical alert is lit (T1-113/T1-117).
 CRITICAL_REQUIRED_KEYS = (
     "outage_critical_since",
     "hours_past_critical",
+    "minutes_past_critical",
 )
 
 RECOMMENDED_KEYS = (

@@ -73,8 +73,8 @@ the 12h critical alert will trip (`outage_started_at + 12h`, with fallback to
 `minutes_to_critical` is the rounded whole-minute countdown from
 `hours_to_critical` and is also required while open (T1-114). When
 `outage_alert_critical` first trips, `outage_critical_since` latches and
-`hours_past_critical` ages from that edge; validate requires both while
-critical is lit (T1-113).
+`hours_past_critical` / `minutes_past_critical` age from that edge; validate
+requires all three while critical is lit (T1-113/T1-117).
 
 After each `strategy_tick`, `quotes` / `runtime_h` / `hours_to_tier2_gate` are
 refreshed from the live `paper_data_gate` (T1-99), not only the cycle trail.
@@ -96,7 +96,8 @@ While `outage_open=true`, validate also **requires** `hours_to_critical`,
 missing. While `outage_alert_imminent=true`, validate also **requires**
 `outage_imminent_since` and `hours_in_imminent` (T1-111/T1-112). While
 `outage_alert_critical=true`, validate also **requires**
-`outage_critical_since` and `hours_past_critical` (T1-113). While critical is
+`outage_critical_since`, `hours_past_critical`, and `minutes_past_critical`
+(T1-113/T1-117). While critical is
 lit, validate also fails on inconsistencies: imminent/final still True, or
 non-zero `hours_to_critical` / `minutes_to_critical` (T1-116).
 

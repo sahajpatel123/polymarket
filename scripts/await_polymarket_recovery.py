@@ -82,6 +82,7 @@ def _mark_recovered(
         hours_in_imminent=None,
         outage_critical_since=None,
         hours_past_critical=None,
+        minutes_past_critical=None,
         outage_started_at=None,
         outage_critical_at=None,
         hours_to_critical=12.0,

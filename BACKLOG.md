@@ -777,6 +777,12 @@ done without evidence (script output / tests) from that cycle.
   non-zero hours/minutes_to_critical; live status at ≥12h passes consistency.
 - Evidence: unit inconsistencies + live critical=True / imminent=final=False
 
+### T1-117 minutes_past_critical age since latch
+- Status: `done`
+- Done when: stamp sets minutes_past_critical (=round(hours_past*60)); validate
+  requires it while critical; live value >0 after critical edge.
+- Evidence: unit + live during ~12.2h DOWN critical window
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
