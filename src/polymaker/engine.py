@@ -147,9 +147,22 @@ class Engine:
         self._spawn("maintenance", self._maintenance_loop)
         for cid in self.metas:
             self._spawn(f"quote:{cid[:8]}", lambda c=cid: self._quoter(c))
+        # Auto-discovery: periodically scan Gamma for new markets and
+        # auto-add them to the live trade list. Off by default.
+        if self.cfg.engine.auto_discovery_enabled:
+            self._spawn("discovery", self._market_discovery_loop)
+        # Hot-reload: watch markets.toml for manual edits.
+        if self.cfg.engine.auto_discovery_hot_reload:
+            self._spawn("hot_reload", self._hot_reload_loop)
         self._spawn("supervisor", self._supervise)
         self.risk.reset_day()
-        log.info("engine_started", markets=len(self.metas), paper=self.paper)
+        log.info(
+            "engine_started",
+            markets=len(self.metas),
+            paper=self.paper,
+            auto_discovery=self.cfg.engine.auto_discovery_enabled,
+            hot_reload=self.cfg.engine.auto_discovery_hot_reload,
+        )
 
     def _spawn(self, name: str, factory: Any) -> None:
         self._task_specs[name] = factory
@@ -261,6 +274,306 @@ class Engine:
             flow=FlowEstimator(p.flow_ewma_halflife_s),
             markout=MarkoutTracker(),
         )
+
+    # ── dynamic market management (auto-discovery / hot-reload) ──────────
+    async def add_market(self, meta: MarketMeta, profile: StrategyProfile) -> bool:
+        """Dynamically add a market to the live trade list.
+
+        Idempotent: if the market is already tracked, returns False. Otherwise:
+        - Registers per-market state (estimators, regime, lock, dirty event)
+        - Subscribes the WebSocket data service to its tokens
+        - Adds it to the user-stream market set (live mode)
+        - Spawns a supervised quoter task
+        - Emits a market_meta metric for the metrics log
+        Returns True on a fresh add, False if it was already tracked.
+        """
+        cid = meta.condition_id
+        if cid in self.metas:
+            return False
+        self.metas[cid] = meta
+        self.profiles[cid] = profile
+        self.est[cid] = self._make_estimators(profile)
+        self.regime_m[cid] = RegimeMachine()
+        self._dirty[cid] = asyncio.Event()
+        self._locks[cid] = asyncio.Lock()
+        for tok in (meta.yes.token_id, meta.no.token_id):
+            self._token_cid[tok] = cid
+
+        # Subscribe the market data service to the new market's tokens
+        self.md.add_market(cid, [meta.yes.token_id, meta.no.token_id])
+        # Live mode: also tell the user stream which markets we now track
+        if self.user is not None:
+            self.user.set_markets(list(self.metas))
+
+        sc = score_market(meta)
+        self.metrics.emit(
+            "market_meta",
+            condition_id=cid,
+            slug=meta.slug,
+            tick_size=meta.tick_size,
+            rewards_daily_rate=meta.rewards_daily_rate,
+            rewards_min_size=meta.rewards_min_size,
+            rewards_max_spread=meta.rewards_max_spread,
+            rebate_rate=meta.rebate_rate,
+            rebate_potential_daily=sc.rebate_potential,
+            score=sc.score,
+            taker_fee_bps=meta.taker_fee_bps,
+            fees_enabled=meta.fees_enabled,
+            paper=self.paper,
+            auto_discovered=True,
+        )
+        # Spawn a supervised quoter for the new market
+        self._spawn(f"quote:{cid[:8]}", lambda c=cid: self._quoter(c))
+        log.info("market_added", condition_id=cid, slug=meta.slug, auto=True)
+        return True
+
+    async def remove_market(self, cid: str) -> bool:
+        """Dynamically remove a market from the live trade list.
+
+        Cancels any open orders on its tokens, removes per-market state, and
+        stops the quoter task. Idempotent: returns False if not tracked.
+        """
+        if cid not in self.metas:
+            return False
+        meta = self.metas[cid]
+        # Cancel any open orders on this market's tokens
+        for tok in (meta.yes.token_id, meta.no.token_id):
+            with contextlib.suppress(Exception):
+                await self.gateway.cancel_asset(tok)
+            for o in self.state.orders_for(tok):
+                self.state.remove_order(o.order_id)
+        # Cancel the quoter task
+        task = self._tasks.pop(f"quote:{cid[:8]}", None)
+        if task is not None and not task.done():
+            task.cancel()
+            with contextlib.suppress(Exception):
+                await task
+        # Remove from per-market state
+        self.metas.pop(cid, None)
+        self.profiles.pop(cid, None)
+        self.est.pop(cid, None)
+        self.regime_m.pop(cid, None)
+        self._dirty.pop(cid, None)
+        self._locks.pop(cid, None)
+        self._halted.discard(cid)
+        for tok in (meta.yes.token_id, meta.no.token_id):
+            self._token_cid.pop(tok, None)
+        # Tell the market data service to drop the subscription
+        self.md.remove_market(cid)
+        if self.user is not None:
+            self.user.set_markets(list(self.metas))
+        log.info("market_removed", condition_id=cid, slug=meta.slug)
+        return True
+
+    async def _market_discovery_loop(self) -> None:
+        """Periodically scan Gamma for new markets and add them if they pass filters.
+
+        Runs every `auto_discovery_interval_s`. Discovers markets across all
+        configured tag categories, filters by minimum score, and caps at
+        `auto_discovery_max_markets`. Also checks the metadata of already-
+        tracked markets and removes closed/not-accepting ones.
+        """
+        if not self.cfg.engine.auto_discovery_enabled:
+            return
+        interval = max(60.0, float(self.cfg.engine.auto_discovery_interval_s))
+        min_score = float(self.cfg.engine.auto_discovery_min_score)
+        max_markets = int(self.cfg.engine.auto_discovery_max_markets)
+        tags = tuple(self.cfg.engine.auto_discovery_tags) or ("politics",)
+        profile_name = self.cfg.engine.auto_discovery_profile
+
+        while self._running:
+            await asyncio.sleep(interval)
+            if not self._running:
+                break
+            try:
+                await self._run_discovery_pass(tags, min_score, max_markets, profile_name)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("discovery_pass_failed", err=str(exc))
+
+    async def _run_discovery_pass(
+        self, tags: tuple[str, ...], min_score: float, max_markets: int, profile_name: str
+    ) -> None:
+        """One pass of market discovery: scan, score, add new markets, remove closed."""
+        if profile_name not in self.cfg.profiles:
+            log.warning("unknown_auto_discovery_profile", profile=profile_name)
+            return
+        profile = self.cfg.profiles[profile_name]
+        from polymaker.catalog.scanner import ScanConfig, run_scan
+
+        cfg = ScanConfig(
+            tag_slugs=tags,
+            min_liquidity=1000.0,
+            rewards_only=True,
+        )
+        try:
+            scanned = await run_scan(self.catalog, cfg)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("discovery_scan_failed", err=str(exc))
+            return
+
+        # Score and filter
+        candidates: list[MarketMeta] = []
+        for meta in scanned:
+            sc = score_market(meta)
+            if sc.score < min_score:
+                continue
+            candidates.append(meta)
+
+        # Add new markets (cap at max_markets total auto-discovered)
+        auto_count = sum(
+            1 for cid in self.metas
+            if cid not in {e.condition_id for e in self.cfg.enabled_markets if e.condition_id}
+        )
+        added = 0
+        for meta in candidates:
+            if meta.condition_id in self.metas:
+                continue
+            if auto_count + added >= max_markets:
+                break
+            # Refresh metadata (rewards/fee may have changed since the scan)
+            await self._apply_meta_to_market(meta)
+            ok = await self.add_market(meta, profile)
+            if ok:
+                added += 1
+                log.info(
+                    "auto_market_added",
+                    condition_id=meta.condition_id,
+                    slug=meta.slug,
+                    score=round(score_market(meta).score, 4),
+                )
+
+        # Remove markets that are no longer accepting orders (closed/resolved)
+        await self._prune_closed_markets()
+
+    async def _apply_meta_to_market(self, meta: MarketMeta) -> None:
+        """Refresh a market's reward/fee params from the latest scan result."""
+        if meta.condition_id in self.metas:
+            old = self.metas[meta.condition_id]
+            self.metas[meta.condition_id] = dataclasses.replace(
+                old,
+                rewards_min_size=meta.rewards_min_size,
+                rewards_max_spread=meta.rewards_max_spread,
+                rewards_daily_rate=meta.rewards_daily_rate,
+                taker_fee_bps=meta.taker_fee_bps,
+                rebate_rate=meta.rebate_rate,
+                min_order_size=meta.min_order_size,
+            )
+
+    async def _prune_closed_markets(self) -> None:
+        """Remove markets that Gamma now reports as closed or not-accepting."""
+        if not self.metas:
+            return
+        try:
+            from polymaker.catalog.gamma import GammaClient
+
+            cids = list(self.metas.keys())
+            async with GammaClient(self.cfg.wallet.gamma_host) as gamma:
+                raws = await gamma.markets_by_condition(cids)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("prune_scan_failed", err=str(exc))
+            return
+
+        for cid, raw in raws.items():
+            if cid not in self.metas:
+                continue
+            accepting = bool(raw.get("acceptingOrders", True))
+            closed = bool(raw.get("closed", False))
+            if closed or not accepting:
+                log.info("auto_market_removed_closed", condition_id=cid)
+                await self.remove_market(cid)
+
+    async def _hot_reload_loop(self) -> None:
+        """Watch markets.toml for manual edits and reconcile with the live trade list.
+
+        When the file changes, we reload it and:
+        - Add any markets listed in the file that the engine doesn't track yet
+        - Remove any markets the engine tracks that were removed from the file
+        Manual edits to markets.toml take effect on the next file change event.
+        """
+        try:
+            from watchfiles import awatch
+        except ImportError:
+            log.warning("hot_reload_disabled", reason="watchfiles not installed")
+            return
+        markets_path = self.cfg.config_dir / "markets.toml"
+        if not markets_path.exists():
+            log.warning("hot_reload_no_file", path=str(markets_path))
+            return
+        log.info("hot_reload_watching", path=str(markets_path))
+        async for changes in awatch(str(markets_path)):
+            for _change_type, path in changes:
+                if not path.endswith("markets.toml"):
+                    continue
+                log.info("hot_reload_detected", path=path)
+                # Debounce: small sleep to let the writer finish
+                await asyncio.sleep(0.5)
+                try:
+                    await self._reconcile_market_list()
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("hot_reload_failed", err=str(exc))
+                break  # one pass per debounce window
+
+    async def _reconcile_market_list(self) -> None:
+        """Reconcile the engine's tracked markets with markets.toml.
+
+        Adds any markets in the file that the engine doesn't yet track,
+        and removes any tracked markets that were dropped from the file.
+        Manual edits to markets.toml take effect here.
+        """
+        from polymaker.config import Config, MarketEntry
+
+        fresh = Config.load(str(self.cfg.config_dir), load_env=False)
+        desired: dict[str, MarketEntry] = {
+            e.condition_id: e for e in fresh.enabled_markets if e.condition_id
+        }
+        # Current tracked CIDs that came from markets.toml (not auto-discovered)
+        current_toml_cids = {
+            e.condition_id for e in self.cfg.enabled_markets if e.condition_id
+        }
+
+        # Remove markets that were dropped from markets.toml
+        for cid in list(current_toml_cids - set(desired.keys())):
+            await self.remove_market(cid)
+            log.info("hot_reload_removed", condition_id=cid)
+
+        # Add markets that were added to markets.toml
+        for entry in fresh.enabled_markets:
+            cid = entry.condition_id
+            if not cid or cid in self.metas:
+                continue
+            # Try to resolve the market
+            meta = self.catalog.get(cid)
+            if meta is None and entry.slug:
+                meta = self.catalog.get_by_slug(entry.slug)
+            if meta is None:
+                # Fetch from Gamma
+                try:
+                    from polymaker.catalog.gamma import GammaClient, fetch_reward_rates, parse_market  # noqa: I001
+                except ImportError:
+                    pass
+                else:
+                    try:
+                        async with GammaClient(self.cfg.wallet.gamma_host) as gamma:
+                            reward_rates = await fetch_reward_rates(
+                                self.cfg.wallet.clob_host
+                            )
+                            async for raw in gamma.iter_markets(
+                                tag_id=None, max_pages=50
+                            ):
+                                if (
+                                    (entry.slug and raw.get("slug") == entry.slug)
+                                    or (cid and raw.get("conditionId") == cid)
+                                ):
+                                    meta = parse_market(raw, reward_rates)
+                                    if meta:
+                                        self.catalog.upsert_market(meta)
+                                    break
+                    except Exception as exc:  # noqa: BLE001
+                        log.warning("hot_reload_fetch_failed", err=str(exc), ref=entry.ref)
+            if meta is not None:
+                profile = fresh.profile_for(entry)
+                await self.add_market(meta, profile)
+                log.info("hot_reload_added", condition_id=cid, slug=meta.slug)
 
     async def _startup_reconcile(self) -> None:
         with contextlib.suppress(Exception):

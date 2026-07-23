@@ -74,6 +74,49 @@ class MarketDataService:
                 subs.append(tok)
         self._subs = subs
 
+    def add_market(self, condition_id: str, tokens: list[str]) -> None:
+        """Add a market's tokens to the live subscription set.
+
+        If the WebSocket is already connected, sends a new subscribe message
+        so the server immediately starts pushing frames for these assets.
+        Otherwise the new tokens are picked up on the next connect.
+        """
+        new_tokens: list[str] = []
+        for tok in tokens:
+            if tok in self._token_condition:
+                continue
+            self._token_condition[tok] = condition_id
+            self.books.setdefault(tok, OrderBook())
+            new_tokens.append(tok)
+        if not new_tokens:
+            return
+        self._subs.extend(new_tokens)
+        # If we're already connected, send a fresh subscribe message so the
+        # server immediately starts streaming these assets. If not, the next
+        # connect() call will pick them up automatically.
+        if self._ws is not None and self.connected:
+            try:
+                # ws.send is a sync call; schedule on the loop so we don't block.
+                import asyncio as _asyncio
+                _asyncio.ensure_future(self._ws.send(
+                    json.dumps({"assets_ids": new_tokens, "type": "market"})
+                ))
+            except Exception as exc:  # noqa: BLE001
+                log.warning("ws_resubscribe_failed", err=str(exc))
+
+    def remove_market(self, condition_id: str) -> None:
+        """Remove a market's tokens from the subscription set.
+
+        Book state and any cached orders are preserved (so a re-add is fast);
+        the WebSocket just stops being asked for new frames for these tokens.
+        """
+        tokens_to_remove = [
+            tok for tok, cond in self._token_condition.items() if cond == condition_id
+        ]
+        for tok in tokens_to_remove:
+            self._token_condition.pop(tok, None)
+        self._subs = [t for t in self._subs if t not in set(tokens_to_remove)]
+
     def view(self, token_id: str) -> BookView:
         book = self.books.get(token_id)
         return book.view() if book else BookView(None, 0.0, None, 0.0, None, None, 0.0, 0.0)
