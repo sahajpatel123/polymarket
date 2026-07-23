@@ -665,6 +665,13 @@ done without evidence (script output / tests) from that cycle.
   strategy_tick stderr reads merged status (int quotes); tests cover ETA.
 - Evidence: live hours_to_critical≈2.7 during ~9.3h DOWN
 
+### T1-101 outage_started_at + summarize critical countdown
+- Status: `done`
+- Done when: compact status includes outage_started_at from window t_start;
+  summarize emits last_hours_to_critical / last_outage_started_at; recovery
+  clears started_at; live status shows ISO start during open outage.
+- Evidence: live outage_started_at present while ~9.5h DOWN
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

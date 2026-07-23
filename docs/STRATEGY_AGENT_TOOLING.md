@@ -67,7 +67,8 @@ int quotes and `hours_to_critical` (T1-100).
 `gate_reason`, `runtime_basis`, `tape_frozen`, `eta_paused`,
 `last_requote_age_s`, `health`, `ensure_status`, `collector_pid`, `deps_ok`,
 `n_cycles`, `c01_status`, `c01_blockers`, `paper_log`, `paper_log_files`,
-`metrics_log`, `hours_to_critical` (hours until ≥12h critical alert).
+`metrics_log`, `hours_to_critical` (hours until ≥12h critical alert),
+`outage_started_at` (UTC ISO start of the open outage window).
 
 **Paper log rotation:** `TimedRotatingFileHandler` rolls
 `livecfg/logs/paper.jsonl` to `paper.jsonl.YYYY-MM-DD` at midnight. Richest-log

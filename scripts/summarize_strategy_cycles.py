@@ -136,6 +136,12 @@ def main() -> int:
         "last_hours_to_tier2_gate": (last.get("outage_status") or {}).get(
             "hours_to_tier2_gate"
         ),
+        "last_hours_to_critical": (last.get("outage_status") or {}).get(
+            "hours_to_critical"
+        ),
+        "last_outage_started_at": (last.get("outage_status") or {}).get(
+            "outage_started_at"
+        ),
         "last_tier2_allowed": (last.get("outage_status") or {}).get("tier2_allowed"),
         "last_gate_reason": (last.get("outage_status") or {}).get("gate_reason"),
         "last_unused_set": (last.get("unused_knobs") or {}).get("n_set_unused"),
@@ -170,6 +176,8 @@ def main() -> int:
         f"outage_alert_prolonged={rep['last_outage_alert_prolonged']} "
         f"outage_alert_critical={rep['last_outage_alert_critical']} "
         f"hours_to_tier2_gate={rep['last_hours_to_tier2_gate']} "
+        f"hours_to_critical={rep['last_hours_to_critical']} "
+        f"outage_started_at={rep['last_outage_started_at']} "
         f"tier2_allowed={rep['last_tier2_allowed']} "
         f"quotes_per_wall_h={rep['quotes_per_wall_hour']} health={rep['last_health']} "
         f"last_requote_age_s={rep['last_requote_age_s']} "

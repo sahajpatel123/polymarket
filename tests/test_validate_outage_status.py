@@ -19,6 +19,7 @@ def _full(**overrides):
         "outage_alert_critical": False,
         "hours_to_tier2_gate": 15.63,
         "hours_to_critical": 2.66,
+        "outage_started_at": "2026-07-22T15:30:00+00:00",
         "runtime_h": 8.37,
         "quotes": 5529,
         "connectivity": "status=DOWN",

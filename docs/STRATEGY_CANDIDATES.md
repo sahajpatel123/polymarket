@@ -150,6 +150,8 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
 
 - **Update 2026-07-23T00:55Z (T1-100):** `hours_to_critical` countdown to 12h alert; tick status line uses merged outage_status. Still DOWN; C-01 blocked.
 
+- **Update 2026-07-23T01:05Z (T1-101):** `outage_started_at` + summarize `hours_to_critical`. Still ~9.5h DOWN; C-01 blocked.
+
 ## C-02 Prefer higher-reward market weight (selection)
 
 - **Hypothesis:** live scorecard shows one market earning ~2× reward/hour of

@@ -139,6 +139,16 @@ def _hours_to_critical(total_h: Any) -> float | None:
         return None
 
 
+def _iso_ts(raw: Any) -> str | None:
+    """Format a unix timestamp as UTC ISO-8601 (T1-101)."""
+    if raw is None:
+        return None
+    try:
+        return datetime.fromtimestamp(float(raw), tz=timezone.utc).isoformat()
+    except (TypeError, ValueError, OSError, OverflowError):
+        return None
+
+
 PRESERVE_STATUS_KEYS = (
     "connectivity",
     "recovered",
@@ -164,6 +174,7 @@ PRESERVE_STATUS_KEYS = (
     "paper_log_files",
     "metrics_log",
     "hours_to_critical",
+    "outage_started_at",
 )
 
 
@@ -206,6 +217,7 @@ def compact_status(rep: dict[str, Any]) -> dict[str, Any]:
         "runtime_h": runtime_h,
         "hours_to_tier2_gate": _hours_to_tier2_gate(runtime_h),
         "hours_to_critical": _hours_to_critical(total_h),
+        "outage_started_at": _iso_ts(cur.get("t_start")),
         "quotes": quotes,
         "n_outage_windows": rep.get("n_outage_windows"),
     }
@@ -253,6 +265,7 @@ def main() -> int:
         f"runtime_h={status.get('runtime_h')} quotes={status.get('quotes')} "
         f"hours_to_tier2_gate={status['hours_to_tier2_gate']} "
         f"hours_to_critical={status['hours_to_critical']} "
+        f"outage_started_at={status.get('outage_started_at') or '-'} "
         f"outage_alert={status['outage_alert']} "
         f"outage_alert_severe={status['outage_alert_severe']} "
         f"outage_alert_prolonged={status['outage_alert_prolonged']} "

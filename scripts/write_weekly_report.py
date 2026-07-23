@@ -70,6 +70,7 @@ def _outage_status_block(path: Path) -> str:
         "outage_alert_prolonged",
         "outage_alert_critical",
         "hours_to_critical",
+        "outage_started_at",
         "runtime_h",
         "hours_to_tier2_gate",
         "quotes",
