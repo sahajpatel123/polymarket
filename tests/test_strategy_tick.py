@@ -23,12 +23,16 @@ def test_parse_gate_stdout() -> None:
     fields = tick._parse_gate_stdout(
         "status=OK\nruntime_basis=requote\nruntime_hours=8.3700\n"
         "quotes_for_gate=5529\ntier2_allowed=false reason=need_hours>=24.0\n"
+        "log_path=/Users/sahajpatel/Code/polymarket/livecfg/logs/paper.jsonl.2026-07-22\n"
+        "metrics_path=/Users/sahajpatel/Code/polymarket/livecfg/logs/metrics-paper.jsonl\n"
     )
     assert fields["tier2_allowed"] is False
     assert fields["gate_reason"] == "need_hours>=24.0"
     assert fields["runtime_basis"] == "requote"
     assert fields["gate_runtime_h"] == 8.37
     assert fields["gate_quotes"] == 5529
+    assert fields["paper_log"].endswith("paper.jsonl.2026-07-22")
+    assert fields["metrics_log"].endswith("metrics-paper.jsonl")
 
 
 def test_summarize_freeze_fields() -> None:

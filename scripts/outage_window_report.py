@@ -150,6 +150,8 @@ PRESERVE_STATUS_KEYS = (
     "n_cycles",
     "c01_status",
     "c01_blockers",
+    "paper_log",
+    "metrics_log",
 )
 
 

@@ -640,6 +640,12 @@ done without evidence (script output / tests) from that cycle.
   runtime_basis=requote again.
 - Evidence: live gate runtime_hours≈8.37 requote after overnight rotation
 
+### T1-97 Surface paper_log path in outage_status + rotation docs
+- Status: `done`
+- Done when: strategy_tick parses log_path/metrics_path into outage_status;
+  tooling docs explain midnight rotation; live paper_log ends with dated archive.
+- Evidence: live paper_log=…/paper.jsonl.2026-07-22 during ~8.8h DOWN
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

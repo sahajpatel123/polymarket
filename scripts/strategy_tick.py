@@ -45,7 +45,7 @@ def _parse_kv(line: str) -> dict[str, str]:
 
 
 def _parse_gate_stdout(stdout: str) -> dict[str, Any]:
-    """Pull Tier-2 gate fields from paper_data_gate stdout (T1-80)."""
+    """Pull Tier-2 gate fields from paper_data_gate stdout (T1-80/T1-97)."""
     kv: dict[str, str] = {}
     wanted = {
         "tier2_allowed",
@@ -54,9 +54,17 @@ def _parse_gate_stdout(stdout: str) -> dict[str, Any]:
         "runtime_hours",
         "quotes_for_gate",
         "status",
+        "log_path",
+        "metrics_path",
     }
     for line in stdout.splitlines():
         if line.startswith(" ") or line.startswith("{"):
+            continue
+        # Paths may contain '=' only after the first key=; use partition once per line
+        # for dedicated path lines, otherwise token-split.
+        if line.startswith("log_path=") or line.startswith("metrics_path="):
+            k, _, v = line.partition("=")
+            kv[k] = v
             continue
         for part in line.split():
             if "=" not in part:
@@ -83,6 +91,10 @@ def _parse_gate_stdout(stdout: str) -> dict[str, Any]:
             out["gate_quotes"] = kv["quotes_for_gate"]
     if "status" in kv:
         out["gate_status"] = kv["status"]
+    if "log_path" in kv:
+        out["paper_log"] = kv["log_path"]
+    if "metrics_path" in kv:
+        out["metrics_log"] = kv["metrics_path"]
     return out
 
 

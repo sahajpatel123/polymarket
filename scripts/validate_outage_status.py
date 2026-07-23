@@ -46,6 +46,7 @@ RECOMMENDED_KEYS = (
     "n_cycles",
     "c01_status",
     "c01_blockers",
+    "paper_log",
 )
 
 

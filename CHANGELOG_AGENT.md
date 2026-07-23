@@ -254,3 +254,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-23T00:00:00Z | Tier1 | T1-95 persist c01_status+c01_blockers in outage_status; live BLOCKED during ~8.5h DOWN | no Tier2 | merged
 
 2026-07-23T00:10:00Z | Tier1 | T1-96 richest-log discovery includes rotated paper.jsonl.*; gate requote runtime restored after overnight rotate | ~8.7h DOWN; no Tier2 | merged
+
+2026-07-23T00:20:00Z | Tier1 | T1-97 surface paper_log/metrics_log in outage_status + document midnight rotation | live archive path; ~8.8h DOWN; no Tier2 | merged

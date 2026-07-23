@@ -89,6 +89,8 @@ def _outage_status_block(path: Path) -> str:
         "n_cycles",
         "c01_status",
         "c01_blockers",
+        "paper_log",
+        "metrics_log",
     )
     lines = [f"{k}={data.get(k)}" for k in keys if k in data]
     return "\n".join(lines) if lines else json.dumps(data, indent=2, sort_keys=True)
