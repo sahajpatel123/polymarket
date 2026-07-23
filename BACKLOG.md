@@ -815,6 +815,12 @@ done without evidence (script output / tests) from that cycle.
   minutes_past_critical ≥ 60; validate requires the key; live True at ~60min.
 - Evidence: unit + live during ~13.0h DOWN critical
 
+### T1-123 Validate critical aged/hour vs minutes_past
+- Status: `done`
+- Done when: validate fails if aged/hour disagree with minutes_past_critical
+  (≥30 / ≥60) or hour is set without aged; live ~70min status passes.
+- Evidence: unit mismatch + live during ~13.2h DOWN critical
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

@@ -160,6 +160,27 @@ def validate_status(
                     inconsistencies.append("hours_to_critical_nonzero")
             except (TypeError, ValueError):
                 inconsistencies.append("hours_to_critical_invalid")
+        # Aged/hour flags must track minutes_past_critical (T1-123).
+        mpc_raw = data.get("minutes_past_critical")
+        try:
+            mpc = int(mpc_raw) if mpc_raw is not None else None
+        except (TypeError, ValueError):
+            mpc = None
+            inconsistencies.append("minutes_past_critical_invalid")
+        aged = bool(data.get("outage_alert_critical_aged"))
+        hour = bool(data.get("outage_alert_critical_hour"))
+        if mpc is not None:
+            if aged != (mpc >= 30):
+                inconsistencies.append("critical_aged_mismatch")
+            if hour != (mpc >= 60):
+                inconsistencies.append("critical_hour_mismatch")
+        if hour and not aged:
+            inconsistencies.append("hour_without_aged")
+    else:
+        if bool(data.get("outage_alert_critical_aged")):
+            inconsistencies.append("aged_while_not_critical")
+        if bool(data.get("outage_alert_critical_hour")):
+            inconsistencies.append("hour_while_not_critical")
     # Operator mode/action must match outage state (T1-120).
     expected_mode, expected_action = _expected_operator_brief(data)
     mode = data.get("operator_mode")

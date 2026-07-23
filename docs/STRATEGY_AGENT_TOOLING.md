@@ -110,6 +110,8 @@ lit, validate also fails on inconsistencies: imminent/final still True, or
 non-zero `hours_to_critical` / `minutes_to_critical` (T1-116).
 `operator_mode` / `operator_action` must match the outage state
 (CRITICAL_OPEN while critical+open, etc.) (T1-120).
+`outage_alert_critical_aged` / `outage_alert_critical_hour` must agree with
+`minutes_past_critical` thresholds (30 / 60) (T1-123).
 
 `last_requote_at` / `last_quote_at` are UTC ISO timestamps derived from live
 paper_health ages (T1-105).

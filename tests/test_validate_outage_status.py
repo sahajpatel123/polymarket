@@ -204,6 +204,8 @@ def test_validate_operator_mode_consistency() -> None:
         outage_alert_critical=True,
         outage_alert_imminent=False,
         outage_alert_final=False,
+        outage_alert_critical_aged=True,
+        outage_alert_critical_hour=False,
         operator_mode="OUTAGE_OPEN",
         operator_action="await_UP_diagnose_only",
         outage_total_h=12.1,
@@ -221,6 +223,8 @@ def test_validate_operator_mode_consistency() -> None:
         outage_alert_critical=True,
         outage_alert_imminent=False,
         outage_alert_final=False,
+        outage_alert_critical_aged=True,
+        outage_alert_critical_hour=False,
         operator_mode="CRITICAL_OPEN",
         operator_action="await_UP_then_full_recovery",
         outage_total_h=12.1,
@@ -230,6 +234,63 @@ def test_validate_operator_mode_consistency() -> None:
         outage_critical_since="2026-07-23T03:28:00+00:00",
         hours_past_critical=0.5,
         minutes_past_critical=30,
+    ))
+    assert ok["ok"] is True
+    assert ok["inconsistencies"] == []
+
+
+def test_validate_critical_aged_hour_consistency() -> None:
+    bad = validate_status(_full(
+        outage_alert_critical=True,
+        outage_alert_imminent=False,
+        outage_alert_final=False,
+        outage_alert_critical_aged=False,
+        outage_alert_critical_hour=False,
+        operator_mode="CRITICAL_OPEN",
+        operator_action="await_UP_then_full_recovery",
+        outage_total_h=13.1,
+        hours_to_critical=0.0,
+        minutes_to_critical=0,
+        hours_to_imminent=0.0,
+        outage_critical_since="2026-07-23T03:28:00+00:00",
+        hours_past_critical=1.1,
+        minutes_past_critical=70,
+    ))
+    assert bad["ok"] is False
+    assert "critical_aged_mismatch" in bad["inconsistencies"]
+    assert "critical_hour_mismatch" in bad["inconsistencies"]
+    hour_only = validate_status(_full(
+        outage_alert_critical=True,
+        outage_alert_imminent=False,
+        outage_alert_final=False,
+        outage_alert_critical_aged=False,
+        outage_alert_critical_hour=True,
+        operator_mode="CRITICAL_OPEN",
+        operator_action="await_UP_then_full_recovery",
+        outage_total_h=13.1,
+        hours_to_critical=0.0,
+        minutes_to_critical=0,
+        hours_to_imminent=0.0,
+        outage_critical_since="2026-07-23T03:28:00+00:00",
+        hours_past_critical=1.1,
+        minutes_past_critical=70,
+    ))
+    assert "hour_without_aged" in hour_only["inconsistencies"]
+    ok = validate_status(_full(
+        outage_alert_critical=True,
+        outage_alert_imminent=False,
+        outage_alert_final=False,
+        outage_alert_critical_aged=True,
+        outage_alert_critical_hour=True,
+        operator_mode="CRITICAL_OPEN",
+        operator_action="await_UP_then_full_recovery",
+        outage_total_h=13.1,
+        hours_to_critical=0.0,
+        minutes_to_critical=0,
+        hours_to_imminent=0.0,
+        outage_critical_since="2026-07-23T03:28:00+00:00",
+        hours_past_critical=1.1,
+        minutes_past_critical=70,
     ))
     assert ok["ok"] is True
     assert ok["inconsistencies"] == []
