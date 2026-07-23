@@ -140,3 +140,54 @@ def test_recover_appends_cycle(tmp_path: Path, monkeypatch, capsys) -> None:
     assert data["outage_open"] is False
     assert data["connectivity"] == "status=OK rest_ok=True ws_ok=True"
     assert data["recovery_smoke"] == "PASS"
+
+
+def test_up_diagnose_does_not_mark_recovered(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """strategy_tick probe mode must not clear outage_open (T1-108)."""
+    status_path = tmp_path / "outage_status.json"
+    status_path.write_text(json.dumps({
+        "outage_open": True,
+        "outage_alert": True,
+        "health": "STALE",
+        "tape_frozen": True,
+        "quotes": 5529,
+    }) + "\n")
+    calls: list[str] = []
+
+    def fake_run(cmd: list[str]) -> tuple[int, str, str]:
+        joined = " ".join(cmd)
+        calls.append(joined)
+        if "polymarket_connectivity.py" in joined:
+            return 0, "", "status=OK rest_ok=True ws_ok=True"
+        if "outage_window_report.py" in joined:
+            # Preserve open outage from prior file via refresh path.
+            prev = json.loads(status_path.read_text())
+            prev["outage_open"] = True
+            status_path.write_text(json.dumps(prev) + "\n")
+            return 0, "", "status=OK open=True"
+        return 1, "", "status=UNKNOWN"
+
+    monkeypatch.setattr(await_mod, "_run", fake_run)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "await_polymarket_recovery.py",
+            "--once",
+            "--no-restart-on-recover",
+            "--no-append-cycle-on-recover",
+            "--no-smoke-on-recover",
+            "--status-out",
+            str(status_path),
+        ],
+    )
+    assert await_mod.main() == 0
+    err = capsys.readouterr().err
+    assert "status=UP_DIAGNOSE" in err
+    assert not any("recovery_smoke.py" in c for c in calls)
+    data = json.loads(status_path.read_text())
+    assert data["recovered"] is False
+    assert data["outage_open"] is True
+    assert data["connectivity"] == "status=OK rest_ok=True ws_ok=True"

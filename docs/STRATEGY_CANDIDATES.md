@@ -164,6 +164,8 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
 
 - **Update 2026-07-23T02:05Z (T1-107):** recover path auto-runs `recovery_smoke` (status=OK = UP). Still ~10.5h DOWN; C-01 blocked.
 
+- **Update 2026-07-23T02:15Z (T1-108):** tick connectivity probe cannot false-claim recovery. Still ~10.7h DOWN; C-01 blocked.
+
 ## C-02 Prefer higher-reward market weight (selection)
 
 - **Hypothesis:** live scorecard shows one market earning ~2× reward/hour of

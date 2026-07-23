@@ -715,6 +715,13 @@ done without evidence (script output / tests) from that cycle.
   connectivity status=OK; unit test asserts smoke call on recover.
 - Evidence: test_recover_appends_cycle sees recovery_smoke.py + PASS
 
+### T1-108 Diagnose probe must not claim recovery
+- Status: `done`
+- Done when: --no-restart/--no-append/--no-smoke prints UP_DIAGNOSE and leaves
+  outage_open/recovered untouched; strategy_tick passes all three flags;
+  unit test covers the diagnose path.
+- Evidence: test_up_diagnose_does_not_mark_recovered
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

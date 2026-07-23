@@ -253,6 +253,7 @@ def main() -> int:
             "--once",
             "--no-restart-on-recover",
             "--no-append-cycle-on-recover",
+            "--no-smoke-on-recover",
         ])
         line = _status_line(err, out)
         report["steps"]["connectivity"] = {
@@ -416,7 +417,7 @@ def main() -> int:
     conn_line = str(conn.get("status_line") or "")
     if conn.get("status") == "SKIPPED":
         conn_disp = "SKIPPED"
-    elif "STILL_DOWN" in conn_line or "TIMEOUT" in conn_line or "RECOVERED" in conn_line:
+    elif "STILL_DOWN" in conn_line or "TIMEOUT" in conn_line or "RECOVERED" in conn_line or "UP_DIAGNOSE" in conn_line:
         conn_disp = conn_line.split()[0].split("=", 1)[-1]
     else:
         conn_disp = conn.get("status") or conn_line or "UNKNOWN"
