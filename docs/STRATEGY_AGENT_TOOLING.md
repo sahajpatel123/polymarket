@@ -105,9 +105,13 @@ pricing/selection changes until `paper_data_gate` reports `tier2_allowed=true`
    — if UP: restarts collector + appends a cycle (disable with
    `--no-restart-on-recover` / `--no-append-cycle-on-recover`); always
    refreshes `logs/outage_status.json` (disable with `--status-out ''`).
-2. Confirm `paper_health` is OK (not STALE) and `tape_frozen=false` on the
+2. `uv run python scripts/recovery_smoke.py --min-quotes 5529`
+   — PASS only when connectivity UP, outage closed, health OK, tape unfrozen,
+   requote runtime basis, paper-log family present, and outage alerts cleared
+   (T1-106). Use `--allow-stale-health` only for diagnose-during-DOWN.
+3. Confirm `paper_health` is OK (not STALE) and `tape_frozen=false` on the
    latest cycle line.
-3. Re-run `c01_promotion_checklist.py` once quotes advance; do not promote
+4. Re-run `c01_promotion_checklist.py` once quotes advance; do not promote
    C-01 while `outage_alert=true` or holdouts remain thin.
 
 ## Hard stops

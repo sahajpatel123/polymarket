@@ -700,6 +700,14 @@ done without evidence (script output / tests) from that cycle.
   shows ISO while STALE.
 - Evidence: live last_requote_at present during ~10.2h DOWN
 
+### T1-106 recovery_smoke checklist script
+- Status: `done`
+- Done when: scripts/recovery_smoke.py PASSes on recovered status fixture and
+  FAILs while DOWN; docs playbook cites it; live FAIL with connectivity_up
+  blocker during current outage.
+- Evidence: pytest test_recovery_smoke; live status=FAIL blockers include
+  connectivity_up
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

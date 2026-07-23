@@ -160,6 +160,8 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
 
 - **Update 2026-07-23T01:45Z (T1-105):** `last_requote_at` ISO beside age. Still ~10.2h DOWN; C-01 blocked.
 
+- **Update 2026-07-23T01:55Z (T1-106):** `recovery_smoke.py` ready for post-UP verify. Still ~10.3h DOWN; C-01 blocked.
+
 ## C-02 Prefer higher-reward market weight (selection)
 
 - **Hypothesis:** live scorecard shows one market earning ~2× reward/hour of
