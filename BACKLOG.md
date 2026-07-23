@@ -633,6 +633,13 @@ done without evidence (script output / tests) from that cycle.
   weekly/validate recommended include them.
 - Evidence: live c01_status=BLOCKED with hours_ok,health_ok,outage_closed,… during ~8.5h DOWN
 
+### T1-96 Include rotated paper.jsonl.* in richest-log discovery
+- Status: `done`
+- Done when: default_paper_candidates includes paper.jsonl.YYYY-MM-DD rotations;
+  pick_richest prefers archive over empty post-rotation paper.jsonl; gate returns
+  runtime_basis=requote again.
+- Evidence: live gate runtime_hours≈8.37 requote after overnight rotation
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

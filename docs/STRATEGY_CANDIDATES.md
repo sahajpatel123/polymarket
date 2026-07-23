@@ -138,6 +138,9 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
   strategy cycle trail. Still DOWN ~8.3h; no Tier-2 PR.
 - **Update 2026-07-23T00:00Z:** `outage_status` includes `c01_status` /
   `c01_blockers`. Still DOWN ~8.5h; no Tier-2 PR.
+- **Update 2026-07-23T00:10Z:** fixed gate after overnight `paper.jsonl`
+  rotation — discovery now includes dated archives so requote runtime stays
+  ~8.37h. Still DOWN ~8.7h; no Tier-2 PR.
 
 ## C-02 Prefer higher-reward market weight (selection)
 

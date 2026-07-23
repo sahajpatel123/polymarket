@@ -94,10 +94,45 @@ def pick_richest_log(candidates: Iterable[Path]) -> Path | None:
     return best
 
 
-DEFAULT_PAPER_CANDIDATES = (
-    Path("livecfg/logs/paper.jsonl"),
-    Path("logs/paper.jsonl"),
-)
+def default_paper_candidates() -> tuple[Path, ...]:
+    """Active paper.jsonl paths plus dated rotations (T1-96).
+
+    Overnight log rotation writes ``paper.jsonl.YYYY-MM-DD`` while a new
+    empty ``paper.jsonl`` continues. Discovery must consider the archive or
+    the gate collapses to outage-noise-only runtime.
+    """
+    found: list[Path] = []
+    seen: set[str] = set()
+
+    def _add(path: Path) -> None:
+        key = str(path)
+        if key in seen:
+            return
+        seen.add(key)
+        found.append(path)
+
+    for base in (Path("livecfg/logs"), Path("logs")):
+        _add(base / "paper.jsonl")
+        if base.is_dir():
+            for rotated in sorted(base.glob("paper.jsonl.*")):
+                _add(rotated)
+    return tuple(found)
+
+
+class _DefaultPaperCandidates:
+    """Lazy iterable/indexable view of :func:`default_paper_candidates`."""
+
+    def __iter__(self):
+        return iter(default_paper_candidates())
+
+    def __getitem__(self, index: int) -> Path:
+        return default_paper_candidates()[index]
+
+    def __len__(self) -> int:
+        return len(default_paper_candidates())
+
+
+DEFAULT_PAPER_CANDIDATES = _DefaultPaperCandidates()
 
 DEFAULT_METRICS_CANDIDATES = (
     Path("livecfg/logs/metrics-paper.jsonl"),

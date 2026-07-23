@@ -128,3 +128,26 @@ def test_pick_richest_log_ignores_outage_padding(tmp_path: Path) -> None:
     assert paper_log_score(active)[0] == 3.0
     assert paper_log_score(padded)[0] == 1.0
     assert pick_richest_log([padded, active]) == active
+
+
+def test_default_paper_candidates_includes_rotations(tmp_path: Path, monkeypatch) -> None:
+    from polymaker.metrics import log_discovery as ld
+
+    live = tmp_path / "livecfg" / "logs"
+    live.mkdir(parents=True)
+    current = live / "paper.jsonl"
+    rotated = live / "paper.jsonl.2026-07-22"
+    current.write_text('{"ts": 1, "event": "market_ws_dropped"}\n')
+    t0 = 1_700_000_000.0
+    rotated.write_text(
+        "\n".join(
+            json.dumps({"ts": t0 + i * 3600, "event": "requote"}) for i in range(4)
+        )
+        + "\n"
+    )
+    monkeypatch.chdir(tmp_path)
+    cands = ld.default_paper_candidates()
+    assert Path("livecfg/logs/paper.jsonl") in cands
+    assert Path("livecfg/logs/paper.jsonl.2026-07-22") in cands
+    picked = pick_richest_log(cands)
+    assert picked == Path("livecfg/logs/paper.jsonl.2026-07-22")
