@@ -23,7 +23,7 @@ from pathlib import Path
 from polymaker.config import Config
 from polymaker.domain import MarketMeta
 from polymaker.metrics.analyze import analyze
-from polymaker.replay import ReplayResult, discover_condition_ids, run_replay
+from polymaker.replay import discover_condition_ids, run_replay
 
 
 def _load_meta_from_catalog(db_path: Path, condition_id: str) -> MarketMeta | None:
@@ -223,7 +223,7 @@ def main() -> int:
         # Try loading MarketMeta from catalog first, then from metrics, then from journal
         meta = _load_meta_from_catalog(Path(args.db), cid)
         if meta is None:
-            print(f"  MarketMeta not in catalog, inferring from journal...")
+            print("  MarketMeta not in catalog, inferring from journal...")
             meta = _load_meta_from_journal(journal_path, cid)
         if meta is None:
             print(f"  ERROR: could not determine MarketMeta for {cid}", file=sys.stderr)
@@ -241,7 +241,7 @@ def main() -> int:
 
         # Analyze metrics
         report = analyze(metrics_path)
-        print(f"\n  Metrics:")
+        print("\n  Metrics:")
         print(f"    n_quote={report.n_quote} n_cancel={report.n_cancel} n_fill={report.n_fill}")
         print(f"    realized_spread_usdc={report.realized_spread_usdc:.4f}")
         print(f"    inventory_drift_abs_peak={report.inventory_drift_abs_peak:.4f}")
@@ -273,7 +273,7 @@ def main() -> int:
             rebate_estimate = filled_volume * (meta.taker_fee_bps / 10000) * meta.rebate_rate
 
         total_est = spread_pnl + reward_pnl + rebate_estimate
-        print(f"\n  PnL Estimate:")
+        print("\n  PnL Estimate:")
         print(f"    spread_pnl=${spread_pnl:.4f}")
         print(f"    reward_pnl=${reward_pnl:.4f}")
         print(f"    rebate_est=${rebate_estimate:.4f}")
