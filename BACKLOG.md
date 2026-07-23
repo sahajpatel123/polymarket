@@ -686,6 +686,13 @@ done without evidence (script output / tests) from that cycle.
   without those keys; live validate OK during open outage.
 - Evidence: unit test + live validate status=OK with both fields present
 
+### T1-104 outage_alert_imminent (final hour before critical)
+- Status: `done`
+- Done when: compact status sets outage_alert_imminent when
+  hours_to_critical≤1 and total_h<12; cleared on recovery; tests cover
+  11.2h→True and 12.01h→False; live False at ~10h with hours_to_critical≈2.
+- Evidence: unit + live outage_alert_imminent=False at ~10.0h DOWN
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

@@ -17,6 +17,7 @@ def _full(**overrides):
         "outage_alert_severe": True,
         "outage_alert_prolonged": False,
         "outage_alert_critical": False,
+        "outage_alert_imminent": False,
         "hours_to_tier2_gate": 15.63,
         "hours_to_critical": 2.66,
         "outage_started_at": "2026-07-22T15:30:00+00:00",

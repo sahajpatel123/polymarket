@@ -58,6 +58,9 @@ Compact monitor snapshot written by `strategy_tick` / `outage_window_report`
 (≥8h), `outage_alert_critical` (≥12h), `hours_to_tier2_gate`, `runtime_h`,
 `quotes` (int from live gate when available).
 
+`outage_alert_imminent` is set when `1h >= hours_to_critical > 0` (i.e. outage
+age in [11h, 12h)) — final-hour warning before critical (T1-104).
+
 After each `strategy_tick`, `quotes` / `runtime_h` / `hours_to_tier2_gate` are
 refreshed from the live `paper_data_gate` (T1-99), not only the cycle trail.
 The tick status line reads the merged `outage_status.json` so operators see
@@ -69,7 +72,7 @@ status **before** `summarize_strategy_cycles`, which overlays live
 `gate_reason`, `runtime_basis`, `tape_frozen`, `eta_paused`,
 `last_requote_age_s`, `health`, `ensure_status`, `collector_pid`, `deps_ok`,
 `n_cycles`, `c01_status`, `c01_blockers`, `paper_log`, `paper_log_files`,
-`metrics_log`.
+`metrics_log`, `outage_alert_imminent`.
 
 While `outage_open=true`, validate also **requires** `hours_to_critical` and
 `outage_started_at` (T1-103) — empty/null counts as missing.

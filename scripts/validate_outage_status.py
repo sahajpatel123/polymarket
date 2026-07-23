@@ -56,6 +56,7 @@ RECOMMENDED_KEYS = (
     "paper_log",
     "paper_log_files",
     "metrics_log",
+    "outage_alert_imminent",
 )
 
 

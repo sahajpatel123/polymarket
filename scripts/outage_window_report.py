@@ -175,6 +175,7 @@ PRESERVE_STATUS_KEYS = (
     "metrics_log",
     "hours_to_critical",
     "outage_started_at",
+    "outage_alert_imminent",
 )
 
 
@@ -205,6 +206,7 @@ def compact_status(rep: dict[str, Any]) -> dict[str, Any]:
             quotes = int(float(quotes))
         except (TypeError, ValueError):
             pass
+    hours_crit = _hours_to_critical(total_h)
     return {
         "ts": datetime.now(timezone.utc).isoformat(),
         "outage_open": bool(rep.get("outage_open")),
@@ -213,10 +215,14 @@ def compact_status(rep: dict[str, Any]) -> dict[str, Any]:
         "outage_alert_severe": total_h >= 5.0,
         "outage_alert_prolonged": total_h >= 8.0,
         "outage_alert_critical": total_h >= 12.0,
+        # Final hour before critical (≥11h and still under 12h) — T1-104.
+        "outage_alert_imminent": (
+            hours_crit is not None and hours_crit <= 1.0 and total_h < 12.0
+        ),
         "current_duration_s": cur.get("duration_s"),
         "runtime_h": runtime_h,
         "hours_to_tier2_gate": _hours_to_tier2_gate(runtime_h),
-        "hours_to_critical": _hours_to_critical(total_h),
+        "hours_to_critical": hours_crit,
         "outage_started_at": _iso_ts(cur.get("t_start")),
         "quotes": quotes,
         "n_outage_windows": rep.get("n_outage_windows"),
@@ -270,6 +276,7 @@ def main() -> int:
         f"outage_alert_severe={status['outage_alert_severe']} "
         f"outage_alert_prolonged={status['outage_alert_prolonged']} "
         f"outage_alert_critical={status['outage_alert_critical']} "
+        f"outage_alert_imminent={status['outage_alert_imminent']} "
         f"status_out={args.status_out or '-'}",
         file=sys.stderr,
     )
