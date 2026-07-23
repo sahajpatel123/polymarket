@@ -27,6 +27,7 @@ REQUIRED_KEYS = (
     "outage_alert_severe",
     "outage_alert_prolonged",
     "outage_alert_critical",
+    "outage_alert_imminent",
     "hours_to_tier2_gate",
     "runtime_h",
     "quotes",
@@ -36,6 +37,7 @@ REQUIRED_KEYS = (
 OPEN_OUTAGE_REQUIRED_KEYS = (
     "hours_to_critical",
     "outage_started_at",
+    "hours_to_imminent",
 )
 
 RECOMMENDED_KEYS = (
@@ -57,7 +59,6 @@ RECOMMENDED_KEYS = (
     "paper_log",
     "paper_log_files",
     "metrics_log",
-    "outage_alert_imminent",
     "recovery_smoke",
     "recovery_smoke_blockers",
 )

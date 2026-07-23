@@ -44,6 +44,7 @@ def test_compact_status_alert_thresholds() -> None:
     assert mild["outage_alert_prolonged"] is False
     assert mild["outage_alert_critical"] is False
     assert mild["hours_to_critical"] == 8.5
+    assert mild["hours_to_imminent"] == 7.5
     assert mild["outage_started_at"] is None
     assert mild["hours_to_tier2_gate"] is None
     severe = compact_status({
@@ -60,6 +61,7 @@ def test_compact_status_alert_thresholds() -> None:
     assert severe["outage_alert_prolonged"] is False
     assert severe["hours_to_tier2_gate"] == 15.63
     assert severe["hours_to_critical"] == 6.5
+    assert severe["hours_to_imminent"] == 5.5
     assert severe["outage_started_at"] == "2024-07-22T12:00:00+00:00"
     assert severe["quotes"] == 5529
     assert isinstance(severe["quotes"], int)
@@ -73,6 +75,7 @@ def test_compact_status_alert_thresholds() -> None:
     assert prolonged["outage_alert_critical"] is False
     assert prolonged["outage_alert_imminent"] is False
     assert prolonged["hours_to_critical"] == 3.99
+    assert prolonged["hours_to_imminent"] == 2.99
     assert prolonged["quotes"] == 5529
     imminent = compact_status({
         "outage_open": True,
@@ -83,6 +86,7 @@ def test_compact_status_alert_thresholds() -> None:
     assert imminent["outage_alert_imminent"] is True
     assert imminent["outage_alert_critical"] is False
     assert imminent["hours_to_critical"] == 0.8
+    assert imminent["hours_to_imminent"] == 0.0
     critical = compact_status({
         "outage_open": True,
         "outage_total_h": 12.01,
@@ -92,6 +96,7 @@ def test_compact_status_alert_thresholds() -> None:
     assert critical["outage_alert_critical"] is True
     assert critical["outage_alert_imminent"] is False
     assert critical["hours_to_critical"] == 0.0
+    assert critical["hours_to_imminent"] == 0.0
     assert critical["quotes"] == 5529
     gated = compact_status({
         "outage_open": False,
@@ -101,6 +106,7 @@ def test_compact_status_alert_thresholds() -> None:
     })
     assert gated["hours_to_tier2_gate"] == 0.0
     assert gated["hours_to_critical"] == 12.0
+    assert gated["hours_to_imminent"] == 11.0
     assert gated["outage_alert_imminent"] is False
 
 

@@ -139,6 +139,16 @@ def _hours_to_critical(total_h: Any) -> float | None:
         return None
 
 
+def _hours_to_imminent(total_h: Any) -> float | None:
+    """Hours until outage_alert_imminent (≥11h) trips (T1-109)."""
+    if total_h is None:
+        return None
+    try:
+        return round(max(0.0, 11.0 - float(total_h)), 2)
+    except (TypeError, ValueError):
+        return None
+
+
 def _iso_ts(raw: Any) -> str | None:
     """Format a unix timestamp as UTC ISO-8601 (T1-101)."""
     if raw is None:
@@ -177,6 +187,7 @@ PRESERVE_STATUS_KEYS = (
     "metrics_log",
     "hours_to_critical",
     "outage_started_at",
+    "hours_to_imminent",
     "outage_alert_imminent",
     "recovery_smoke",
     "recovery_smoke_blockers",
@@ -211,6 +222,7 @@ def compact_status(rep: dict[str, Any]) -> dict[str, Any]:
         except (TypeError, ValueError):
             pass
     hours_crit = _hours_to_critical(total_h)
+    hours_imm = _hours_to_imminent(total_h)
     return {
         "ts": datetime.now(timezone.utc).isoformat(),
         "outage_open": bool(rep.get("outage_open")),
@@ -227,6 +239,7 @@ def compact_status(rep: dict[str, Any]) -> dict[str, Any]:
         "runtime_h": runtime_h,
         "hours_to_tier2_gate": _hours_to_tier2_gate(runtime_h),
         "hours_to_critical": hours_crit,
+        "hours_to_imminent": hours_imm,
         "outage_started_at": _iso_ts(cur.get("t_start")),
         "quotes": quotes,
         "n_outage_windows": rep.get("n_outage_windows"),
@@ -275,6 +288,7 @@ def main() -> int:
         f"runtime_h={status.get('runtime_h')} quotes={status.get('quotes')} "
         f"hours_to_tier2_gate={status['hours_to_tier2_gate']} "
         f"hours_to_critical={status['hours_to_critical']} "
+        f"hours_to_imminent={status['hours_to_imminent']} "
         f"outage_started_at={status.get('outage_started_at') or '-'} "
         f"outage_alert={status['outage_alert']} "
         f"outage_alert_severe={status['outage_alert_severe']} "

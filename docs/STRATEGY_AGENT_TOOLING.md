@@ -55,11 +55,12 @@ Compact monitor snapshot written by `strategy_tick` / `outage_window_report`
 
 **Required** (fail if missing): `ts`, `outage_open`, `outage_total_h`,
 `outage_alert` (≥3h), `outage_alert_severe` (≥5h), `outage_alert_prolonged`
-(≥8h), `outage_alert_critical` (≥12h), `hours_to_tier2_gate`, `runtime_h`,
-`quotes` (int from live gate when available).
+(≥8h), `outage_alert_critical` (≥12h), `outage_alert_imminent` (11–12h window),
+`hours_to_tier2_gate`, `runtime_h`, `quotes` (int from live gate when available).
 
 `outage_alert_imminent` is set when `1h >= hours_to_critical > 0` (i.e. outage
 age in [11h, 12h)) — final-hour warning before critical (T1-104).
+`hours_to_imminent` counts down to that 11h threshold (T1-109).
 
 After each `strategy_tick`, `quotes` / `runtime_h` / `hours_to_tier2_gate` are
 refreshed from the live `paper_data_gate` (T1-99), not only the cycle trail.
@@ -74,8 +75,9 @@ status **before** `summarize_strategy_cycles`, which overlays live
 `n_cycles`, `c01_status`, `c01_blockers`, `paper_log`, `paper_log_files`,
 `metrics_log`, `outage_alert_imminent`.
 
-While `outage_open=true`, validate also **requires** `hours_to_critical` and
-`outage_started_at` (T1-103) — empty/null counts as missing.
+While `outage_open=true`, validate also **requires** `hours_to_critical`,
+`hours_to_imminent`, and `outage_started_at` (T1-103/T1-109) — empty/null
+counts as missing.
 
 `last_requote_at` / `last_quote_at` are UTC ISO timestamps derived from live
 paper_health ages (T1-105).

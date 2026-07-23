@@ -722,6 +722,13 @@ done without evidence (script output / tests) from that cycle.
   unit test covers the diagnose path.
 - Evidence: test_up_diagnose_does_not_mark_recovered
 
+### T1-109 hours_to_imminent + require outage_alert_imminent
+- Status: `done`
+- Done when: compact status includes hours_to_imminent (=max(0,11-total_h));
+  outage_alert_imminent is always required by validate; open-outage also
+  requires hours_to_imminent; live countdown ~0.16h before imminent.
+- Evidence: unit + live hours_to_imminent during ~10.8h DOWN
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

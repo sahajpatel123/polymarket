@@ -166,6 +166,8 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
 
 - **Update 2026-07-23T02:15Z (T1-108):** tick connectivity probe cannot false-claim recovery. Still ~10.7h DOWN; C-01 blocked.
 
+- **Update 2026-07-23T02:25Z (T1-109):** `hours_to_imminent` countdown to 11h alert. Still ~10.8h DOWN; C-01 blocked.
+
 ## C-02 Prefer higher-reward market weight (selection)
 
 - **Hypothesis:** live scorecard shows one market earning ~2× reward/hour of

@@ -147,6 +147,9 @@ def main() -> int:
         "last_hours_to_critical": (last.get("outage_status") or {}).get(
             "hours_to_critical"
         ),
+        "last_hours_to_imminent": (last.get("outage_status") or {}).get(
+            "hours_to_imminent"
+        ),
         "last_outage_started_at": (last.get("outage_status") or {}).get(
             "outage_started_at"
         ),
@@ -182,6 +185,7 @@ def main() -> int:
             live = {}
         for src, dst in (
             ("hours_to_critical", "last_hours_to_critical"),
+            ("hours_to_imminent", "last_hours_to_imminent"),
             ("outage_started_at", "last_outage_started_at"),
             ("hours_to_tier2_gate", "last_hours_to_tier2_gate"),
             ("outage_alert_critical", "last_outage_alert_critical"),
@@ -211,6 +215,7 @@ def main() -> int:
         f"outage_alert_imminent={rep['last_outage_alert_imminent']} "
         f"hours_to_tier2_gate={rep['last_hours_to_tier2_gate']} "
         f"hours_to_critical={rep['last_hours_to_critical']} "
+        f"hours_to_imminent={rep['last_hours_to_imminent']} "
         f"outage_started_at={rep['last_outage_started_at']} "
         f"tier2_allowed={rep['last_tier2_allowed']} "
         f"quotes_per_wall_h={rep['quotes_per_wall_hour']} health={rep['last_health']} "
