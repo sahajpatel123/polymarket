@@ -58,7 +58,8 @@ Compact monitor snapshot written by `strategy_tick` / `outage_window_report`
 **Required** (fail if missing): `ts`, `outage_open`, `outage_total_h`,
 `outage_alert` (≥3h), `outage_alert_severe` (≥5h), `outage_alert_prolonged`
 (≥8h), `outage_alert_critical` (≥12h), `outage_alert_imminent` (11–12h window),
-`outage_alert_final` (last 15 min before critical), `operator_mode`,
+`outage_alert_final` (last 15 min before critical), `outage_alert_critical_aged`
+(≥30 min past critical latch), `operator_mode`,
 `operator_action`, `hours_to_tier2_gate`,
 `runtime_h`, `quotes` (int from live gate when available).
 
@@ -78,6 +79,8 @@ the 12h critical alert will trip (`outage_started_at + 12h`, with fallback to
 `outage_alert_critical` first trips, `outage_critical_since` latches and
 `hours_past_critical` / `minutes_past_critical` age from that edge; validate
 requires all three while critical is lit (T1-113/T1-117).
+`outage_alert_critical_aged` turns True once `minutes_past_critical >= 30`
+(T1-121).
 
 After each `strategy_tick`, `quotes` / `runtime_h` / `hours_to_tier2_gate` are
 refreshed from the live `paper_data_gate` (T1-99), not only the cycle trail.

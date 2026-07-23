@@ -97,6 +97,7 @@ def evaluate_recovery(
         "outage_alert_critical",
         "outage_alert_imminent",
         "outage_alert_final",
+        "outage_alert_critical_aged",
     ):
         val = status.get(key)
         cleared = val is False or val is None or str(val).lower() == "false"

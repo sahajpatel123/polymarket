@@ -247,6 +247,11 @@ def main() -> int:
                 < 12.0
             )
         ),
+        "outage_alert_critical_aged": (
+            None
+            if outage.get("total_h") in (None, "")
+            else float(str(outage.get("total_h")).split()[0]) >= 12.5
+        ),
         "counterfactual_line": next(
             (ln for ln in cf_err.splitlines() if ln.startswith("status=")), None
         ),
@@ -293,6 +298,7 @@ def main() -> int:
         f"outage_alert_critical={report['outage_alert_critical']} "
         f"outage_alert_imminent={report['outage_alert_imminent']} "
         f"outage_alert_final={report['outage_alert_final']} "
+        f"outage_alert_critical_aged={report['outage_alert_critical_aged']} "
         f"oos={any_oos if validate_present else None} "
         f"thin={thin_any if validate_present else None} "
         f"vol_gap={vol_gap} quiet_vol_max={quiet_max} trend_vol_min={trend_min} "

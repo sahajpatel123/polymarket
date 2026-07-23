@@ -229,6 +229,7 @@ PRESERVE_STATUS_KEYS = (
     "outage_critical_since",
     "hours_past_critical",
     "minutes_past_critical",
+    "outage_alert_critical_aged",
     "operator_mode",
     "operator_action",
     "recovery_smoke",
@@ -265,6 +266,7 @@ def _stamp_critical_since(status: dict[str, Any], prev: dict[str, Any]) -> None:
         status["outage_critical_since"] = None
         status["hours_past_critical"] = None
         status["minutes_past_critical"] = None
+        status["outage_alert_critical_aged"] = False
         return
     prev_since = prev.get("outage_critical_since")
     if prev_since not in (None, ""):
@@ -282,6 +284,14 @@ def _stamp_critical_since(status: dict[str, Any], prev: dict[str, Any]) -> None:
     else:
         status["hours_past_critical"] = None
         status["minutes_past_critical"] = None
+    # ≥30 minutes past the critical latch (T1-121).
+    mpc = status.get("minutes_past_critical")
+    try:
+        status["outage_alert_critical_aged"] = (
+            mpc is not None and int(mpc) >= 30
+        )
+    except (TypeError, ValueError):
+        status["outage_alert_critical_aged"] = False
 
 
 def _stamp_operator_brief(status: dict[str, Any]) -> None:
@@ -425,6 +435,7 @@ def main() -> int:
         f"outage_alert_critical={status['outage_alert_critical']} "
         f"outage_alert_imminent={status['outage_alert_imminent']} "
         f"outage_alert_final={status['outage_alert_final']} "
+        f"outage_alert_critical_aged={status.get('outage_alert_critical_aged')} "
         f"outage_imminent_since={status.get('outage_imminent_since') or '-'} "
         f"hours_in_imminent={status.get('hours_in_imminent')} "
         f"outage_critical_since={status.get('outage_critical_since') or '-'} "

@@ -802,6 +802,13 @@ done without evidence (script output / tests) from that cycle.
   mapping; live CRITICAL_OPEN status passes.
 - Evidence: unit mismatch + live during ~12.7h DOWN critical
 
+### T1-121 outage_alert_critical_aged after 30min past latch
+- Status: `done`
+- Done when: stamp sets outage_alert_critical_aged when
+  minutes_past_critical ≥ 30; validate requires the key; live True after
+  ~50min past critical.
+- Evidence: unit + live during ~12.8h DOWN critical
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

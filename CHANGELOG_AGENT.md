@@ -279,3 +279,4 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-23T03:55:00Z | Tier1 | T1-118 outage_operator_brief CRITICAL_OPEN + next recovery action; wire into strategy_tick | pytest brief; ~12.3h DOWN critical; no Tier2 | merged
 2026-07-23T04:05:00Z | Tier1 | T1-119 persist operator_mode/action in outage_status; validate requires keys | pytest outage/validate; ~12.5h DOWN critical; no Tier2 | merged
 2026-07-23T04:15:00Z | Tier1 | T1-120 validate operator_mode/action match outage state | pytest validate; ~12.7h DOWN CRITICAL_OPEN; no Tier2 | merged
+2026-07-23T04:25:00Z | Tier1 | T1-121 outage_alert_critical_aged after ≥30min past critical latch | pytest outage/validate; ~12.8h DOWN aged=True; no Tier2 | merged

@@ -208,6 +208,7 @@ def test_write_compact_status_latches_critical_since(tmp_path: Path) -> None:
     assert first["outage_critical_since"] == "2026-07-23T03:28:00+00:00"
     assert first["hours_past_critical"] == 0.0
     assert first["minutes_past_critical"] == 0
+    assert first["outage_alert_critical_aged"] is False
     assert first["operator_mode"] == "CRITICAL_OPEN"
     assert first["operator_action"] == "await_UP_then_full_recovery"
     # Imminent cleared when critical lit.
@@ -222,9 +223,19 @@ def test_write_compact_status_latches_critical_since(tmp_path: Path) -> None:
     assert second["outage_critical_since"] == "2026-07-23T03:28:00+00:00"
     assert second["hours_past_critical"] == 0.2
     assert second["minutes_past_critical"] == 12
+    assert second["outage_alert_critical_aged"] is False
     assert second["operator_mode"] == "CRITICAL_OPEN"
-    recovered = write_compact_status(path, {
+    aged = write_compact_status(path, {
         "ts": "2026-07-23T04:00:00+00:00",
+        "outage_open": True,
+        "outage_alert_critical": True,
+        "outage_alert_imminent": False,
+        "hours_to_critical": 0.0,
+    })
+    assert aged["minutes_past_critical"] == 32
+    assert aged["outage_alert_critical_aged"] is True
+    recovered = write_compact_status(path, {
+        "ts": "2026-07-23T04:30:00+00:00",
         "outage_open": False,
         "outage_alert_critical": False,
         "outage_alert_imminent": False,
@@ -234,6 +245,7 @@ def test_write_compact_status_latches_critical_since(tmp_path: Path) -> None:
     assert recovered["outage_critical_since"] is None
     assert recovered["hours_past_critical"] is None
     assert recovered["minutes_past_critical"] is None
+    assert recovered["outage_alert_critical_aged"] is False
     assert recovered["operator_mode"] == "RECOVERED"
     assert recovered["operator_action"] == "run_recovery_smoke"
 
