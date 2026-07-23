@@ -384,6 +384,13 @@ def main() -> int:
     deps = report["steps"].get("deps") or {}
     ap_step = report["steps"].get("append") or {}
     weekly = report["steps"].get("weekly") or {}
+    # Prefer merged outage_status.json over pre-merge step kv (T1-100).
+    ost: dict[str, Any] = {}
+    if status_path.exists():
+        try:
+            ost = json.loads(status_path.read_text())
+        except json.JSONDecodeError:
+            ost = {}
     conn_line = str(conn.get("status_line") or "")
     if conn.get("status") == "SKIPPED":
         conn_disp = "SKIPPED"
@@ -395,23 +402,26 @@ def main() -> int:
         f"status=OK "
         f"connectivity={conn_disp} "
         f"c01={c01.get('status')} blockers={c01.get('blockers')} "
-        f"outage_alert={c01.get('outage_alert') or outage.get('outage_alert')} "
-        f"outage_alert_severe={c01.get('outage_alert_severe') or outage.get('outage_alert_severe')} "
-        f"outage_alert_prolonged={c01.get('outage_alert_prolonged') or outage.get('outage_alert_prolonged')} "
-        f"outage_alert_critical={c01.get('outage_alert_critical') or outage.get('outage_alert_critical')} "
-        f"outage_total_h={outage.get('total_h')} "
-        f"hours_to_tier2_gate={outage.get('hours_to_tier2_gate')} "
-        f"quotes={outage.get('quotes')} "
-        f"tier2_allowed={gate.get('tier2_allowed')} "
-        f"gate_reason={gate.get('gate_reason')} "
+        f"outage_alert={ost.get('outage_alert', c01.get('outage_alert') or outage.get('outage_alert'))} "
+        f"outage_alert_severe={ost.get('outage_alert_severe', c01.get('outage_alert_severe') or outage.get('outage_alert_severe'))} "
+        f"outage_alert_prolonged={ost.get('outage_alert_prolonged', c01.get('outage_alert_prolonged') or outage.get('outage_alert_prolonged'))} "
+        f"outage_alert_critical={ost.get('outage_alert_critical', c01.get('outage_alert_critical') or outage.get('outage_alert_critical'))} "
+        f"outage_total_h={ost.get('outage_total_h', outage.get('total_h'))} "
+        f"hours_to_tier2_gate={ost.get('hours_to_tier2_gate', outage.get('hours_to_tier2_gate'))} "
+        f"hours_to_critical={ost.get('hours_to_critical')} "
+        f"quotes={ost.get('quotes', outage.get('quotes'))} "
+        f"tier2_allowed={ost.get('tier2_allowed', gate.get('tier2_allowed'))} "
+        f"gate_reason={ost.get('gate_reason', gate.get('gate_reason'))} "
         f"outage_status={ost_val.get('status')} "
         f"deps_ok={deps.get('ok')} deps_bumps={deps.get('bumps')} "
-        f"health={health.get('status')} "
-        f"ensure={ensure.get('status')} collector_pid={ensure.get('pids')} "
-        f"n_cycles={sm.get('cycles')} "
-        f"last_requote_age_s={health.get('last_requote_age_s') or sm.get('last_requote_age_s')} "
-        f"runtime_h={sm.get('runtime_h')} eta_paused={sm.get('eta_paused')} "
-        f"tape_frozen={sm.get('tape_frozen')} "
+        f"health={ost.get('health', health.get('status'))} "
+        f"ensure={ost.get('ensure_status', ensure.get('status'))} "
+        f"collector_pid={ost.get('collector_pid', ensure.get('pids'))} "
+        f"n_cycles={ost.get('n_cycles', sm.get('cycles'))} "
+        f"last_requote_age_s={ost.get('last_requote_age_s', health.get('last_requote_age_s') or sm.get('last_requote_age_s'))} "
+        f"runtime_h={ost.get('runtime_h', sm.get('runtime_h'))} "
+        f"eta_paused={ost.get('eta_paused', sm.get('eta_paused'))} "
+        f"tape_frozen={ost.get('tape_frozen', sm.get('tape_frozen'))} "
         f"unused_set={unused.get('n_set_unused')} "
         f"append={ap_step.get('status') or ('SKIPPED' if not args.append else 'UNKNOWN')} "
         f"weekly={weekly.get('status') or ('SKIPPED' if not args.write_weekly else 'UNKNOWN')}",

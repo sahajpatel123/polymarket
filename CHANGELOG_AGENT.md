@@ -258,3 +258,4 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-23T00:20:00Z | Tier1 | T1-97 surface paper_log/metrics_log in outage_status + document midnight rotation | live archive path; ~8.8h DOWN; no Tier2 | merged
 2026-07-23T00:35:00Z | Tier1 | T1-98 union rotated paper.jsonl family for gate runtime + health freshness; live log_files=2 | pytest paper_data_gate/strategy_tick/validate; ~9.0h DOWN; no Tier2 | merged
 2026-07-23T00:45:00Z | Tier1 | T1-99 prefer live gate quotes/runtime in outage_status + outage_alert_critical≥12h; quotes coerced to int | pytest outage/strategy_tick/validate; ~9.2h DOWN; no Tier2 | merged
+2026-07-23T00:55:00Z | Tier1 | T1-100 hours_to_critical in outage_status; tick status line reads merged snapshot (int quotes) | pytest outage/strategy_tick; ~9.3h DOWN; no Tier2 | merged

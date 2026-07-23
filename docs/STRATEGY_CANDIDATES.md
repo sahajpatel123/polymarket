@@ -148,6 +148,8 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
 
 - **Update 2026-07-23T00:45Z (T1-99):** `outage_alert_critical` (≥12h) + live gate overwrites `quotes`/`runtime_h` in status. Still ~9.2h DOWN; C-01 blocked.
 
+- **Update 2026-07-23T00:55Z (T1-100):** `hours_to_critical` countdown to 12h alert; tick status line uses merged outage_status. Still DOWN; C-01 blocked.
+
 ## C-02 Prefer higher-reward market weight (selection)
 
 - **Hypothesis:** live scorecard shows one market earning ~2× reward/hour of

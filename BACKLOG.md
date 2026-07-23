@@ -659,6 +659,12 @@ done without evidence (script output / tests) from that cycle.
   outage_alert_critical fires at ≥12h; validate requires the key; quotes not float.
 - Evidence: live quotes=5529 (int), outage_alert_critical=False at ~9.2h DOWN
 
+### T1-100 hours_to_critical + merged status-line snapshot
+- Status: `done`
+- Done when: outage_status carries hours_to_critical (=max(0,12-total_h));
+  strategy_tick stderr reads merged status (int quotes); tests cover ETA.
+- Evidence: live hours_to_critical≈2.7 during ~9.3h DOWN
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

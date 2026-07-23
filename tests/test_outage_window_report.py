@@ -43,6 +43,7 @@ def test_compact_status_alert_thresholds() -> None:
     assert mild["outage_alert_severe"] is False
     assert mild["outage_alert_prolonged"] is False
     assert mild["outage_alert_critical"] is False
+    assert mild["hours_to_critical"] == 8.5
     assert mild["hours_to_tier2_gate"] is None
     severe = compact_status({
         "outage_open": True,
@@ -53,6 +54,7 @@ def test_compact_status_alert_thresholds() -> None:
     assert severe["outage_alert_severe"] is True
     assert severe["outage_alert_prolonged"] is False
     assert severe["hours_to_tier2_gate"] == 15.63
+    assert severe["hours_to_critical"] == 6.5
     assert severe["quotes"] == 5529
     assert isinstance(severe["quotes"], int)
     prolonged = compact_status({
@@ -63,6 +65,7 @@ def test_compact_status_alert_thresholds() -> None:
     })
     assert prolonged["outage_alert_prolonged"] is True
     assert prolonged["outage_alert_critical"] is False
+    assert prolonged["hours_to_critical"] == 3.99
     assert prolonged["quotes"] == 5529
     critical = compact_status({
         "outage_open": True,
@@ -71,6 +74,7 @@ def test_compact_status_alert_thresholds() -> None:
         "current": {"runtime_hours_end": 8.37, "quotes_end": "5529"},
     })
     assert critical["outage_alert_critical"] is True
+    assert critical["hours_to_critical"] == 0.0
     assert critical["quotes"] == 5529
     gated = compact_status({
         "outage_open": False,
@@ -79,6 +83,7 @@ def test_compact_status_alert_thresholds() -> None:
         "current": {"runtime_hours_end": 24.5},
     })
     assert gated["hours_to_tier2_gate"] == 0.0
+    assert gated["hours_to_critical"] == 12.0
 
 
 def test_write_compact_status_preserves_probe_fields(tmp_path: Path) -> None:

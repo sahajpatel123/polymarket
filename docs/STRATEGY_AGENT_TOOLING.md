@@ -60,12 +60,14 @@ Compact monitor snapshot written by `strategy_tick` / `outage_window_report`
 
 After each `strategy_tick`, `quotes` / `runtime_h` / `hours_to_tier2_gate` are
 refreshed from the live `paper_data_gate` (T1-99), not only the cycle trail.
+The tick status line reads the merged `outage_status.json` so operators see
+int quotes and `hours_to_critical` (T1-100).
 
 **Recommended** (warned if missing): `connectivity`, `tier2_allowed`,
 `gate_reason`, `runtime_basis`, `tape_frozen`, `eta_paused`,
 `last_requote_age_s`, `health`, `ensure_status`, `collector_pid`, `deps_ok`,
 `n_cycles`, `c01_status`, `c01_blockers`, `paper_log`, `paper_log_files`,
-`metrics_log`.
+`metrics_log`, `hours_to_critical` (hours until ≥12h critical alert).
 
 **Paper log rotation:** `TimedRotatingFileHandler` rolls
 `livecfg/logs/paper.jsonl` to `paper.jsonl.YYYY-MM-DD` at midnight. Richest-log

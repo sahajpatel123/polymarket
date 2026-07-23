@@ -50,6 +50,7 @@ RECOMMENDED_KEYS = (
     "paper_log",
     "paper_log_files",
     "metrics_log",
+    "hours_to_critical",
 )
 
 

@@ -129,6 +129,16 @@ def _hours_to_tier2_gate(runtime_h: Any) -> float | None:
         return None
 
 
+def _hours_to_critical(total_h: Any) -> float | None:
+    """Hours until outage_alert_critical (≥12h) trips (T1-100)."""
+    if total_h is None:
+        return None
+    try:
+        return round(max(0.0, 12.0 - float(total_h)), 2)
+    except (TypeError, ValueError):
+        return None
+
+
 PRESERVE_STATUS_KEYS = (
     "connectivity",
     "recovered",
@@ -153,6 +163,7 @@ PRESERVE_STATUS_KEYS = (
     "paper_log",
     "paper_log_files",
     "metrics_log",
+    "hours_to_critical",
 )
 
 
@@ -194,6 +205,7 @@ def compact_status(rep: dict[str, Any]) -> dict[str, Any]:
         "current_duration_s": cur.get("duration_s"),
         "runtime_h": runtime_h,
         "hours_to_tier2_gate": _hours_to_tier2_gate(runtime_h),
+        "hours_to_critical": _hours_to_critical(total_h),
         "quotes": quotes,
         "n_outage_windows": rep.get("n_outage_windows"),
     }
@@ -238,8 +250,9 @@ def main() -> int:
         f"status=OK windows={rep['n_outage_windows']} open={rep['outage_open']} "
         f"total_h={rep['outage_total_h']} "
         f"current_duration_s={cur.get('duration_s')} "
-        f"runtime_h={cur.get('runtime_hours_end')} quotes={cur.get('quotes_end')} "
+        f"runtime_h={status.get('runtime_h')} quotes={status.get('quotes')} "
         f"hours_to_tier2_gate={status['hours_to_tier2_gate']} "
+        f"hours_to_critical={status['hours_to_critical']} "
         f"outage_alert={status['outage_alert']} "
         f"outage_alert_severe={status['outage_alert_severe']} "
         f"outage_alert_prolonged={status['outage_alert_prolonged']} "
