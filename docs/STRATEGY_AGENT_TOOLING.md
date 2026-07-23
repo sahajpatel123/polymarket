@@ -107,6 +107,9 @@ pricing/selection changes until `paper_data_gate` reports `tier2_allowed=true`
    `--no-smoke-on-recover`); always refreshes `logs/outage_status.json`
    (disable with `--status-out ''`). On success writes
    `recovery_smoke=PASS|FAIL` into the status file (T1-107).
+   Diagnose-only probes (`--no-restart-on-recover --no-append-cycle-on-recover
+   --no-smoke-on-recover`, as used by `strategy_tick`) print `UP_DIAGNOSE` and
+   **do not** clear `outage_open` / claim `recovered` (T1-108).
 2. `uv run python scripts/recovery_smoke.py --min-quotes 5529`
    — PASS only when connectivity OK (REST+WS), outage closed, health OK, tape
    unfrozen, requote runtime basis, paper-log family present, and outage alerts

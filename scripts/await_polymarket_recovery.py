@@ -177,11 +177,21 @@ def main() -> int:
                 report["append"] = _status_line(aerr, aout)
             if status_out:
                 report["outage_status"] = _refresh_outage_status(py, status_out)
-                _mark_recovered(
-                    status_out,
-                    connectivity=line,
-                    waited_s=float(report["waited_s"]),
-                )
+                # Diagnose probes (no restart/append/smoke) must not clear
+                # outage_open — strategy_tick uses that mode (T1-108).
+                diagnose_only = not restart and not append_cycle and not run_smoke
+                if diagnose_only:
+                    _patch_outage_status(
+                        status_out,
+                        connectivity=line,
+                        recovered=False,
+                    )
+                else:
+                    _mark_recovered(
+                        status_out,
+                        connectivity=line,
+                        waited_s=float(report["waited_s"]),
+                    )
             smoke_line = "skipped"
             if run_smoke and status_out:
                 smoke_cmd = [py, "scripts/recovery_smoke.py", "--status", status_out]
@@ -202,6 +212,14 @@ def main() -> int:
                     recovery_smoke_blockers=blockers,
                 )
             print(json.dumps(report, indent=2, sort_keys=True))
+            if not restart and not append_cycle and not run_smoke:
+                print(
+                    f"status=UP_DIAGNOSE waited_s={report['waited_s']} "
+                    f"ensure=skipped append=skipped smoke=skipped "
+                    f"status_out={status_out or '-'}",
+                    file=sys.stderr,
+                )
+                return 0
             print(
                 f"status=RECOVERED waited_s={report['waited_s']} "
                 f"ensure={report.get('ensure', 'skipped')} "
