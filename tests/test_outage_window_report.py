@@ -141,6 +141,7 @@ def test_write_compact_status_latches_imminent_since(tmp_path: Path) -> None:
         "hours_to_critical": 0.99,
     })
     assert first["outage_imminent_since"] == "2026-07-23T02:28:00+00:00"
+    assert first["hours_in_imminent"] == 0.0
     second = write_compact_status(path, {
         "ts": "2026-07-23T02:40:00+00:00",
         "outage_open": True,
@@ -149,12 +150,14 @@ def test_write_compact_status_latches_imminent_since(tmp_path: Path) -> None:
     })
     # Latched — must not advance with later ticks.
     assert second["outage_imminent_since"] == "2026-07-23T02:28:00+00:00"
+    assert second["hours_in_imminent"] == 0.2
     cleared = write_compact_status(path, {
         "ts": "2026-07-23T03:00:00+00:00",
         "outage_open": False,
         "outage_alert_imminent": False,
     })
     assert cleared["outage_imminent_since"] is None
+    assert cleared["hours_in_imminent"] is None
 
 
 def test_outage_window_report_cli(tmp_path: Path) -> None:

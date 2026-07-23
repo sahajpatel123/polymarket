@@ -190,6 +190,7 @@ PRESERVE_STATUS_KEYS = (
     "hours_to_imminent",
     "outage_alert_imminent",
     "outage_imminent_since",
+    "hours_in_imminent",
     "recovery_smoke",
     "recovery_smoke_blockers",
 )
@@ -200,6 +201,7 @@ def _stamp_imminent_since(status: dict[str, Any], prev: dict[str, Any]) -> None:
     imminent = bool(status.get("outage_alert_imminent"))
     if not imminent:
         status["outage_imminent_since"] = None
+        status["hours_in_imminent"] = None
         return
     prev_since = prev.get("outage_imminent_since")
     if prev_since not in (None, ""):
@@ -208,6 +210,12 @@ def _stamp_imminent_since(status: dict[str, Any], prev: dict[str, Any]) -> None:
         status["outage_imminent_since"] = status.get("ts") or datetime.now(
             timezone.utc
         ).isoformat()
+    since_ts = _parse_ts(status.get("outage_imminent_since"))
+    now_ts = _parse_ts(status.get("ts"))
+    if since_ts is not None and now_ts is not None:
+        status["hours_in_imminent"] = round(max(0.0, (now_ts - since_ts) / 3600.0), 4)
+    else:
+        status["hours_in_imminent"] = None
 
 
 def write_compact_status(path: Path, status: dict[str, Any]) -> dict[str, Any]:
@@ -313,6 +321,7 @@ def main() -> int:
         f"outage_alert_critical={status['outage_alert_critical']} "
         f"outage_alert_imminent={status['outage_alert_imminent']} "
         f"outage_imminent_since={status.get('outage_imminent_since') or '-'} "
+        f"hours_in_imminent={status.get('hours_in_imminent')} "
         f"status_out={args.status_out or '-'}",
         file=sys.stderr,
     )

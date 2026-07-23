@@ -62,7 +62,9 @@ Compact monitor snapshot written by `strategy_tick` / `outage_window_report`
 age in [11h, 12h)) — final-hour warning before critical (T1-104).
 `hours_to_imminent` counts down to that 11h threshold (T1-109). When imminent
 first trips, `outage_imminent_since` latches the UTC ISO timestamp and stays
-fixed until recovery clears it (T1-110).
+fixed until recovery clears it (T1-110). `hours_in_imminent` is age since that
+latch; while imminent is True, validate requires `outage_imminent_since`
+(T1-111).
 
 After each `strategy_tick`, `quotes` / `runtime_h` / `hours_to_tier2_gate` are
 refreshed from the live `paper_data_gate` (T1-99), not only the cycle trail.
@@ -76,11 +78,12 @@ status **before** `summarize_strategy_cycles`, which overlays live
 `last_requote_age_s`, `last_requote_at`, `health`, `ensure_status`,
 `collector_pid`, `deps_ok`, `n_cycles`, `c01_status`, `c01_blockers`,
 `paper_log`, `paper_log_files`, `metrics_log`, `recovery_smoke`,
-`recovery_smoke_blockers`, `outage_imminent_since`.
+`recovery_smoke_blockers`, `hours_in_imminent`.
 
 While `outage_open=true`, validate also **requires** `hours_to_critical`,
 `hours_to_imminent`, and `outage_started_at` (T1-103/T1-109) — empty/null
-counts as missing.
+counts as missing. While `outage_alert_imminent=true`, validate also
+**requires** `outage_imminent_since` (T1-111).
 
 `last_requote_at` / `last_quote_at` are UTC ISO timestamps derived from live
 paper_health ages (T1-105).

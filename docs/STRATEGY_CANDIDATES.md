@@ -170,6 +170,8 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
 
 - **Update 2026-07-23T02:35Z (T1-110):** `outage_alert_imminent=True` at ~11.0h; `outage_imminent_since` latched. C-01 still blocked.
 
+- **Update 2026-07-23T02:45Z (T1-111):** `hours_in_imminent` while imminent window open. Still ~11.2h DOWN; C-01 blocked.
+
 ## C-02 Prefer higher-reward market weight (selection)
 
 - **Hypothesis:** live scorecard shows one market earning ~2× reward/hour of

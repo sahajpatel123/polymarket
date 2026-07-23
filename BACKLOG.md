@@ -736,6 +736,13 @@ done without evidence (script output / tests) from that cycle.
   recovery; live status shows since after crossing 11h.
 - Evidence: live outage_alert_imminent=True at ~11.0h with outage_imminent_since set
 
+### T1-111 hours_in_imminent + require since while imminent
+- Status: `done`
+- Done when: status carries hours_in_imminent age since latch; validate fails
+  if imminent without outage_imminent_since; live hours_in_imminent>0 while
+  imminent=True.
+- Evidence: unit + live during ~11.2h DOWN imminent window
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

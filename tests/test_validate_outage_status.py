@@ -18,6 +18,7 @@ def _full(**overrides):
         "outage_alert_prolonged": False,
         "outage_alert_critical": False,
         "outage_alert_imminent": False,
+        "outage_imminent_since": None,
         "hours_to_tier2_gate": 15.63,
         "hours_to_critical": 2.66,
         "hours_to_imminent": 1.66,
@@ -44,7 +45,6 @@ def _full(**overrides):
         "metrics_log": "livecfg/logs/metrics-paper.jsonl",
         "recovery_smoke": "FAIL",
         "recovery_smoke_blockers": "connectivity_up",
-        "outage_imminent_since": None,
     }
     base.update(overrides)
     return base
@@ -84,6 +84,24 @@ def test_validate_open_outage_requires_started_at() -> None:
     closed = validate_status(data)
     assert closed["ok"] is True
     assert "outage_started_at" not in closed["missing"]
+
+
+def test_validate_imminent_requires_since() -> None:
+    rep = validate_status(_full(
+        outage_alert_imminent=True,
+        outage_imminent_since=None,
+        hours_to_critical=0.5,
+        hours_to_imminent=0.0,
+    ))
+    assert rep["ok"] is False
+    assert "outage_imminent_since" in rep["missing"]
+    ok = validate_status(_full(
+        outage_alert_imminent=True,
+        outage_imminent_since="2026-07-23T02:30:25+00:00",
+        hours_to_critical=0.5,
+        hours_to_imminent=0.0,
+    ))
+    assert ok["ok"] is True
 
 
 def test_validate_status_missing_keys() -> None:

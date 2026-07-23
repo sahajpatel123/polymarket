@@ -33,11 +33,16 @@ REQUIRED_KEYS = (
     "quotes",
 )
 
-# Required only while an outage window is open (T1-103).
+# Required only while an outage window is open (T1-103/T1-109).
 OPEN_OUTAGE_REQUIRED_KEYS = (
     "hours_to_critical",
     "outage_started_at",
     "hours_to_imminent",
+)
+
+# Required while the final-hour imminent alert is lit (T1-111).
+IMMINENT_REQUIRED_KEYS = (
+    "outage_imminent_since",
 )
 
 RECOMMENDED_KEYS = (
@@ -61,7 +66,6 @@ RECOMMENDED_KEYS = (
     "metrics_log",
     "recovery_smoke",
     "recovery_smoke_blockers",
-    "outage_imminent_since",
 )
 
 
@@ -95,6 +99,10 @@ def validate_status(
     open_outage = bool(data.get("outage_open"))
     if open_outage:
         for key in OPEN_OUTAGE_REQUIRED_KEYS:
+            if not _present(data, key) and key not in missing:
+                missing.append(key)
+    if bool(data.get("outage_alert_imminent")):
+        for key in IMMINENT_REQUIRED_KEYS:
             if not _present(data, key) and key not in missing:
                 missing.append(key)
     recommended_missing = [k for k in RECOMMENDED_KEYS if k not in data]
