@@ -679,6 +679,13 @@ done without evidence (script output / tests) from that cycle.
   status line is not one cycle stale.
 - Evidence: live summarize outage_started_at matches outage_status in same tick
 
+### T1-103 Open-outage requires started_at + hours_to_critical
+- Status: `done`
+- Done when: validate_outage_status fails if outage_open and
+  hours_to_critical/outage_started_at missing or null; closed outages pass
+  without those keys; live validate OK during open outage.
+- Evidence: unit test + live validate status=OK with both fields present
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

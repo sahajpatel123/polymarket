@@ -69,8 +69,10 @@ status **before** `summarize_strategy_cycles`, which overlays live
 `gate_reason`, `runtime_basis`, `tape_frozen`, `eta_paused`,
 `last_requote_age_s`, `health`, `ensure_status`, `collector_pid`, `deps_ok`,
 `n_cycles`, `c01_status`, `c01_blockers`, `paper_log`, `paper_log_files`,
-`metrics_log`, `hours_to_critical` (hours until ≥12h critical alert),
-`outage_started_at` (UTC ISO start of the open outage window).
+`metrics_log`.
+
+While `outage_open=true`, validate also **requires** `hours_to_critical` and
+`outage_started_at` (T1-103) — empty/null counts as missing.
 
 **Paper log rotation:** `TimedRotatingFileHandler` rolls
 `livecfg/logs/paper.jsonl` to `paper.jsonl.YYYY-MM-DD` at midnight. Richest-log

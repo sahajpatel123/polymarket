@@ -55,6 +55,30 @@ def test_validate_status_ok() -> None:
     assert rep["recommended_missing"] == []
 
 
+def test_validate_open_outage_requires_started_at() -> None:
+    rep = validate_status(_full(outage_started_at=None, hours_to_critical=None))
+    assert rep["ok"] is False
+    assert "outage_started_at" in rep["missing"]
+    assert "hours_to_critical" in rep["missing"]
+    # Closed outages do not require the open-window fields.
+    data = _full(
+        outage_open=False,
+        outage_alert=False,
+        outage_alert_severe=False,
+        outage_alert_prolonged=False,
+        outage_alert_critical=False,
+        tape_frozen=False,
+        eta_paused=False,
+        health="OK",
+        ensure_status="OK",
+    )
+    data.pop("outage_started_at", None)
+    data.pop("hours_to_critical", None)
+    closed = validate_status(data)
+    assert closed["ok"] is True
+    assert "outage_started_at" not in closed["missing"]
+
+
 def test_validate_status_missing_keys() -> None:
     rep = validate_status({"ts": "2026-07-22T21:00:00+00:00", "outage_open": True})
     assert rep["ok"] is False

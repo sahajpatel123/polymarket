@@ -32,6 +32,12 @@ REQUIRED_KEYS = (
     "quotes",
 )
 
+# Required only while an outage window is open (T1-103).
+OPEN_OUTAGE_REQUIRED_KEYS = (
+    "hours_to_critical",
+    "outage_started_at",
+)
+
 RECOMMENDED_KEYS = (
     "connectivity",
     "tier2_allowed",
@@ -50,8 +56,6 @@ RECOMMENDED_KEYS = (
     "paper_log",
     "paper_log_files",
     "metrics_log",
-    "hours_to_critical",
-    "outage_started_at",
 )
 
 
@@ -64,6 +68,17 @@ def _parse_ts(raw: Any) -> float | None:
         return None
 
 
+def _present(data: dict[str, Any], key: str) -> bool:
+    if key not in data:
+        return False
+    val = data[key]
+    if val is None:
+        return False
+    if isinstance(val, str) and not val.strip():
+        return False
+    return True
+
+
 def validate_status(
     data: dict[str, Any],
     *,
@@ -71,13 +86,18 @@ def validate_status(
     now: float | None = None,
 ) -> dict[str, Any]:
     missing = [k for k in REQUIRED_KEYS if k not in data]
+    open_outage = bool(data.get("outage_open"))
+    if open_outage:
+        for key in OPEN_OUTAGE_REQUIRED_KEYS:
+            if not _present(data, key) and key not in missing:
+                missing.append(key)
     recommended_missing = [k for k in RECOMMENDED_KEYS if k not in data]
     age_s: float | None = None
     stale = False
     ts = _parse_ts(data.get("ts"))
     if ts is not None:
         age_s = round((now if now is not None else datetime.now(timezone.utc).timestamp()) - ts, 1)
-        if max_age_s is not None and bool(data.get("outage_open")) and age_s > max_age_s:
+        if max_age_s is not None and open_outage and age_s > max_age_s:
             stale = True
     ok = not missing and not stale
     return {
@@ -89,6 +109,8 @@ def validate_status(
         "outage_open": data.get("outage_open"),
         "outage_total_h": data.get("outage_total_h"),
         "hours_to_tier2_gate": data.get("hours_to_tier2_gate"),
+        "hours_to_critical": data.get("hours_to_critical"),
+        "outage_started_at": data.get("outage_started_at"),
         "tier2_allowed": data.get("tier2_allowed"),
         "connectivity": data.get("connectivity"),
     }
@@ -131,6 +153,8 @@ def main() -> int:
         f"age_s={rep['age_s']} stale={rep['stale']} "
         f"outage_open={rep['outage_open']} "
         f"hours_to_tier2_gate={rep['hours_to_tier2_gate']} "
+        f"hours_to_critical={rep['hours_to_critical']} "
+        f"outage_started_at={rep['outage_started_at']} "
         f"tier2_allowed={rep['tier2_allowed']}",
         file=sys.stderr,
     )

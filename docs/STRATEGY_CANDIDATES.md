@@ -154,6 +154,8 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
 
 - **Update 2026-07-23T01:15Z (T1-102):** summarize overlays live `outage_status` after merge — no one-cycle lag on critical countdown. Still ~9.7h DOWN; C-01 blocked.
 
+- **Update 2026-07-23T01:25Z (T1-103):** open-outage validate requires `outage_started_at` + `hours_to_critical`. Still ~9.8h DOWN; C-01 blocked.
+
 ## C-02 Prefer higher-reward market weight (selection)
 
 - **Hypothesis:** live scorecard shows one market earning ~2× reward/hour of
