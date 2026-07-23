@@ -229,6 +229,8 @@ PRESERVE_STATUS_KEYS = (
     "outage_critical_since",
     "hours_past_critical",
     "minutes_past_critical",
+    "operator_mode",
+    "operator_action",
     "recovery_smoke",
     "recovery_smoke_blockers",
 )
@@ -282,6 +284,25 @@ def _stamp_critical_since(status: dict[str, Any], prev: dict[str, Any]) -> None:
         status["minutes_past_critical"] = None
 
 
+def _stamp_operator_brief(status: dict[str, Any]) -> None:
+    """Persist operator_mode / operator_action from brief helper (T1-119)."""
+    try:
+        import importlib.util
+
+        path_mod = Path(__file__).resolve().parent / "outage_operator_brief.py"
+        spec = importlib.util.spec_from_file_location("outage_operator_brief", path_mod)
+        if spec is None or spec.loader is None:
+            return
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        brief = mod.operator_brief(status)
+        status["operator_mode"] = brief.get("mode")
+        status["operator_action"] = brief.get("action")
+    except Exception:  # noqa: BLE001
+        # Brief is best-effort; never block status writes.
+        return
+
+
 def write_compact_status(path: Path, status: dict[str, Any]) -> dict[str, Any]:
     """Write compact status, preserving probe/gate fields from a prior file (T1-80)."""
     prev: dict[str, Any] = {}
@@ -295,6 +316,7 @@ def write_compact_status(path: Path, status: dict[str, Any]) -> dict[str, Any]:
             status[key] = prev[key]
     _stamp_imminent_since(status, prev)
     _stamp_critical_since(status, prev)
+    _stamp_operator_brief(status)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(status, indent=2, sort_keys=True) + "\n")
     return status
@@ -408,6 +430,8 @@ def main() -> int:
         f"outage_critical_since={status.get('outage_critical_since') or '-'} "
         f"hours_past_critical={status.get('hours_past_critical')} "
         f"minutes_past_critical={status.get('minutes_past_critical')} "
+        f"operator_mode={status.get('operator_mode') or '-'} "
+        f"operator_action={status.get('operator_action') or '-'} "
         f"status_out={args.status_out or '-'}",
         file=sys.stderr,
     )

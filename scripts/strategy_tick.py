@@ -458,6 +458,8 @@ def main() -> int:
         f"outage_critical_since={ost.get('outage_critical_since') or '-'} "
         f"hours_past_critical={ost.get('hours_past_critical')} "
         f"minutes_past_critical={ost.get('minutes_past_critical')} "
+        f"operator_mode={ost.get('operator_mode') or brief.get('status') or '-'} "
+        f"operator_action={ost.get('operator_action') or brief.get('action') or '-'} "
         f"quotes={ost.get('quotes', outage.get('quotes'))} "
         f"tier2_allowed={ost.get('tier2_allowed', gate.get('tier2_allowed'))} "
         f"gate_reason={ost.get('gate_reason', gate.get('gate_reason'))} "

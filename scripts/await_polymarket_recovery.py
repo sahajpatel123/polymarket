@@ -57,6 +57,20 @@ def _patch_outage_status(status_out: str, **fields: object) -> None:
         except json.JSONDecodeError:
             data = {}
     data.update({"ts": datetime.now(timezone.utc).isoformat(), **fields})
+    # Refresh operator brief after every patch (T1-119).
+    try:
+        import importlib.util
+
+        path_mod = Path(__file__).resolve().parent / "outage_operator_brief.py"
+        spec = importlib.util.spec_from_file_location("outage_operator_brief", path_mod)
+        if spec is not None and spec.loader is not None:
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            brief = mod.operator_brief(data)
+            data["operator_mode"] = brief.get("mode")
+            data["operator_action"] = brief.get("action")
+    except Exception:  # noqa: BLE001
+        pass
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
 

@@ -43,7 +43,7 @@ uv run python scripts/c01_promotion_checklist.py          # C-01 Tier-2 PR block
 | `scripts/polymarket_connectivity.py` | REST + market WS upstream probe (outage vs local) |
 | `scripts/outage_window_report.py` | STALE/DOWN window durations; optional `--status-out` JSON (incl. `hours_to_tier2_gate`) |
 | `scripts/validate_outage_status.py` | Required-key + optional freshness check for `logs/outage_status.json` |
-| `scripts/outage_operator_brief.py` | One-line mode (`CRITICAL_OPEN` / …) + next recovery action (T1-118) |
+| `scripts/outage_operator_brief.py` | One-line mode (`CRITICAL_OPEN` / …) + next recovery action (T1-118); also stamped into status as `operator_mode` / `operator_action` (T1-119) |
 | `scripts/await_polymarket_recovery.py` | Poll until REST+WS UP; collector restart + cycle append; refreshes `logs/outage_status.json` |
 | `scripts/write_weekly_report.py` | Overwrite WEEKLY_REPORT.md from gate/metrics/C-01/summarize/deps + outage_status |
 | `scripts/unused_knob_toml_scan.py` | Flag unused StrategyProfile knobs still set in TOML (C-04) |
@@ -58,7 +58,8 @@ Compact monitor snapshot written by `strategy_tick` / `outage_window_report`
 **Required** (fail if missing): `ts`, `outage_open`, `outage_total_h`,
 `outage_alert` (≥3h), `outage_alert_severe` (≥5h), `outage_alert_prolonged`
 (≥8h), `outage_alert_critical` (≥12h), `outage_alert_imminent` (11–12h window),
-`outage_alert_final` (last 15 min before critical), `hours_to_tier2_gate`,
+`outage_alert_final` (last 15 min before critical), `operator_mode`,
+`operator_action`, `hours_to_tier2_gate`,
 `runtime_h`, `quotes` (int from live gate when available).
 
 `outage_alert_imminent` is set when `1h >= hours_to_critical > 0` (i.e. outage

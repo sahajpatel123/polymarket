@@ -790,6 +790,12 @@ done without evidence (script output / tests) from that cycle.
   it and surfaces brief/action; unit covers modes.
 - Evidence: unit + live CRITICAL_OPEN during ~12.3h DOWN
 
+### T1-119 Persist operator_mode/action in outage_status
+- Status: `done`
+- Done when: write_compact_status and await patches stamp operator_mode +
+  operator_action; validate requires both keys; live CRITICAL_OPEN in status.
+- Evidence: unit + live during ~12.5h DOWN critical
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
