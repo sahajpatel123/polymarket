@@ -108,8 +108,8 @@ missing. While `outage_alert_imminent=true`, validate also **requires**
 (T1-113/T1-117). While critical is
 lit, validate also fails on inconsistencies: imminent/final still True, or
 non-zero `hours_to_critical` / `minutes_to_critical` (T1-116).
-`operator_mode` / `operator_action` must match the outage state
-(CRITICAL_OPEN while critical+open, etc.) (T1-120).
+`operator_mode` / `operator_action` / `operator_recovery_cmd` must match the
+outage state (CRITICAL_OPEN while critical+open, etc.) (T1-120/T1-125).
 `outage_alert_critical_aged` / `outage_alert_critical_hour` must agree with
 `minutes_past_critical` thresholds (30 / 60) (T1-123).
 

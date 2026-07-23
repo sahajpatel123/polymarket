@@ -827,6 +827,12 @@ done without evidence (script output / tests) from that cycle.
   validate requires the key; live CRITICAL_OPEN shows await --once command.
 - Evidence: unit + live during ~13.3h DOWN critical
 
+### T1-125 Validate operator_recovery_cmd matches action
+- Status: `done`
+- Done when: validate fails if operator_recovery_cmd disagrees with expected
+  CLI for mode/action; live CRITICAL_OPEN status passes.
+- Evidence: unit mismatch + live during ~13.5h DOWN critical
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

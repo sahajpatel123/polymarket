@@ -105,18 +105,32 @@ def _present(data: dict[str, Any], key: str) -> bool:
     return True
 
 
-def _expected_operator_brief(data: dict[str, Any]) -> tuple[str, str]:
-    """Mirror outage_operator_brief.operator_brief mode/action (T1-120)."""
+def _expected_operator_brief(data: dict[str, Any]) -> tuple[str, str, str]:
+    """Mirror outage_operator_brief mode/action/cmd (T1-120/T1-125)."""
     open_outage = bool(data.get("outage_open"))
     critical = bool(data.get("outage_alert_critical"))
     recovered = bool(data.get("recovered"))
     if recovered:
-        return "RECOVERED", "run_recovery_smoke"
-    if critical and open_outage:
-        return "CRITICAL_OPEN", "await_UP_then_full_recovery"
-    if open_outage:
-        return "OUTAGE_OPEN", "await_UP_diagnose_only"
-    return "QUIET", "continue_paper_gate"
+        mode, action = "RECOVERED", "run_recovery_smoke"
+    elif critical and open_outage:
+        mode, action = "CRITICAL_OPEN", "await_UP_then_full_recovery"
+    elif open_outage:
+        mode, action = "OUTAGE_OPEN", "await_UP_diagnose_only"
+    else:
+        mode, action = "QUIET", "continue_paper_gate"
+    cmd = "uv run python scripts/paper_data_gate.py"
+    try:
+        import importlib.util
+
+        path_mod = Path(__file__).resolve().parent / "outage_operator_brief.py"
+        spec = importlib.util.spec_from_file_location("outage_operator_brief", path_mod)
+        if spec is not None and spec.loader is not None:
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            cmd = mod.recovery_cmd_for(action, quotes=data.get("quotes"))
+    except Exception:  # noqa: BLE001
+        pass
+    return mode, action, cmd
 
 
 def validate_status(
@@ -182,14 +196,17 @@ def validate_status(
             inconsistencies.append("aged_while_not_critical")
         if bool(data.get("outage_alert_critical_hour")):
             inconsistencies.append("hour_while_not_critical")
-    # Operator mode/action must match outage state (T1-120).
-    expected_mode, expected_action = _expected_operator_brief(data)
+    # Operator mode/action/cmd must match outage state (T1-120/T1-125).
+    expected_mode, expected_action, expected_cmd = _expected_operator_brief(data)
     mode = data.get("operator_mode")
     action = data.get("operator_action")
+    recovery_cmd = data.get("operator_recovery_cmd")
     if mode not in (None, "") and mode != expected_mode:
         inconsistencies.append("operator_mode_mismatch")
     if action not in (None, "") and action != expected_action:
         inconsistencies.append("operator_action_mismatch")
+    if recovery_cmd not in (None, "") and recovery_cmd != expected_cmd:
+        inconsistencies.append("operator_recovery_cmd_mismatch")
     recommended_missing = [k for k in RECOMMENDED_KEYS if k not in data]
     age_s: float | None = None
     stale = False

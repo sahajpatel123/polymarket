@@ -7,6 +7,14 @@ from pathlib import Path
 
 from scripts.validate_outage_status import validate_status
 
+_CRITICAL_CMD = "uv run python scripts/await_polymarket_recovery.py --once"
+_DIAGNOSE_CMD = (
+    "uv run python scripts/await_polymarket_recovery.py --once "
+    "--no-restart-on-recover --no-append-cycle-on-recover "
+    "--no-smoke-on-recover"
+)
+_GATE_CMD = "uv run python scripts/paper_data_gate.py"
+
 
 def _full(**overrides):
     base = {
@@ -23,11 +31,7 @@ def _full(**overrides):
         "outage_alert_critical_hour": False,
         "operator_mode": "OUTAGE_OPEN",
         "operator_action": "await_UP_diagnose_only",
-        "operator_recovery_cmd": (
-            "uv run python scripts/await_polymarket_recovery.py --once "
-            "--no-restart-on-recover --no-append-cycle-on-recover "
-            "--no-smoke-on-recover"
-        ),
+        "operator_recovery_cmd": _DIAGNOSE_CMD,
         "outage_imminent_since": None,
         "hours_in_imminent": None,
         "hours_to_tier2_gate": 15.63,
@@ -98,7 +102,7 @@ def test_validate_open_outage_requires_started_at() -> None:
         outage_alert_critical=False,
         operator_mode="QUIET",
         operator_action="continue_paper_gate",
-        operator_recovery_cmd="uv run python scripts/paper_data_gate.py",
+        operator_recovery_cmd=_GATE_CMD,
         tape_frozen=False,
         eta_paused=False,
         health="OK",
@@ -151,6 +155,7 @@ def test_validate_critical_requires_since() -> None:
         outage_alert_final=False,
         operator_mode="CRITICAL_OPEN",
         operator_action="await_UP_then_full_recovery",
+        operator_recovery_cmd=_CRITICAL_CMD,
         outage_total_h=12.1,
         hours_to_critical=0.0,
         minutes_to_critical=0,
@@ -169,6 +174,7 @@ def test_validate_critical_requires_since() -> None:
         outage_alert_final=False,
         operator_mode="CRITICAL_OPEN",
         operator_action="await_UP_then_full_recovery",
+        operator_recovery_cmd=_CRITICAL_CMD,
         outage_total_h=12.1,
         hours_to_critical=0.0,
         minutes_to_critical=0,
@@ -188,6 +194,7 @@ def test_validate_critical_state_consistency() -> None:
         outage_alert_final=True,
         operator_mode="CRITICAL_OPEN",
         operator_action="await_UP_then_full_recovery",
+        operator_recovery_cmd=_CRITICAL_CMD,
         outage_imminent_since="2026-07-23T02:30:00+00:00",
         hours_in_imminent=1.0,
         outage_total_h=12.1,
@@ -233,6 +240,7 @@ def test_validate_operator_mode_consistency() -> None:
         outage_alert_critical_hour=False,
         operator_mode="CRITICAL_OPEN",
         operator_action="await_UP_then_full_recovery",
+        operator_recovery_cmd=_CRITICAL_CMD,
         outage_total_h=12.1,
         hours_to_critical=0.0,
         minutes_to_critical=0,
@@ -254,6 +262,7 @@ def test_validate_critical_aged_hour_consistency() -> None:
         outage_alert_critical_hour=False,
         operator_mode="CRITICAL_OPEN",
         operator_action="await_UP_then_full_recovery",
+        operator_recovery_cmd=_CRITICAL_CMD,
         outage_total_h=13.1,
         hours_to_critical=0.0,
         minutes_to_critical=0,
@@ -273,6 +282,7 @@ def test_validate_critical_aged_hour_consistency() -> None:
         outage_alert_critical_hour=True,
         operator_mode="CRITICAL_OPEN",
         operator_action="await_UP_then_full_recovery",
+        operator_recovery_cmd=_CRITICAL_CMD,
         outage_total_h=13.1,
         hours_to_critical=0.0,
         minutes_to_critical=0,
@@ -290,6 +300,7 @@ def test_validate_critical_aged_hour_consistency() -> None:
         outage_alert_critical_hour=True,
         operator_mode="CRITICAL_OPEN",
         operator_action="await_UP_then_full_recovery",
+        operator_recovery_cmd=_CRITICAL_CMD,
         outage_total_h=13.1,
         hours_to_critical=0.0,
         minutes_to_critical=0,
@@ -297,6 +308,49 @@ def test_validate_critical_aged_hour_consistency() -> None:
         outage_critical_since="2026-07-23T03:28:00+00:00",
         hours_past_critical=1.1,
         minutes_past_critical=70,
+    ))
+    assert ok["ok"] is True
+    assert ok["inconsistencies"] == []
+
+
+def test_validate_operator_recovery_cmd_consistency() -> None:
+    bad = validate_status(_full(
+        outage_alert_critical=True,
+        outage_alert_imminent=False,
+        outage_alert_final=False,
+        outage_alert_critical_aged=True,
+        outage_alert_critical_hour=True,
+        operator_mode="CRITICAL_OPEN",
+        operator_action="await_UP_then_full_recovery",
+        operator_recovery_cmd="uv run python scripts/paper_data_gate.py",
+        outage_total_h=13.5,
+        hours_to_critical=0.0,
+        minutes_to_critical=0,
+        hours_to_imminent=0.0,
+        outage_critical_since="2026-07-23T03:28:00+00:00",
+        hours_past_critical=1.5,
+        minutes_past_critical=90,
+    ))
+    assert bad["ok"] is False
+    assert "operator_recovery_cmd_mismatch" in bad["inconsistencies"]
+    ok = validate_status(_full(
+        outage_alert_critical=True,
+        outage_alert_imminent=False,
+        outage_alert_final=False,
+        outage_alert_critical_aged=True,
+        outage_alert_critical_hour=True,
+        operator_mode="CRITICAL_OPEN",
+        operator_action="await_UP_then_full_recovery",
+        operator_recovery_cmd=(
+            "uv run python scripts/await_polymarket_recovery.py --once"
+        ),
+        outage_total_h=13.5,
+        hours_to_critical=0.0,
+        minutes_to_critical=0,
+        hours_to_imminent=0.0,
+        outage_critical_since="2026-07-23T03:28:00+00:00",
+        hours_past_critical=1.5,
+        minutes_past_critical=90,
     ))
     assert ok["ok"] is True
     assert ok["inconsistencies"] == []
