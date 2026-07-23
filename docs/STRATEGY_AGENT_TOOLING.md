@@ -96,7 +96,9 @@ While `outage_open=true`, validate also **requires** `hours_to_critical`,
 missing. While `outage_alert_imminent=true`, validate also **requires**
 `outage_imminent_since` and `hours_in_imminent` (T1-111/T1-112). While
 `outage_alert_critical=true`, validate also **requires**
-`outage_critical_since` and `hours_past_critical` (T1-113).
+`outage_critical_since` and `hours_past_critical` (T1-113). While critical is
+lit, validate also fails on inconsistencies: imminent/final still True, or
+non-zero `hours_to_critical` / `minutes_to_critical` (T1-116).
 
 `last_requote_at` / `last_quote_at` are UTC ISO timestamps derived from live
 paper_health ages (T1-105).

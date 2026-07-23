@@ -119,6 +119,28 @@ def validate_status(
         for key in CRITICAL_REQUIRED_KEYS:
             if not _present(data, key) and key not in missing:
                 missing.append(key)
+    # Critical-state consistency (T1-116): pre-critical flags must clear,
+    # and countdowns must be zero once ≥12h is lit.
+    inconsistencies: list[str] = []
+    if bool(data.get("outage_alert_critical")):
+        if bool(data.get("outage_alert_imminent")):
+            inconsistencies.append("imminent_while_critical")
+        if bool(data.get("outage_alert_final")):
+            inconsistencies.append("final_while_critical")
+        mtc = data.get("minutes_to_critical")
+        if mtc is not None:
+            try:
+                if int(mtc) != 0:
+                    inconsistencies.append("minutes_to_critical_nonzero")
+            except (TypeError, ValueError):
+                inconsistencies.append("minutes_to_critical_invalid")
+        htc = data.get("hours_to_critical")
+        if htc is not None:
+            try:
+                if float(htc) != 0.0:
+                    inconsistencies.append("hours_to_critical_nonzero")
+            except (TypeError, ValueError):
+                inconsistencies.append("hours_to_critical_invalid")
     recommended_missing = [k for k in RECOMMENDED_KEYS if k not in data]
     age_s: float | None = None
     stale = False
@@ -127,11 +149,12 @@ def validate_status(
         age_s = round((now if now is not None else datetime.now(timezone.utc).timestamp()) - ts, 1)
         if max_age_s is not None and open_outage and age_s > max_age_s:
             stale = True
-    ok = not missing and not stale
+    ok = not missing and not stale and not inconsistencies
     return {
         "ok": ok,
         "missing": missing,
         "recommended_missing": recommended_missing,
+        "inconsistencies": inconsistencies,
         "age_s": age_s,
         "stale": stale,
         "outage_open": data.get("outage_open"),
@@ -177,9 +200,11 @@ def main() -> int:
     print(json.dumps(rep, indent=2, sort_keys=True))
     miss = ",".join(rep["missing"]) if rep["missing"] else "-"
     rec = ",".join(rep["recommended_missing"]) if rep["recommended_missing"] else "-"
+    inconsist = ",".join(rep.get("inconsistencies") or []) or "-"
     print(
         f"status={'OK' if rep['ok'] else 'FAIL'} "
         f"missing={miss} recommended_missing={rec} "
+        f"inconsistencies={inconsist} "
         f"age_s={rep['age_s']} stale={rep['stale']} "
         f"outage_open={rep['outage_open']} "
         f"hours_to_tier2_gate={rep['hours_to_tier2_gate']} "

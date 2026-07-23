@@ -755,7 +755,8 @@ done without evidence (script output / tests) from that cycle.
 - Done when: write_compact_status latches outage_critical_since on first
   critical=True and preserves across ticks; clears on recovery; validate
   requires since + hours_past_critical while critical lit; unit covers latch.
-- Evidence: unit latch/preserve/clear; ready for live ≥12h edge
+- Evidence: unit latch/preserve/clear; live latch at ~12.01h DOWN
+  (outage_critical_since=2026-07-23T03:28:21Z)
 
 ### T1-114 minutes_to_critical countdown
 - Status: `done`
@@ -769,6 +770,12 @@ done without evidence (script output / tests) from that cycle.
   0 < minutes_to_critical ≤ 15 and still under 12h; validate always requires
   the key; live True during final quarter-hour.
 - Evidence: unit + live during ~11.8h DOWN (~10 min to critical)
+
+### T1-116 Validate critical-state consistency
+- Status: `done`
+- Done when: validate fails if critical lit with imminent/final still True or
+  non-zero hours/minutes_to_critical; live status at ≥12h passes consistency.
+- Evidence: unit inconsistencies + live critical=True / imminent=final=False
 
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 

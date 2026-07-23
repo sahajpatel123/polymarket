@@ -135,8 +135,10 @@ def test_validate_critical_requires_since() -> None:
     rep = validate_status(_full(
         outage_alert_critical=True,
         outage_alert_imminent=False,
+        outage_alert_final=False,
         outage_total_h=12.1,
         hours_to_critical=0.0,
+        minutes_to_critical=0,
         hours_to_imminent=0.0,
         outage_critical_since=None,
         hours_past_critical=None,
@@ -147,13 +149,37 @@ def test_validate_critical_requires_since() -> None:
     ok = validate_status(_full(
         outage_alert_critical=True,
         outage_alert_imminent=False,
+        outage_alert_final=False,
         outage_total_h=12.1,
         hours_to_critical=0.0,
+        minutes_to_critical=0,
         hours_to_imminent=0.0,
         outage_critical_since="2026-07-23T03:28:00+00:00",
         hours_past_critical=0.2,
     ))
     assert ok["ok"] is True
+    assert ok["inconsistencies"] == []
+
+
+def test_validate_critical_state_consistency() -> None:
+    rep = validate_status(_full(
+        outage_alert_critical=True,
+        outage_alert_imminent=True,
+        outage_alert_final=True,
+        outage_imminent_since="2026-07-23T02:30:00+00:00",
+        hours_in_imminent=1.0,
+        outage_total_h=12.1,
+        hours_to_critical=0.5,
+        minutes_to_critical=30,
+        hours_to_imminent=0.0,
+        outage_critical_since="2026-07-23T03:28:00+00:00",
+        hours_past_critical=0.0,
+    ))
+    assert rep["ok"] is False
+    assert "imminent_while_critical" in rep["inconsistencies"]
+    assert "final_while_critical" in rep["inconsistencies"]
+    assert "minutes_to_critical_nonzero" in rep["inconsistencies"]
+    assert "hours_to_critical_nonzero" in rep["inconsistencies"]
 
 
 def test_validate_status_missing_keys() -> None:

@@ -274,3 +274,4 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-23T03:05:00Z | Tier1 | T1-113 latch outage_critical_since + hours_past_critical; validate while critical lit | pytest outage/validate; ~11.5h DOWN imminent=True; no Tier2 | merged
 2026-07-23T03:15:00Z | Tier1 | T1-114 minutes_to_critical whole-minute countdown; require while outage_open | pytest outage/validate; ~11.7h DOWN imminent=True; no Tier2 | merged
 2026-07-23T03:25:00Z | Tier1 | T1-115 outage_alert_final for last 15min before critical | pytest outage/validate; ~11.8h DOWN final=True; no Tier2 | merged
+2026-07-23T03:35:00Z | Tier1 | T1-116 validate critical-state consistency; live critical latch at ≥12h | pytest validate; critical=True since latched; no Tier2 | merged
