@@ -94,6 +94,113 @@ def pick_richest_log(candidates: Iterable[Path]) -> Path | None:
     return best
 
 
+def paper_log_family(path: Path) -> list[Path]:
+    """Active ``paper.jsonl`` plus dated rotations in the same directory (T1-98).
+
+    Midnight rotation splits the requote timeline across
+    ``paper.jsonl.YYYY-MM-DD`` and a fresh ``paper.jsonl``. Gate runtime and
+    freshness checks must union the family or progress freezes on the archive
+    after recovery resumes quoting into the active file.
+    """
+    path = Path(path)
+    if not path.name.startswith("paper.jsonl"):
+        return [path] if path.exists() else []
+    parent = path.parent
+    found: list[Path] = []
+    seen: set[str] = set()
+
+    def _add(p: Path) -> None:
+        key = str(p.resolve()) if p.exists() else str(p)
+        if key in seen:
+            return
+        if not p.exists():
+            return
+        seen.add(key)
+        found.append(p)
+
+    _add(parent / "paper.jsonl")
+    if parent.is_dir():
+        for rotated in sorted(parent.glob("paper.jsonl.*")):
+            _add(rotated)
+    if not found and path.exists():
+        found.append(path)
+    return found
+
+
+def union_paper_log_score(paths: Iterable[Path], *, sample_limit: int = 5000) -> tuple[float, int]:
+    """Combined (runtime_hours, n_json_lines) across a paper-log family."""
+    times_all: list[float] = []
+    times_requote: list[float] = []
+    n_json = 0
+    for raw in paths:
+        path = Path(raw)
+        if not path.exists():
+            continue
+        try:
+            with path.open() as fh:
+                for i, line in enumerate(fh):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        obj = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if not isinstance(obj, dict):
+                        continue
+                    n_json += 1
+                    event = str(obj.get("event") or obj.get("msg") or "")
+                    t = _ts(obj)
+                    if t is not None:
+                        times_all.append(t)
+                        if event == "requote" or "requote" in event:
+                            times_requote.append(t)
+                    if i + 1 >= sample_limit:
+                        for rest in fh:
+                            if rest.strip():
+                                n_json += 1
+                        break
+        except OSError:
+            continue
+
+    def _span_h(times: list[float]) -> float:
+        if len(times) >= 2:
+            return max(0.0, (max(times) - min(times)) / 3600.0)
+        return 0.0
+
+    runtime_h = _span_h(times_requote)
+    if runtime_h <= 0.0:
+        runtime_h = _span_h(times_all)
+    return (runtime_h, n_json)
+
+
+def pick_richest_paper_family(candidates: Iterable[Path]) -> list[Path]:
+    """Pick the paper-log family with the highest union runtime score (T1-98)."""
+    families: dict[str, list[Path]] = {}
+    for raw in candidates:
+        path = Path(raw)
+        if not path.exists():
+            continue
+        if path.name.startswith("paper.jsonl"):
+            key = str(path.parent.resolve())
+            if key not in families:
+                families[key] = paper_log_family(path)
+        else:
+            key = str(path.resolve())
+            families[key] = [path]
+
+    best: list[Path] = []
+    best_score = (-1.0, -1)
+    for fam in families.values():
+        if not fam:
+            continue
+        score = union_paper_log_score(fam)
+        if score > best_score:
+            best_score = score
+            best = fam
+    return best
+
+
 def default_paper_candidates() -> tuple[Path, ...]:
     """Active paper.jsonl paths plus dated rotations (T1-96).
 

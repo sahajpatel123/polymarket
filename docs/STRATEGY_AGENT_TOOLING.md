@@ -60,13 +60,17 @@ Compact monitor snapshot written by `strategy_tick` / `outage_window_report`
 **Recommended** (warned if missing): `connectivity`, `tier2_allowed`,
 `gate_reason`, `runtime_basis`, `tape_frozen`, `eta_paused`,
 `last_requote_age_s`, `health`, `ensure_status`, `collector_pid`, `deps_ok`,
-`n_cycles`, `c01_status`, `c01_blockers`, `paper_log`.
+`n_cycles`, `c01_status`, `c01_blockers`, `paper_log`, `paper_log_files`,
+`metrics_log`.
 
 **Paper log rotation:** `TimedRotatingFileHandler` rolls
 `livecfg/logs/paper.jsonl` to `paper.jsonl.YYYY-MM-DD` at midnight. Richest-log
 discovery (T1-96) includes those dated archives so the gate does not collapse
-onto the new empty file. Prefer the path shown as `paper_log` in
-`outage_status.json`.
+onto the new empty file. Gate runtime / paper_health freshness **union** the
+active file with same-dir rotations (T1-98) so post-recovery quoting into the
+new `paper.jsonl` continues the 24h clock instead of freezing on the archive.
+`paper_log` is still the richest single member; `paper_log_files>1` means a
+rotation split is in play.
 
 During a Polymarket outage expect `outage_open=true`, `health=STALE`,
 `ensure_status=NEEDS_RESTART` (collector alive; do **not** force-restart while

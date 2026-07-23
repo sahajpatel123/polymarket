@@ -151,3 +151,67 @@ def test_default_paper_candidates_includes_rotations(tmp_path: Path, monkeypatch
     assert Path("livecfg/logs/paper.jsonl.2026-07-22") in cands
     picked = pick_richest_log(cands)
     assert picked == Path("livecfg/logs/paper.jsonl.2026-07-22")
+
+
+def test_gate_unions_rotated_family_runtime(tmp_path: Path) -> None:
+    """Archive 2h + active 1h later → union runtime 3h (T1-98)."""
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    t0 = 1_700_000_000.0
+    rotated = logs / "paper.jsonl.2026-07-22"
+    active = logs / "paper.jsonl"
+    rotated.write_text(
+        "\n".join(
+            json.dumps({"ts": t0 + i * 3600, "event": "requote"}) for i in range(3)
+        )
+        + "\n"
+    )
+    # Resume quoting 1h after last archive requote → span extends to 3h.
+    active.write_text(
+        json.dumps({"ts": t0 + 3 * 3600, "event": "requote"}) + "\n"
+    )
+    metrics = logs / "metrics-paper.jsonl"
+    metrics.write_text(json.dumps({"ts": t0, "event": "quote", "price": 0.4}) + "\n")
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "scripts/paper_data_gate.py",
+            "--log",
+            str(rotated),
+            "--metrics-log",
+            str(metrics),
+            "--min-hours",
+            "2.5",
+            "--min-quotes",
+            "1",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stdout
+    assert "log_files=2" in proc.stdout
+    assert "runtime_hours=3.0000" in proc.stdout
+    assert "tier2_allowed=true" in proc.stdout
+
+
+def test_paper_log_family_and_union_score(tmp_path: Path) -> None:
+    from polymaker.metrics.log_discovery import paper_log_family, union_paper_log_score
+
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    t0 = 1_700_000_000.0
+    rotated = logs / "paper.jsonl.2026-07-22"
+    active = logs / "paper.jsonl"
+    rotated.write_text(
+        "\n".join(json.dumps({"ts": t0 + i * 3600, "event": "requote"}) for i in range(3))
+        + "\n"
+    )
+    active.write_text(
+        json.dumps({"ts": t0 + 5 * 3600, "event": "requote"}) + "\n"
+    )
+    fam = paper_log_family(rotated)
+    assert active in fam and rotated in fam
+    runtime_h, n_json = union_paper_log_score(fam)
+    assert runtime_h == 5.0
+    assert n_json == 4

@@ -56,6 +56,7 @@ def _parse_gate_stdout(stdout: str) -> dict[str, Any]:
         "status",
         "log_path",
         "metrics_path",
+        "log_files",
     }
     for line in stdout.splitlines():
         if line.startswith(" ") or line.startswith("{"):
@@ -95,6 +96,11 @@ def _parse_gate_stdout(stdout: str) -> dict[str, Any]:
         out["paper_log"] = kv["log_path"]
     if "metrics_path" in kv:
         out["metrics_log"] = kv["metrics_path"]
+    if "log_files" in kv:
+        try:
+            out["paper_log_files"] = int(kv["log_files"])
+        except ValueError:
+            out["paper_log_files"] = kv["log_files"]
     return out
 
 

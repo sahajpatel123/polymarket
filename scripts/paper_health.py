@@ -21,7 +21,9 @@ from typing import Any
 from polymaker.metrics.log_discovery import (
     DEFAULT_METRICS_CANDIDATES,
     DEFAULT_PAPER_CANDIDATES,
+    paper_log_family,
     pick_richest_log,
+    pick_richest_paper_family,
 )
 
 
@@ -76,9 +78,12 @@ def main() -> int:
                     help="Fail if newest requote/quote is older than this (default 300s)")
     args = ap.parse_args()
 
-    paper = Path(args.paper_log) if args.paper_log else pick_richest_log(
-        DEFAULT_PAPER_CANDIDATES
-    )
+    if args.paper_log:
+        seed = Path(args.paper_log)
+        family = paper_log_family(seed) if seed.name.startswith("paper.jsonl") else [seed]
+    else:
+        family = pick_richest_paper_family(DEFAULT_PAPER_CANDIDATES)
+    paper = next((p for p in family if p.name == "paper.jsonl"), family[0] if family else None)
     metrics = Path(args.metrics_log) if args.metrics_log else pick_richest_log(
         DEFAULT_METRICS_CANDIDATES
     )
@@ -88,7 +93,7 @@ def main() -> int:
         "max_age_s": args.max_age_s,
     }
 
-    if paper is None or not paper.exists():
+    if paper is None or not any(p.exists() for p in family):
         print("status=NO_PAPER_LOG", file=sys.stderr)
         print(json.dumps({"status": "NO_PAPER_LOG"}, indent=2))
         return 2
@@ -97,12 +102,21 @@ def main() -> int:
         print(json.dumps({"status": "NO_METRICS"}, indent=2))
         return 2
 
-    req_ts, n_req = _last_event_ts(paper, "requote")
+    # Freshest requote across active + rotations (T1-98) so health recovers
+    # when quoting resumes into the post-rotation paper.jsonl.
+    req_ts = None
+    n_req = 0
+    for member in family:
+        ts, n = _last_event_ts(member, "requote")
+        n_req += n
+        if ts is not None and (req_ts is None or ts > req_ts):
+            req_ts = ts
     quote_ts, n_quote = _last_event_ts(metrics, "quote")
     report.update({
         "paper_log": str(paper),
+        "paper_log_files": len(family),
         "metrics_log": str(metrics),
-        "paper_bytes": paper.stat().st_size,
+        "paper_bytes": sum(p.stat().st_size for p in family if p.exists()),
         "metrics_bytes": metrics.stat().st_size,
         "n_requote": n_req,
         "n_quote": n_quote,

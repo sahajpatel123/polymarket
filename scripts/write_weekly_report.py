@@ -90,6 +90,7 @@ def _outage_status_block(path: Path) -> str:
         "c01_status",
         "c01_blockers",
         "paper_log",
+        "paper_log_files",
         "metrics_log",
     )
     lines = [f"{k}={data.get(k)}" for k in keys if k in data]

@@ -8,7 +8,8 @@ Quote threshold follows BACKLOG wording (≥500 *quotes*): prefers
 metrics-paper.jsonl `event=quote` counts when that sibling log exists, and
 still reports structlog requote lines for churn context. Runtime comes from
 the **requote** timeline (not blind/WS-error noise that continues during
-outages — T1-52).
+outages — T1-52), unioned across active ``paper.jsonl`` + dated rotations
+in the same directory (T1-98).
 
 Usage:
   uv run python scripts/paper_data_gate.py
@@ -26,7 +27,9 @@ from pathlib import Path
 from polymaker.metrics.log_discovery import (
     DEFAULT_METRICS_CANDIDATES,
     DEFAULT_PAPER_CANDIDATES,
+    paper_log_family,
     pick_richest_log,
+    pick_richest_paper_family,
 )
 
 
@@ -83,15 +86,28 @@ def main() -> int:
 
     if args.log:
         path = Path(args.log)
+        # Explicit --log: still union same-dir rotations when path is paper.jsonl*
+        # so midnight splits do not freeze gate progress (T1-98). Non-paper
+        # names (fixtures) stay single-file.
+        family = paper_log_family(path) if path.name.startswith("paper.jsonl") else [path]
     else:
-        path = pick_richest_log(DEFAULT_PAPER_CANDIDATES) or Path(
-            DEFAULT_PAPER_CANDIDATES[0]
-        )
+        family = pick_richest_paper_family(DEFAULT_PAPER_CANDIDATES)
+        if not family:
+            path = Path(DEFAULT_PAPER_CANDIDATES[0])
+            family = [path]
+        else:
+            # Primary display path = richest single member (T1-97); runtime
+            # still unions the whole family (T1-98).
+            path = pick_richest_log(family) or family[0]
+
     now = datetime.now(timezone.utc).isoformat()
     print(f"paper_data_gate now={now}")
     print(f"log_path={path.resolve()}")
+    if len(family) > 1:
+        print(f"log_files={len(family)}")
+        print("log_paths=" + ",".join(str(p.resolve()) for p in family))
 
-    if not path.exists():
+    if not any(p.exists() for p in family):
         print("status=NO_LOG")
         print("runtime_hours=0")
         print("quote_events=0")
@@ -106,27 +122,30 @@ def main() -> int:
     times_all: list[float] = []
     times_requote: list[float] = []
     try:
-        with path.open() as fh:
-            for line in fh:
-                n_lines += 1
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    obj = json.loads(line)
-                except json.JSONDecodeError:
-                    n_bad += 1
-                    continue
-                n_json += 1
-                event = str(obj.get("event") or obj.get("msg") or obj.get("event_name") or "")
-                is_requote = event == "requote" or "requote" in event
-                if is_requote:
-                    n_requote += 1
-                t = _ts(obj)
-                if t is not None:
-                    times_all.append(t)
+        for member in family:
+            if not member.exists():
+                continue
+            with member.open() as fh:
+                for line in fh:
+                    n_lines += 1
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        obj = json.loads(line)
+                    except json.JSONDecodeError:
+                        n_bad += 1
+                        continue
+                    n_json += 1
+                    event = str(obj.get("event") or obj.get("msg") or obj.get("event_name") or "")
+                    is_requote = event == "requote" or "requote" in event
                     if is_requote:
-                        times_requote.append(t)
+                        n_requote += 1
+                    t = _ts(obj)
+                    if t is not None:
+                        times_all.append(t)
+                        if is_requote:
+                            times_requote.append(t)
     except OSError as exc:
         print(f"status=CORRUPT err={exc}")
         return 2

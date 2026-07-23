@@ -144,6 +144,8 @@ Do **not** merge pricing changes from this file without a PR + holdout proof.
 - **Update 2026-07-23T00:20Z:** `outage_status.paper_log` shows the selected
   archive (`paper.jsonl.2026-07-22`). Still DOWN ~8.8h; no Tier-2 PR.
 
+- **Update 2026-07-23T00:35Z (T1-98):** Gate/health now union active+rotated ``paper.jsonl`` so midnight rotation cannot freeze the 24h clock after recovery. Still blocked on outage (~9h DOWN, quotes=5529).
+
 ## C-02 Prefer higher-reward market weight (selection)
 
 - **Hypothesis:** live scorecard shows one market earning ~2× reward/hour of

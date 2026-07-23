@@ -34,6 +34,8 @@ def _full(**overrides):
         "c01_status": "BLOCKED",
         "c01_blockers": "hours_ok,health_ok,outage_closed",
         "paper_log": "livecfg/logs/paper.jsonl.2026-07-22",
+        "paper_log_files": 2,
+        "metrics_log": "livecfg/logs/metrics-paper.jsonl",
     }
     base.update(overrides)
     return base

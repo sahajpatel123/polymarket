@@ -151,6 +151,7 @@ PRESERVE_STATUS_KEYS = (
     "c01_status",
     "c01_blockers",
     "paper_log",
+    "paper_log_files",
     "metrics_log",
 )
 
