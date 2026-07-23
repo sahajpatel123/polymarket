@@ -94,6 +94,8 @@ class MarketMeta:
     liquidity_num: float = 0.0
     volume_num: float = 0.0  # lifetime
     volume_24hr: float = 0.0  # trailing 24h CLOB volume (drives rebate estimate)
+    # category tag from Gamma (e.g. "politics", "sports", "crypto", "news")
+    category: str = "politics"
 
     @property
     def yes(self) -> TokenMeta:

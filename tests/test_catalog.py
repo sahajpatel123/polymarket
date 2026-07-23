@@ -89,3 +89,42 @@ def test_store_upsert_is_idempotent(tmp_path):
     store.upsert_market(m)  # second time updates, not duplicates
     assert len(store.top(10)) == 1
     store.close()
+
+
+def test_store_category_roundtrip(tmp_path):
+    import dataclasses
+    store = CatalogStore(tmp_path / "s.db")
+    m = parse_market(RAW, {"0xabc": 42.0})
+    m_sports = dataclasses.replace(m, condition_id="0xsports", category="sports")
+    store.upsert_market(m)
+    store.upsert_market(m_sports)
+    assert store.get("0xabc").category == "politics"
+    assert store.get("0xsports").category == "sports"
+    store.close()
+
+
+def test_store_top_by_category(tmp_path):
+    import dataclasses
+    store = CatalogStore(tmp_path / "s.db")
+    m1 = parse_market(RAW, {"0xabc": 42.0})
+    m2 = dataclasses.replace(m1, condition_id="0xdef", category="sports")
+    m3 = dataclasses.replace(m1, condition_id="0xghi", category="crypto")
+    store.upsert_market(m1)
+    store.upsert_market(m2)
+    store.upsert_market(m3)
+    politics = store.top_by_category("politics")
+    sports = store.top_by_category("sports")
+    crypto = store.top_by_category("crypto")
+    assert len(politics) == 1 and politics[0][0].condition_id == "0xabc"
+    assert len(sports) == 1 and sports[0][0].condition_id == "0xdef"
+    assert len(crypto) == 1 and crypto[0][0].condition_id == "0xghi"
+    store.close()
+
+
+def test_scan_config_supports_multiple_categories():
+    from polymaker.catalog.scanner import ScanConfig
+    cfg = ScanConfig(tag_slugs=("politics", "sports", "crypto"))
+    assert len(cfg.tag_slugs) == 3
+    assert "politics" in cfg.tag_slugs
+    assert "sports" in cfg.tag_slugs
+    assert "crypto" in cfg.tag_slugs

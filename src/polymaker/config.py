@@ -130,7 +130,7 @@ class StrategyProfile(BaseModel):
 
 
 # Keys allowed on a market entry that are NOT profile overrides.
-_MARKET_RESERVED = {"slug", "condition_id", "profile", "enabled"}
+_MARKET_RESERVED = {"slug", "condition_id", "profile", "enabled", "category"}
 
 
 class MarketEntry(BaseModel):
@@ -142,6 +142,9 @@ class MarketEntry(BaseModel):
     condition_id: str | None = None
     profile: str = "political-longdated"
     enabled: bool = True
+    # Category tag (politics/sports/crypto/news/...) for multi-category scanning.
+    # Inferred from Gamma tag at scan time if not set here.
+    category: str | None = None
 
     @model_validator(mode="after")
     def _need_identifier(self) -> MarketEntry:
@@ -152,7 +155,7 @@ class MarketEntry(BaseModel):
     @property
     def overrides(self) -> dict[str, Any]:
         extra = self.model_extra or {}
-        return {k: v for k, v in extra.items() if k not in _MARKET_RESERVED}
+        return {k: v for k, v in extra.items() if k not in _MARKET_RESERVED and k != "category"}
 
     @property
     def ref(self) -> str:

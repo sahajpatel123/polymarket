@@ -40,6 +40,7 @@ from polymaker.marketdata.parse import TradePrint
 from polymaker.marketdata.service import MarketDataService
 from polymaker.merge import Merger
 from polymaker.metrics import MetricsLogger, inventory_fields
+from polymaker.paper.fill_sim import FillSimulator
 from polymaker.risk.manager import RiskManager
 from polymaker.state.store import StateStore
 from polymaker.state.tracker import UserEventProcessor
@@ -99,6 +100,10 @@ class Engine:
         self._user_started = False  # user WS task launched (live mode)
         self._hb_was_down = False
         self._chain_lock = asyncio.Lock()  # serialize on-chain txs (nonce safety)
+        # paper-mode fill simulation: matches resting orders against trade prints
+        # so paper mode can track inventory, PnL, and toxicity (live mode uses
+        # the user WS for real fills).
+        self._fill_sim = FillSimulator()
 
     # ── lifecycle ───────────────────────────────────────────────────────
     async def start(self) -> None:
@@ -280,6 +285,7 @@ class Engine:
         # purge positions that leaked in for markets we don't trade (manual UI
         # bets etc.) so they can't distort exposure caps or PnL
         self.state.drop_untracked_positions(set(self._token_cid))
+        self._fill_sim.clear()
         positions = self._only_traded(await self.gateway.positions())
         if positions:
             self.state.reconcile_positions(positions)
@@ -318,6 +324,12 @@ class Engine:
             return
         p = self.profiles[cid]
         self.est[cid].flow.update(tp.aggressor, tp.size, tp.ts)
+
+        # Paper-mode fill simulation: match the trade print against our resting
+        # orders so we can track inventory, PnL, and toxicity without a user WS.
+        if self.paper:
+            self._simulate_fills(tp)
+
         # A trade only flags a SWEEP (-> pull quotes) if it's genuinely toxic:
         # large in absolute terms AND large relative to the resting depth it
         # consumed (i.e. it actually ate through the book). A big trade absorbed
@@ -340,6 +352,22 @@ class Engine:
             consumed = book.depth_within(Side.BUY, bb.price - 3 * book.tick_size, bb.price)
         if consumed > 0 and tp.size >= p.event_sweep_frac * consumed:
             self._sweep[cid] = True
+
+    def _simulate_fills(self, tp: TradePrint) -> None:
+        """Match a trade print against paper-mode resting orders and process fills."""
+        fills = self._fill_sim.match(tp.asset_id, tp.aggressor, tp.price, tp.size, tp.ts)
+        if not fills:
+            return
+        cid = self._token_cid.get(tp.asset_id)
+        if cid is None:
+            return
+        for fill in fills:
+            if not self.state.apply_fill(fill):
+                continue  # duplicate (shouldn't happen in paper, but be safe)
+            self._on_fill(fill)
+            # remove fully-filled orders from the simulator's tracking
+            # (partial fills already reduced size; apply_fill updates state store)
+            self._wake_cid(cid)
 
     def _on_fill(self, fill: Fill) -> None:
         self.risk.note_fill(fill)
@@ -545,6 +573,8 @@ class Engine:
             ok = await self.gateway.cancel(plan.to_cancel)
             if ok:
                 for o in pending_cancel:
+                    if self.paper:
+                        self._fill_sim.cancel(o.order_id)
                     self.metrics.emit(
                         "cancel",
                         ts=now,
@@ -586,6 +616,8 @@ class Engine:
                 reward_band = meta.rewards_max_spread / 100.0
                 for o in placed:
                     self.state.upsert_order(o)
+                    if self.paper:
+                        self._fill_sim.place(o)
                     mid_tok = fv if o.token_id == meta.yes.token_id else (1.0 - fv)
                     in_band = reward_band > 0 and abs(o.price - mid_tok) <= reward_band
                     self.metrics.emit(
@@ -682,6 +714,7 @@ class Engine:
                 # Without this, a quoter could wake, see empty orders, place new
                 # quotes, and then get overwritten by the stale REST snapshot.
                 self.state.clear_orders()
+                self._fill_sim.clear()
                 for cid, meta in self.metas.items():
                     lock = self._locks.get(cid)
                     if lock is not None:

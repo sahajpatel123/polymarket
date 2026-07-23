@@ -166,6 +166,7 @@ def parse_market(raw: dict[str, Any], reward_rates: dict[str, float] | None = No
             # prefer CLOB 24h volume (the taker flow that generates fees);
             # fall back to total 24h volume
             volume_24hr=float(raw.get("volume24hrClob") or raw.get("volume24hr") or 0),
+            category=raw.get("tag", "") or "politics",
         )
     except (KeyError, ValueError, TypeError) as exc:
         log.warning("parse_market_failed", err=str(exc), slug=raw.get("slug"))

@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from polymaker.config import StrategyProfile
-from polymaker.domain import MarketMeta, OpenOrder, Position, Side
+from polymaker.domain import Fill, MarketMeta, OpenOrder, Position, Side
 from polymaker.execution.reconciler import reconcile
 from polymaker.marketdata.orderbook import OrderBook
 from polymaker.marketdata.parse import (
@@ -24,6 +24,7 @@ from polymaker.marketdata.parse import (
     parse_tick_size_change,
 )
 from polymaker.metrics import MetricsLogger, inventory_fields
+from polymaker.paper.fill_sim import FillSimulator
 from polymaker.strategy.estimators import (
     FlowEstimator,
     MarketEstimators,
@@ -43,6 +44,7 @@ class ReplayResult:
     n_quote: int = 0
     n_cancel: int = 0
     n_mark: int = 0
+    n_fill: int = 0
 
 
 @dataclass
@@ -61,6 +63,8 @@ class ReplayState:
     n_cancel: int = 0
     n_mark: int = 0
     recomputes: int = 0
+    fill_sim: FillSimulator = field(default_factory=FillSimulator)
+    n_fill: int = 0
 
     def __post_init__(self) -> None:
         self.pos_yes = Position(self.meta.yes.token_id)
@@ -278,6 +282,7 @@ def _recompute(st: ReplayState, now: float) -> None:
         oid = f"replay-{st.recomputes}-{i}"
         o = OpenOrder(oid, q.token_id, q.side, q.price, q.size)
         st.live[oid] = o
+        st.fill_sim.place(o)
         mid_tok = fv if q.token_id == meta.yes.token_id else (1.0 - fv)
         in_band = reward_band > 0 and abs(q.price - mid_tok) <= reward_band
         st.metrics.emit(
@@ -295,6 +300,50 @@ def _recompute(st: ReplayState, now: float) -> None:
             **inv,
         )
         st.n_quote += 1
+
+
+def _apply_replay_fill(st: ReplayState, fill: Fill, *, fv_for_markout: float | None) -> None:
+    """Apply a simulated fill to replay positions, estimators, and metrics."""
+    assert st.est is not None and st.metrics is not None
+    meta = st.meta
+    # update position
+    pos = st.pos_yes if fill.token_id == meta.yes.token_id else st.pos_no
+    signed = fill.size if fill.side is Side.BUY else -fill.size
+    new_size = pos.size + signed
+    if fill.side is Side.BUY:
+        if pos.size <= 0:
+            pos.avg_price = fill.price
+        else:
+            pos.avg_price = (pos.avg_price * pos.size + fill.price * fill.size) / (pos.size + fill.size)
+    pos.size = max(0.0, new_size)
+    if pos.size <= 0:
+        pos.avg_price = 0.0
+    # update markout estimator and compute token_fv for metrics
+    if fv_for_markout is not None:
+        token_fv = fv_for_markout if fill.token_id == meta.yes.token_id else (1.0 - fv_for_markout)
+        st.est.markout.record_fill(fill.side, token_fv, fill.ts)
+    else:
+        token_fv = fill.price
+    # emit fill metric
+    pos_yes = st.pos_yes
+    pos_no = st.pos_no
+    inv = inventory_fields(pos_yes.size, pos_no.size)
+    mid_tok = token_fv
+    st.metrics.emit(
+        "fill",
+        ts=fill.ts,
+        condition_id=meta.condition_id,
+        token_id=fill.token_id,
+        side=fill.side.value,
+        price=fill.price,
+        size=fill.size,
+        trade_id=fill.trade_id,
+        mid=mid_tok,
+        fv=fv_for_markout or fill.price,
+        paper=True,
+        **inv,
+    )
+    st.n_fill += 1
 
 
 def _book_for(st: ReplayState, token_id: str) -> OrderBook | None:
@@ -346,6 +395,10 @@ def apply_journal_event(st: ReplayState, row: dict[str, Any]) -> bool:
         if tp.asset_id not in (st.meta.yes.token_id, st.meta.no.token_id):
             return False
         st.est.flow.update(tp.aggressor, tp.size, tp.ts or ts)
+        # Simulate fills: match the trade print against resting orders.
+        fills = st.fill_sim.match(tp.asset_id, tp.aggressor, tp.price, tp.size, tp.ts or ts)
+        for fill in fills:
+            _apply_replay_fill(st, fill, fv_for_markout=st.est.last_fv)
         return True
 
     if kind == "tick_size_change" and isinstance(data, dict):
@@ -396,6 +449,7 @@ def run_replay(
         n_quote=st.n_quote,
         n_cancel=st.n_cancel,
         n_mark=st.n_mark,
+        n_fill=st.n_fill,
     )
 
 

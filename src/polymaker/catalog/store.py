@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS markets (
     condition_id      TEXT PRIMARY KEY,
     question          TEXT,
     slug              TEXT,
+    category          TEXT DEFAULT 'politics',
     meta_json         TEXT NOT NULL,
     score             REAL DEFAULT 0,
     score_json        TEXT,
@@ -29,6 +30,7 @@ CREATE TABLE IF NOT EXISTS markets (
 );
 CREATE INDEX IF NOT EXISTS idx_markets_score ON markets(score DESC);
 CREATE INDEX IF NOT EXISTS idx_markets_slug ON markets(slug);
+CREATE INDEX IF NOT EXISTS idx_markets_category ON markets(category);
 
 CREATE TABLE IF NOT EXISTS tags (
     slug   TEXT PRIMARY KEY,
@@ -55,15 +57,17 @@ class CatalogStore:
     def upsert_market(self, meta: MarketMeta, score: MarketScore | None = None) -> None:
         sc = score or score_market(meta)
         self._conn.execute(
-            """INSERT INTO markets(condition_id, question, slug, meta_json, score, score_json, scanned_ts)
-               VALUES(?,?,?,?,?,?,?)
+            """INSERT INTO markets(condition_id, question, slug, category, meta_json, score, score_json, scanned_ts)
+               VALUES(?,?,?,?,?,?,?,?)
                ON CONFLICT(condition_id) DO UPDATE SET
-                 question=excluded.question, slug=excluded.slug, meta_json=excluded.meta_json,
-                 score=excluded.score, score_json=excluded.score_json, scanned_ts=excluded.scanned_ts""",
+                 question=excluded.question, slug=excluded.slug, category=excluded.category,
+                 meta_json=excluded.meta_json, score=excluded.score, score_json=excluded.score_json,
+                 scanned_ts=excluded.scanned_ts""",
             (
                 meta.condition_id,
                 meta.question,
                 meta.slug,
+                meta.category,
                 _dump_meta(meta),
                 sc.score,
                 json.dumps(asdict(sc)),
@@ -103,6 +107,22 @@ class CatalogStore:
             "SELECT meta_json, score_json FROM markets WHERE scanned_ts >= ? "
             "ORDER BY score DESC LIMIT ?",
             (cutoff, limit),
+        ).fetchall()
+        out = []
+        for row in rows:
+            meta = _load_meta(row["meta_json"])
+            sc = MarketScore(**json.loads(row["score_json"])) if row["score_json"] else score_market(meta)
+            out.append((meta, sc))
+        return out
+
+    def top_by_category(self, category: str, limit: int = 50, fresh_s: float = 3600.0) -> list[tuple[MarketMeta, MarketScore]]:
+        """Top markets by score within a specific category (e.g. 'politics', 'sports')."""
+        newest = self._conn.execute("SELECT MAX(scanned_ts) AS t FROM markets").fetchone()
+        cutoff = (newest["t"] or 0.0) - fresh_s
+        rows = self._conn.execute(
+            "SELECT meta_json, score_json FROM markets WHERE category=? AND scanned_ts >= ? "
+            "ORDER BY score DESC LIMIT ?",
+            (category, cutoff, limit),
         ).fetchall()
         out = []
         for row in rows:

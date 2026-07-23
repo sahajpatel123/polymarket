@@ -42,22 +42,31 @@ def scan(
     config_dir: str = typer.Option("config", help="config directory"),
     min_liquidity: float = typer.Option(1000.0, help="minimum market liquidity (USDC)"),
     all_markets: bool = typer.Option(False, "--all", help="include non-rewards markets"),
+    categories: str = typer.Option("politics", "--categories",
+                                   help="comma-separated Gamma tag slugs to scan (e.g. 'politics,sports,crypto')"),
 ) -> None:
-    """Sweep Gamma for political markets, score, and persist to SQLite."""
+    """Sweep Gamma for markets across categories, score, and persist to SQLite."""
     from polymaker.catalog.scanner import ScanConfig, run_scan
     from polymaker.catalog.store import CatalogStore
 
     cfg = Config.load(config_dir)
     store = CatalogStore(cfg.paths.db)
 
+    tag_slugs = tuple(s.strip() for s in categories.split(",") if s.strip())
+
     async def _go() -> int:
-        metas = await run_scan(store, ScanConfig(min_liquidity=min_liquidity, rewards_only=not all_markets))
+        metas = await run_scan(store, ScanConfig(
+            tag_slugs=tag_slugs,
+            min_liquidity=min_liquidity,
+            rewards_only=not all_markets,
+        ))
         return len(metas)
 
     n = asyncio.run(_go())
     csv_path = Path(config_dir).parent / "markets.csv"
     written = store.export_csv(csv_path)
-    console.print(f"[green]Scanned and stored {n} markets.[/green] "
+    console.print(f"[green]Scanned and stored {n} markets across {len(tag_slugs)} categor(y/ies): "
+                  f"{', '.join(tag_slugs)}.[/green] "
                   f"Wrote [bold]{csv_path}[/bold] ({written} rows) — open it, pick markets, "
                   f"then `polymaker markets-add <slug>`.")
     store.close()
