@@ -783,6 +783,13 @@ done without evidence (script output / tests) from that cycle.
   requires it while critical; live value >0 after critical edge.
 - Evidence: unit + live during ~12.2h DOWN critical window
 
+### T1-118 outage_operator_brief mode + next action
+- Status: `done`
+- Done when: scripts/outage_operator_brief.py emits CRITICAL_OPEN while
+  critical outage open with await_UP_then_full_recovery; strategy_tick runs
+  it and surfaces brief/action; unit covers modes.
+- Evidence: unit + live CRITICAL_OPEN during ~12.3h DOWN
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

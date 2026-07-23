@@ -348,6 +348,19 @@ def main() -> int:
         **_parse_kv(line),
     }
 
+    code, bout, berr = _run([
+        py,
+        "scripts/outage_operator_brief.py",
+        "--path",
+        str(status_path),
+    ])
+    bline = _status_line(berr, bout)
+    report["steps"]["outage_brief"] = {
+        "rc": code,
+        "status_line": bline,
+        **_parse_kv(bline),
+    }
+
     code, dout, derr = _run([py, "scripts/deps_audit.py"])
     dline = _status_line(derr, dout)
     deps_ok = None
@@ -404,6 +417,7 @@ def main() -> int:
     outage = report["steps"].get("outage") or {}
     gate = report["steps"].get("gate") or {}
     ost_val = report["steps"].get("outage_status_validate") or {}
+    brief = report["steps"].get("outage_brief") or {}
     deps = report["steps"].get("deps") or {}
     ap_step = report["steps"].get("append") or {}
     weekly = report["steps"].get("weekly") or {}
@@ -424,6 +438,7 @@ def main() -> int:
     print(
         f"status=OK "
         f"connectivity={conn_disp} "
+        f"brief={brief.get('status') or '-'} action={brief.get('action') or '-'} "
         f"c01={c01.get('status')} blockers={c01.get('blockers')} "
         f"outage_alert={ost.get('outage_alert', c01.get('outage_alert') or outage.get('outage_alert'))} "
         f"outage_alert_severe={ost.get('outage_alert_severe', c01.get('outage_alert_severe') or outage.get('outage_alert_severe'))} "
