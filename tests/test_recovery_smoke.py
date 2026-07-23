@@ -65,6 +65,24 @@ def test_evaluate_recovery_quotes_floor() -> None:
     assert "quotes_floor" in rep["blockers"]
 
 
+def test_evaluate_recovery_quotes_advanced(tmp_path: Path) -> None:
+    snap = tmp_path / "frozen_tape_snapshot.json"
+    snap.write_text(json.dumps({"quotes_at_freeze": 5529}) + "\n")
+    stuck = evaluate_recovery(
+        _recovered(quotes=5529, frozen_tape_snapshot=str(snap)),
+        min_quotes=5529,
+    )
+    assert stuck["ok"] is False
+    assert "quotes_advanced" in stuck["blockers"]
+    assert stuck["quotes_at_freeze"] == 5529
+    advanced = evaluate_recovery(
+        _recovered(quotes=5600, frozen_tape_snapshot=str(snap)),
+        min_quotes=5529,
+    )
+    assert advanced["ok"] is True
+    assert advanced["checks"]["quotes_advanced"] is True
+
+
 def test_recovery_smoke_cli(tmp_path: Path) -> None:
     path = tmp_path / "outage_status.json"
     path.write_text(json.dumps(_recovered()) + "\n")

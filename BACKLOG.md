@@ -840,6 +840,13 @@ done without evidence (script output / tests) from that cycle.
   logs/frozen_tape_snapshot.json and surfaces path; unit covers latch/clear.
 - Evidence: unit + live quotes_at_freeze=5529 during ~13.7h DOWN
 
+### T1-127 recovery_smoke requires quotes past freeze latch
+- Status: `done`
+- Done when: evaluate_recovery fails quotes_advanced when quotes ≤
+  quotes_at_freeze from frozen snapshot; passes when quotes advanced; live
+  DOWN still fails connectivity first.
+- Evidence: unit stuck@5529 vs advanced@5600
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

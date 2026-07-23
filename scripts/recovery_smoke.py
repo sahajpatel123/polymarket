@@ -25,6 +25,7 @@ def evaluate_recovery(
     *,
     min_quotes: int | None = None,
     require_health_ok: bool = True,
+    frozen_snapshot_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Return checklist result for a compact outage_status snapshot."""
     checks: dict[str, bool] = {}
@@ -78,16 +79,37 @@ def evaluate_recovery(
     if not checks["paper_log_family"]:
         blockers.append("paper_log_family")
 
+    try:
+        quotes = int(float(status.get("quotes") or 0))
+    except (TypeError, ValueError):
+        quotes = 0
+
     if min_quotes is not None:
-        try:
-            quotes = int(float(status.get("quotes") or 0))
-        except (TypeError, ValueError):
-            quotes = 0
         checks["quotes_floor"] = quotes >= min_quotes
         if quotes < min_quotes:
             blockers.append("quotes_floor")
     else:
         checks["quotes_floor"] = True
+
+    # Quotes must advance past the frozen-tape latch when a snapshot exists (T1-127).
+    snap_path = frozen_snapshot_path or status.get("frozen_tape_snapshot")
+    floor: int | None = None
+    if snap_path:
+        path = Path(str(snap_path))
+        if path.exists():
+            try:
+                snap = json.loads(path.read_text())
+                raw_floor = snap.get("quotes_at_freeze")
+                if raw_floor is not None:
+                    floor = int(float(raw_floor))
+            except (json.JSONDecodeError, TypeError, ValueError, OSError):
+                floor = None
+    if floor is not None:
+        checks["quotes_advanced"] = quotes > floor
+        if quotes <= floor:
+            blockers.append("quotes_advanced")
+    else:
+        checks["quotes_advanced"] = True
 
     # Critical/imminent alerts should clear after recovery.
     for key in (
@@ -115,6 +137,7 @@ def evaluate_recovery(
         "health": status.get("health"),
         "outage_open": status.get("outage_open"),
         "quotes": status.get("quotes"),
+        "quotes_at_freeze": floor,
         "runtime_basis": status.get("runtime_basis"),
         "paper_log": status.get("paper_log"),
         "paper_log_files": status.get("paper_log_files"),
@@ -134,6 +157,11 @@ def main() -> int:
         "--allow-stale-health",
         action="store_true",
         help="Do not require health=OK (diagnose-only during outage)",
+    )
+    ap.add_argument(
+        "--frozen-snapshot",
+        default=None,
+        help="Frozen tape snapshot JSON (default: status.frozen_tape_snapshot)",
     )
     args = ap.parse_args()
     path = Path(args.status)
@@ -156,6 +184,7 @@ def main() -> int:
         data,
         min_quotes=args.min_quotes,
         require_health_ok=not args.allow_stale_health,
+        frozen_snapshot_path=args.frozen_snapshot,
     )
     rep["path"] = str(path)
     print(json.dumps(rep, indent=2, sort_keys=True))
@@ -164,7 +193,8 @@ def main() -> int:
         f"status={'PASS' if rep['ok'] else 'FAIL'} "
         f"blockers={blockers} "
         f"health={rep['health']} outage_open={rep['outage_open']} "
-        f"quotes={rep['quotes']} runtime_basis={rep['runtime_basis']} "
+        f"quotes={rep['quotes']} quotes_at_freeze={rep.get('quotes_at_freeze')} "
+        f"runtime_basis={rep['runtime_basis']} "
         f"paper_log_files={rep['paper_log_files']}",
         file=sys.stderr,
     )
