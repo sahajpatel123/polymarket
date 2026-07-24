@@ -30,7 +30,8 @@ CREATE TABLE IF NOT EXISTS markets (
 );
 CREATE INDEX IF NOT EXISTS idx_markets_score ON markets(score DESC);
 CREATE INDEX IF NOT EXISTS idx_markets_slug ON markets(slug);
-CREATE INDEX IF NOT EXISTS idx_markets_category ON markets(category);
+-- category index created in _migrate() after ensuring the column exists
+-- (old state.db files lack category; CREATE INDEX here would fail).
 
 CREATE TABLE IF NOT EXISTS tags (
     slug   TEXT PRIMARY KEY,
@@ -49,7 +50,23 @@ class CatalogStore:
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.executescript(_SCHEMA)
+        self._migrate()
         self._conn.commit()
+
+    def _migrate(self) -> None:
+        """Additive schema upgrades for existing state.db files."""
+        cols = {
+            str(r[1])
+            for r in self._conn.execute("PRAGMA table_info(markets)").fetchall()
+        }
+        if "category" not in cols:
+            self._conn.execute(
+                "ALTER TABLE markets ADD COLUMN category TEXT DEFAULT 'politics'"
+            )
+            # Index may have failed on first boot of new code against old DB
+            self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_markets_category ON markets(category)"
+            )
 
     def close(self) -> None:
         self._conn.close()
