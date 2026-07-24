@@ -177,6 +177,81 @@ class MarkoutTracker:
         return max(0.0, -self._markout.value)
 
 
+class MultiHorizonMarkout:
+    """Multi-horizon markout tracker for more nuanced toxicity estimation.
+
+    Tracks markout at multiple time horizons (e.g., 30s, 120s, 300s) and
+    produces a weighted toxicity score. Short-horizon markout is more
+    relevant for current quoting decisions (recent fills indicate
+    current toxicity), while long-horizon markout provides a baseline.
+
+    The combined toxicity is a weighted average where short horizons
+    have higher weight (more relevant to current state).
+    """
+
+    __slots__ = ("_horizons", "_pending", "_markouts", "_weights")
+
+    def __init__(
+        self,
+        horizons_s: tuple[float, ...] = (30.0, 120.0, 300.0),
+        weights: tuple[float, ...] = (0.5, 0.3, 0.2),
+        ewma_halflife_s: float = 1800.0,
+    ) -> None:
+        self._horizons = horizons_s
+        self._weights = weights
+        # pending[horizon] = list of (fv_at_fill, side, due_ts)
+        self._pending: dict[float, list[_PendingMarkout]] = {h: [] for h in horizons_s}
+        self._markouts: dict[float, Ewma] = {h: Ewma(ewma_halflife_s) for h in horizons_s}
+
+    def record_fill(self, side: Side, fv_at_fill: float, ts: float) -> None:
+        for h in self._horizons:
+            self._pending[h].append(_PendingMarkout(fv_at_fill, side, ts + h))
+
+    def evaluate(self, fv_now: float, ts: float) -> None:
+        """Resolve any markouts whose horizon has elapsed."""
+        for h in self._horizons:
+            still: list[_PendingMarkout] = []
+            for p in self._pending[h]:
+                if ts >= p.due_ts:
+                    move = fv_now - p.fv_at_fill
+                    signed = move if p.side is Side.BUY else -move
+                    self._markouts[h].update(signed, ts)
+                else:
+                    still.append(p)
+            self._pending[h] = still
+
+    @property
+    def markout(self) -> float:
+        """Weighted average markout across all horizons."""
+        total = 0.0
+        for h, w in zip(self._horizons, self._weights, strict=False):
+            total += w * self._markouts[h].value
+        return total
+
+    @property
+    def toxicity(self) -> float:
+        """Non-negative weighted toxicity score (0 when fills are benign)."""
+        return max(0.0, -self.markout)
+
+    @property
+    def short_term_toxicity(self) -> float:
+        """Short-horizon toxicity only (most relevant for current decisions)."""
+        if not self._horizons:
+            return 0.0
+        return max(0.0, -self._markouts[self._horizons[0]].value)
+
+    @property
+    def long_term_toxicity(self) -> float:
+        """Long-horizon toxicity only (baseline/regime indicator)."""
+        if not self._horizons:
+            return 0.0
+        return max(0.0, -self._markouts[self._horizons[-1]].value)
+
+    def per_horizon_markout(self) -> dict[float, float]:
+        """Return a dict of {horizon_s: markout} for all horizons."""
+        return {h: self._markouts[h].value for h in self._horizons}
+
+
 @dataclass(slots=True)
 class MarketEstimators:
     """Bundle of the per-market online estimators the engine keeps."""

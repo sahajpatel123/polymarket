@@ -182,9 +182,56 @@ class ExecutionGateway:
             log.error("place_failed", err=str(exc), n=len(quotes))
             return []
 
-    def _paper_order(self, q: Quote) -> OpenOrder:
-        oid = f"paper-{next(self._paper_ids)}"
-        return OpenOrder(oid, q.token_id, q.side, q.price, q.size, OrderState.LIVE)
+    async def place_multi(
+        self, plans: list[tuple[list[Quote], MarketMeta]]
+    ) -> list[list[OpenOrder]]:
+        """Place orders for multiple markets in parallel on the thread pool.
+
+        Each (quotes, meta) pair is placed on a separate worker thread so
+        blocking signing/HTTP work overlaps across markets. Returns a list of
+        placed-order lists, one per input plan (same order as input).
+        """
+        if not plans:
+            return []
+        # Acquire rate budget for the total number of orders
+        total_orders = sum(len(quotes) for quotes, _ in plans)
+        await self._order_bucket.acquire(total_orders)
+        ts = time.time()
+        for quotes, _meta in plans:
+            self._journal_write("orders_out", [asdict(q) for q in quotes], ts)
+
+        if self._paper:
+            return [[self._paper_order(q) for q in quotes] for quotes, _ in plans]
+
+        # Dispatch each market to the pool; asyncio.gather waits for all
+        loop = asyncio.get_running_loop()
+        tasks = [loop.run_in_executor(self._pool, self._place_sync, quotes, meta)
+                 for quotes, meta in plans]
+        return await asyncio.gather(*tasks)
+
+    def _place_sync(self, quotes: list[Quote], meta: MarketMeta) -> list[OpenOrder]:
+        """Synchronous batch-place for one market (runs in the thread pool)."""
+        from py_clob_client_v2.clob_types import (
+            OrderArgsV2,
+            OrderType,
+            PartialCreateOrderOptions,
+            PostOrdersV2Args,
+        )
+
+        opts = PartialCreateOrderOptions(
+            tick_size=_tick_str(meta.tick_size), neg_risk=meta.neg_risk
+        )
+        args = []
+        for q in quotes:
+            signed = self._client.create_order(
+                OrderArgsV2(
+                    token_id=q.token_id, price=q.price, size=q.size, side=q.side.value
+                ),
+                options=opts,
+            )
+            args.append(PostOrdersV2Args(order=signed, orderType=OrderType.GTC))
+        resp = self._client.post_orders(args, post_only=self._cfg.execution.post_only)
+        return self._parse_place_response(resp, quotes)
 
     def _parse_place_response(self, resp: Any, quotes: list[Quote]) -> list[OpenOrder]:
         """Map a batch post response to OpenOrders. Tolerant of shape variants;
@@ -198,6 +245,11 @@ class ExecutionGateway:
                 continue
             out.append(OpenOrder(str(oid), q.token_id, q.side, q.price, q.size, OrderState.LIVE))
         return out
+
+    def _paper_order(self, q: Quote) -> OpenOrder:
+        """Fabricate a paper-mode order id (no real placement)."""
+        oid = f"paper-{next(self._paper_ids)}"
+        return OpenOrder(oid, q.token_id, q.side, q.price, q.size, OrderState.LIVE)
 
     # ── cancellation ────────────────────────────────────────────────────
     async def cancel(self, order_ids: list[str]) -> bool:
