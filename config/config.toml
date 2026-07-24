@@ -33,14 +33,13 @@ loop = "uvloop"                 # "uvloop" | "asyncio"
 # When enabled, the engine periodically re-scans Gamma for new markets across
 # the configured tags, filters by score, and auto-adds them to the live trade
 # list. The bot finds and trades new markets on its own — no manual
-# `polymaker markets-add` needed. Off by default for safety; turn on once
-# you've validated the scanner score filter on your target categories.
-auto_discovery_enabled = false
-auto_discovery_interval_s = 3600.0    # hourly re-scan (3600s)
-auto_discovery_tags = ["politics"]    # Gamma tag slugs to scan
-auto_discovery_min_score = 0.01        # min scanner score to auto-add
-auto_discovery_max_markets = 20        # cap on auto-discovered markets
-auto_discovery_profile = "political-longdated"
+# `polymaker markets-add` needed.
+auto_discovery_enabled = true
+auto_discovery_interval_s = 1800.0    # 30-min re-scan (more aggressive)
+auto_discovery_tags = ["politics", "sports", "crypto", "news"]  # multi-category
+auto_discovery_min_score = 0.005       # lower bar to catch more markets
+auto_discovery_max_markets = 30        # cap on auto-discovered markets
+auto_discovery_profile = "aggressive_30"  # use the $30-tuned profile
 auto_discovery_hot_reload = true       # watch markets.toml for manual edits
 
 [risk]
