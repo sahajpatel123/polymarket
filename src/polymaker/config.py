@@ -137,6 +137,15 @@ class StrategyProfile(BaseModel):
     # exits
     exit_urgency_s: float = 900.0
     merge_min_size: float = 20.0
+    # ── advanced quoting (Tier 2 opt-in) ──
+    # When True, the engine uses the Avellaneda-Stoikov optimal pricing
+    # model + Kelly-inspired sizing instead of the simple linear skew.
+    # See strategy/advanced_quoting.py and docs/ADVANCED_QUOTING.md.
+    # Default: False (use simple model for safety until backtested).
+    use_advanced_quoting: bool = False
+    # Total bankroll for Kelly sizing (USD). When 0, uses profile base_size.
+    # For a $30 paper account, set this to 30.0.
+    bankroll_usdc: float = 0.0
 
     def with_overrides(self, overrides: dict[str, Any]) -> StrategyProfile:
         """Return a copy with per-market override values applied."""

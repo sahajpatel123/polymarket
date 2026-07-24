@@ -44,6 +44,10 @@ from polymaker.paper.fill_sim import FillSimulator
 from polymaker.risk.manager import RiskManager
 from polymaker.state.store import StateStore
 from polymaker.state.tracker import UserEventProcessor
+from polymaker.strategy.advanced_quoting import (
+    AdvancedQuoteInputs,
+    compute_advanced_quotes,
+)
 from polymaker.strategy.estimators import (
     FlowEstimator,
     MarketEstimators,
@@ -53,6 +57,9 @@ from polymaker.strategy.estimators import (
 from polymaker.strategy.quoting import QuoteInputs, compute_fair_value, construct_quotes
 from polymaker.strategy.regime import RegimeInputs, RegimeMachine
 from polymaker.userstream.client import UserStream
+
+log = get_logger("engine")
+
 
 log = get_logger("engine")
 
@@ -854,13 +861,42 @@ class Engine:
             p,
         )
 
-        tq = construct_quotes(QuoteInputs(
-            meta=meta, regime=regime, fv=fv, vol_short=est.vol.short,
-            toxicity=est.markout.toxicity, yes_view=yes_view,
-            no_view=(no_book.view() if no_book else BookView(None, 0.0, None, 0.0, None, None, 0.0, 0.0)),
-            pos_yes=pos_yes, pos_no=pos_no, profile=p, now=now,
-            risk_size_scale=rd.size_scale,
-        ))
+        tq: Any
+        if p.use_advanced_quoting:
+            # Use Avellaneda-Stoikov optimal pricing + Kelly sizing
+            from polymaker.domain import Quote, Side
+            bankroll = p.bankroll_usdc if p.bankroll_usdc > 0 else p.q_max_usdc
+            adv = compute_advanced_quotes(AdvancedQuoteInputs(
+                meta=meta, fv=fv, sigma=est.vol.short,
+                yes_view=yes_view,
+                no_view=(no_book.view() if no_book else BookView(None, 0.0, None, 0.0, None, None, 0.0, 0.0)),
+                pos_yes=pos_yes, pos_no=pos_no, profile=p,
+                bankroll_usdc=bankroll, now=now,
+            ))
+            # Build a TargetQuotes from the advanced output
+            yes_price = adv.bid
+            no_price = 1.0 - adv.ask
+            adv_quotes: list[Any] = []
+            if adv.size_yes_shares > 0 and 0 < yes_price < 1:
+                adv_quotes.append(Quote(
+                    token_id=meta.yes.token_id, side=Side.BUY,
+                    price=yes_price, size=adv.size_yes_shares,
+                ))
+            if adv.size_no_shares > 0 and 0 < no_price < 1:
+                adv_quotes.append(Quote(
+                    token_id=meta.no.token_id, side=Side.BUY,
+                    price=no_price, size=adv.size_no_shares,
+                ))
+            from polymaker.domain import TargetQuotes as _TQ
+            tq = _TQ(cid, regime, tuple(adv_quotes))
+        else:
+            tq = construct_quotes(QuoteInputs(
+                meta=meta, regime=regime, fv=fv, vol_short=est.vol.short,
+                toxicity=est.markout.toxicity, yes_view=yes_view,
+                no_view=(no_book.view() if no_book else BookView(None, 0.0, None, 0.0, None, None, 0.0, 0.0)),
+                pos_yes=pos_yes, pos_no=pos_no, profile=p, now=now,
+                risk_size_scale=rd.size_scale,
+            ))
 
         live = self.state.orders_for(meta.yes.token_id) + self.state.orders_for(meta.no.token_id)
         plan = reconcile(tq, live, tick=meta.tick_size,
