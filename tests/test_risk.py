@@ -84,3 +84,84 @@ def test_manual_kill(tmp_path, meta):
     rm.kill()
     assert rm.global_halt() == (True, "manual_kill")
     store.close()
+
+
+def test_concentration_limit_triggers_reduce_only(tmp_path, meta):
+    """Single market with >50% of total exposure should trigger reduce-only.
+
+    Without this guard, a $30 account could allocate 100% to one toxic
+    market and lose everything. The fix: max_market_concentration_pct=0.5.
+    """
+    rm, store = _rm(
+        tmp_path,
+        max_market_notional_usdc=1000,  # high hard cap so concentration triggers first
+        max_total_exposure_usdc=200,
+        max_market_concentration_pct=0.5,
+    )
+    # 150 notional in one market = 75% of total (200) > 50% concentration cap
+    store.apply_fill(Fill(meta.yes.token_id, Side.BUY, 0.50, 300, "t1"))
+    rm.update_mark(meta.yes.token_id, 0.50)
+    rm.update_mark(meta.no.token_id, 0.50)
+    d = rm.evaluate(meta, ws_stale=False, event_group_cost=0.0)
+    assert d.reduce_only
+    assert "concentration" in d.reason
+    store.close()
+
+
+def test_per_market_loss_kill_switch(tmp_path, meta):
+    """Per-market unrealized loss > max_market_loss triggers reduce-only."""
+    rm, store = _rm(tmp_path, max_market_loss_usdc=2.0)
+    # Buy 100 shares at 0.50
+    store.apply_fill(Fill(meta.yes.token_id, Side.BUY, 0.50, 100, "t1"))
+    rm.update_mark(meta.yes.token_id, 0.50)
+    # Price drops to 0.45 -> unrealized loss = 0.05 * 100 = $5
+    rm.update_mark(meta.yes.token_id, 0.45)
+    d = rm.evaluate(meta, ws_stale=False, event_group_cost=0.0)
+    assert d.reduce_only
+    assert "market_loss" in d.reason
+    store.close()
+
+
+def test_gas_cost_circuit_breaker(tmp_path, meta):
+    """Cumulative gas cost > max_gas_cost_pct of starting equity triggers global halt.
+
+    On Polygon, a single merge tx can cost $1-5. With $30 capital, one
+    bad merge = 3-17% gone. This circuit breaker prevents that.
+    """
+    rm, store = _rm(tmp_path, max_gas_cost_pct=0.10, max_total_exposure_usdc=100)
+    # Buy some inventory to establish equity ($500 from 1000 shares at 0.50)
+    store.apply_fill(Fill(meta.yes.token_id, Side.BUY, 0.50, 1000, "t1"))
+    rm.note_fill(Fill(meta.yes.token_id, Side.BUY, 0.50, 1000, "t1"))
+    rm.update_mark(meta.yes.token_id, 0.50)
+    rm.reset_day()  # equity is now $500 (net cash -500 + inventory 500 = 0)
+    # Use a smaller cap to make the test deterministic
+    # The fallback uses max_total_exposure_usdc=100 as reference when
+    # day_start_equity is 0. So 10% of $100 = $10.
+    rm.note_gas_cost(5)    # 5% of $100 — below threshold
+    rm.note_gas_cost(7)    # cumulative 12% — above threshold
+    halted, reason = rm.global_halt()
+    assert halted
+    assert "gas_cost" in reason
+    store.close()
+
+
+def test_gas_cost_below_threshold_no_halt(tmp_path, meta):
+    """Gas costs below threshold should not trigger global halt."""
+    rm, store = _rm(tmp_path, max_gas_cost_pct=0.10, max_total_exposure_usdc=100)
+    store.apply_fill(Fill(meta.yes.token_id, Side.BUY, 0.50, 1000, "t1"))
+    rm.note_fill(Fill(meta.yes.token_id, Side.BUY, 0.50, 1000, "t1"))
+    rm.update_mark(meta.yes.token_id, 0.50)
+    rm.reset_day()
+    rm.note_gas_cost(3)  # 3% of $100 — well below 10% threshold
+    assert not rm.global_halt()[0]
+    store.close()
+
+
+def test_note_gas_cost_accumulates(tmp_path, meta):
+    """note_gas_cost should accumulate cumulatively."""
+    rm, store = _rm(tmp_path)
+    rm.note_gas_cost(1.5)
+    rm.note_gas_cost(2.0)
+    rm.note_gas_cost(0.5)
+    assert abs(rm.cumulative_gas_cost - 4.0) < 0.001
+    store.close()

@@ -25,6 +25,9 @@ ws_stale_halt_s = 8.0
 user_ws_blind_halt_s = 12.0
 heartbeat_halt_failures = 3
 max_order_error_rate = 0.25
+max_market_concentration_pct = 0.5   # 50% max per market
+max_market_loss_usdc = 4.0           # per-market loss kill at $4
+max_gas_cost_pct = 0.10              # stop if gas > 10% of capital
 
 [execution]
 rate_budget_fraction = 0.15

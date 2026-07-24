@@ -175,6 +175,12 @@ def _add_layers(
     """
     if total_size <= 0:
         return
+    # Early return: if even the full total size is below the exchange minimum,
+    # don't create any orders. Wasting API calls on sub-min orders is a net
+    # loss (rate budget + rejected fills). The old code checked per-layer
+    # *after* dividing, which still created orders that were too small.
+    if exchange_min > 0 and total_size < exchange_min:
+        return
     layers = max(1, layers)
     reward_floor = max(reward_floor, exchange_min)
     per = round(total_size / layers, 2)

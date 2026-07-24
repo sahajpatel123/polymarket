@@ -51,7 +51,7 @@ from polymaker.strategy.advanced_quoting import (
 from polymaker.strategy.estimators import (
     FlowEstimator,
     MarketEstimators,
-    MarkoutTracker,
+    MultiHorizonMarkout,
     VolEstimator,
 )
 from polymaker.strategy.quoting import QuoteInputs, compute_fair_value, construct_quotes
@@ -279,7 +279,10 @@ class Engine:
         return MarketEstimators(
             vol=VolEstimator(p.vol_short_halflife_s, p.vol_long_halflife_s),
             flow=FlowEstimator(p.flow_ewma_halflife_s),
-            markout=MarkoutTracker(),
+            markout=MultiHorizonMarkout(
+                horizons_s=(30.0, 120.0, 300.0),
+                weights=(0.5, 0.3, 0.2),
+            ),
         )
 
     # ── dynamic market management (auto-discovery / hot-reload) ──────────
@@ -387,20 +390,35 @@ class Engine:
         max_markets = int(self.cfg.engine.auto_discovery_max_markets)
         tags = tuple(self.cfg.engine.auto_discovery_tags) or ("politics",)
         profile_name = self.cfg.engine.auto_discovery_profile
+        min_liquidity = float(getattr(self.cfg.engine, "auto_discovery_min_liquidity", 10000.0))
+        min_daily_rate = float(getattr(self.cfg.engine, "auto_discovery_min_daily_rate", 10.0))
+        max_spread = float(getattr(self.cfg.engine, "auto_discovery_max_spread_cents", 5.0))
 
         while self._running:
             await asyncio.sleep(interval)
             if not self._running:
                 break
             try:
-                await self._run_discovery_pass(tags, min_score, max_markets, profile_name)
+                await self._run_discovery_pass(
+                    tags, min_score, max_markets, profile_name,
+                    min_liquidity, min_daily_rate, max_spread,
+                )
             except Exception as exc:  # noqa: BLE001
                 log.warning("discovery_pass_failed", err=str(exc))
 
     async def _run_discovery_pass(
-        self, tags: tuple[str, ...], min_score: float, max_markets: int, profile_name: str
+        self, tags: tuple[str, ...], min_score: float, max_markets: int, profile_name: str,
+        min_liquidity: float = 10000.0, min_daily_rate: float = 10.0,
+        max_spread_cents: float = 5.0,
     ) -> None:
-        """One pass of market discovery: scan, score, add new markets, remove closed."""
+        """One pass of market discovery: scan, score, add new markets, remove closed.
+
+        Profitability gates (added per user audit):
+        - min_liquidity: skip markets with less than this liquidity (USDC)
+        - min_daily_rate: skip markets with less than this daily reward rate
+        - max_spread_cents: skip markets with reward band wider than this
+          (wide band = high adverse-selection risk)
+        """
         if profile_name not in self.cfg.profiles:
             log.warning("unknown_auto_discovery_profile", profile=profile_name)
             return
@@ -418,11 +436,21 @@ class Engine:
             log.warning("discovery_scan_failed", err=str(exc))
             return
 
-        # Score and filter
+        # Score and filter with profitability gates
         candidates: list[MarketMeta] = []
         for meta in scanned:
             sc = score_market(meta)
             if sc.score < min_score:
+                continue
+            # Profitability gates (fixes the "add unprofitable markets" problem)
+            if meta.liquidity_num < min_liquidity:
+                log.debug("skip_low_liquidity", slug=meta.slug, liq=meta.liquidity_num)
+                continue
+            if meta.rewards_daily_rate < min_daily_rate:
+                log.debug("skip_low_reward", slug=meta.slug, rate=meta.rewards_daily_rate)
+                continue
+            if meta.rewards_max_spread > max_spread_cents:
+                log.debug("skip_wide_spread", slug=meta.slug, spread=meta.rewards_max_spread)
                 continue
             candidates.append(meta)
 

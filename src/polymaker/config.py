@@ -61,6 +61,10 @@ class EngineConfig(BaseModel):
     auto_discovery_profile: str = "political-longdated"
     # Hot-reload markets.toml when it changes on disk (via watchfiles).
     auto_discovery_hot_reload: bool = True
+    # Profitability gates for auto-discovery (fix #7: add unprofitable markets)
+    auto_discovery_min_liquidity: float = 10000.0
+    auto_discovery_min_daily_rate: float = 10.0
+    auto_discovery_max_spread_cents: float = 5.0
 
 
 class RiskConfig(BaseModel):
@@ -74,6 +78,16 @@ class RiskConfig(BaseModel):
     # consecutive heartbeat failures -> exchange is auto-cancelling us -> halt
     heartbeat_halt_failures: int = 3
     max_order_error_rate: float = 0.25
+    # ── per-market safety (fixes the $30 wipeout problem) ──
+    # Max fraction of total exposure allowed in one market.
+    # Prevents single-market wipeout when capital is spread thin.
+    max_market_concentration_pct: float = 0.5  # 50% max per market
+    # Per-market loss kill-switch: stop quoting a market after this much
+    # unrealized loss. With $30 capital, $2 = 6.7% per-market stop.
+    max_market_loss_usdc: float = 2.0
+    # Gas cost circuit breaker: stop trading if cumulative on-chain
+    # gas costs exceed this fraction of starting equity.
+    max_gas_cost_pct: float = 0.10  # 10% of capital on gas
 
 
 class ExecutionConfig(BaseModel):

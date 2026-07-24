@@ -34,23 +34,32 @@ loop = "uvloop"                 # "uvloop" | "asyncio"
 # the configured tags, filters by score, and auto-adds them to the live trade
 # list. The bot finds and trades new markets on its own — no manual
 # `polymaker markets-add` needed.
-auto_discovery_enabled = true
-auto_discovery_interval_s = 1800.0    # 30-min re-scan (more aggressive)
-auto_discovery_tags = ["politics", "sports", "crypto", "news"]  # multi-category
-auto_discovery_min_score = 0.005       # lower bar to catch more markets
-auto_discovery_max_markets = 30        # cap on auto-discovered markets
-auto_discovery_profile = "aggressive_30"  # use the $30-tuned profile
-auto_discovery_hot_reload = true       # watch markets.toml for manual edits
+# SAFETY: with 30 markets and $30 capital, each market gets $1 — below
+# exchange minimum order size. Cap at 5 max, with strict profitability
+# gates (see engine._run_discovery_pass).
+auto_discovery_enabled = false          # OFF until you've validated in paper
+auto_discovery_interval_s = 1800.0      # 30-min re-scan
+auto_discovery_tags = ["politics"]       # single category until validated
+auto_discovery_min_score = 0.02          # raised from 0.005 (filter junk)
+auto_discovery_min_liquidity = 10000.0   # min liquidity per market
+auto_discovery_min_daily_rate = 10.0     # min $10/day reward to auto-add
+auto_discovery_max_spread_cents = 5.0    # max reward band width
+auto_discovery_max_markets = 5           # 5 max (was 30 — too thin spread)
+auto_discovery_profile = "aggressive_30"
+auto_discovery_hot_reload = true
 
 [risk]
-max_total_exposure_usdc = 450.0     # sum of filled inventory notional (intentionally excludes open buy notional to avoid self-churn)
-max_event_group_loss_usdc = 400.0   # neg-risk group worst-case loss cap
-max_market_notional_usdc = 400.0     # per-market filled inventory notional cap
-daily_loss_kill_usdc = 40.0         # realized daily loss -> halt new quotes
-ws_stale_halt_s = 10.0               # no book updates for this long -> halt market
-user_ws_blind_halt_s = 15.0          # user WS down this long -> pull all quotes (can't see fills)
-heartbeat_halt_failures = 3          # consecutive heartbeat misses -> halt + resync
-max_order_error_rate = 0.25          # rolling order-post error fraction -> halt
+max_total_exposure_usdc = 30.0      # $30 cap (was 450 — didn't fit a $30 account)
+max_event_group_loss_usdc = 15.0    # 50% of capital
+max_market_notional_usdc = 15.0     # 50% per market (was 400 — meaningless for $30)
+daily_loss_kill_usdc = 3.0          # 10% of capital daily kill (was 40)
+ws_stale_halt_s = 10.0
+user_ws_blind_halt_s = 15.0
+heartbeat_halt_failures = 3
+max_order_error_rate = 0.25
+max_market_concentration_pct = 0.5   # NEW: max 50% of capital in one market
+max_market_loss_usdc = 2.0           # NEW: per-market loss kill at $2 (6.7%)
+max_gas_cost_pct = 0.10              # NEW: stop if gas > 10% of capital
 
 [execution]
 rate_budget_fraction = 0.25     # fraction of documented API limits we allow

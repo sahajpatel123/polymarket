@@ -36,6 +36,7 @@ class RiskManager:
         self._killed = False
         self._order_attempts = 0
         self._order_errors = 0
+        self._cumulative_gas_cost = 0.0  # cumulative on-chain gas cost (USDC)
 
     # ── PnL bookkeeping ─────────────────────────────────────────────────
     def note_fill(self, fill: Fill) -> None:
@@ -88,7 +89,32 @@ class RiskManager:
             return True, f"daily_loss {self.daily_pnl:.0f}"
         if self.error_rate >= self._cfg.max_order_error_rate:
             return True, f"error_rate {self.error_rate:.2f}"
+        # Gas cost circuit breaker: if cumulative on-chain gas costs exceed
+        # the threshold fraction of starting equity, kill. On Polygon,
+        # a single merge tx can cost $1-5; with $30 capital, one bad merge
+        # = 3-17% gone. This is the circuit breaker that prevents that.
+        # Use max_total_exposure as a fallback reference when day_start_equity
+        # is 0 (e.g., on a fresh account with no inventory yet).
+        gas_ref = self._day_start_equity if self._day_start_equity > 0 else self._cfg.max_total_exposure_usdc
+        if gas_ref > 0:
+            gas_frac = self._cumulative_gas_cost / gas_ref
+            if gas_frac >= self._cfg.max_gas_cost_pct:
+                return True, f"gas_cost {gas_frac:.1%}>={self._cfg.max_gas_cost_pct:.0%}"
         return False, ""
+
+    def note_gas_cost(self, cost_usdc: float) -> None:
+        """Record an on-chain gas cost. Triggers circuit breaker if cumulative
+        costs exceed max_gas_cost_pct of starting equity.
+        """
+        if cost_usdc <= 0:
+            return
+        self._cumulative_gas_cost += cost_usdc
+        log.info("gas_cost_recorded", cost=cost_usdc,
+                 cumulative=round(self._cumulative_gas_cost, 4))
+
+    @property
+    def cumulative_gas_cost(self) -> float:
+        return self._cumulative_gas_cost
 
     def kill(self) -> None:
         self._killed = True
@@ -114,6 +140,27 @@ class RiskManager:
             return RiskDecision(False, True, 1.0, "event_group_cap")
         if total_exposure >= self._cfg.max_total_exposure_usdc:
             return RiskDecision(False, True, 1.0, "total_exposure_cap")
+
+        # Per-market concentration: don't allow > 50% of capital in one market.
+        # Without this, $30 in one toxic market = total wipeout. Fixed from
+        # the old hardcoded $400 cap which was meaningless for small accounts.
+        # Only triggers if the cap is below the configured hard market cap
+        # (otherwise the hard cap is the binding constraint).
+        concentration_cap = min(
+            self._cfg.max_market_notional_usdc,
+            self._cfg.max_total_exposure_usdc * self._cfg.max_market_concentration_pct,
+        )
+        if concentration_cap > 0 and market_notional > concentration_cap:
+            return RiskDecision(
+                False, True, 1.0,
+                f"market_concentration>{concentration_cap:.0f}"
+            )
+
+        # Per-market PnL kill-switch: if a market has lost more than the
+        # threshold, halt quoting on it (reduce-only, no new entries).
+        market_pnl = self._market_pnl(meta)
+        if market_pnl <= -self._cfg.max_market_loss_usdc:
+            return RiskDecision(False, True, 1.0, f"market_loss>{self._cfg.max_market_loss_usdc:.0f}")
 
         # soft scaling: taper size as any cap is approached (worst-binding wins)
         scale = min(
@@ -141,6 +188,27 @@ class RiskManager:
             if pos.size > 0:
                 total += pos.size * self._marks.get(tok, pos.avg_price or 0.5)
         return total
+
+    def _market_pnl(self, meta: MarketMeta) -> float:
+        """Per-market realized + unrealized PnL for kill-switch monitoring.
+
+        Realized: net cash from fills on this market's tokens.
+        Unrealized: mark-to-market on remaining inventory vs avg_price.
+        """
+        unrealized = 0.0
+        for tok in (meta.yes.token_id, meta.no.token_id):
+            pos = self._store.position(tok)
+            if pos.size <= 0:
+                continue
+            # Realized PnL is the difference between current mark and avg_price
+            mark = self._marks.get(tok, pos.avg_price or 0.5)
+            unrealized += (mark - pos.avg_price) * pos.size
+        # Note: realized PnL from fills is tracked via _net_cash; per-market
+        # realized would need fill-by-token tracking which we approximate via
+        # the inventory cost basis vs current mark. Return unrealized only
+        # for the kill-switch (the realized component is already in the
+        # global daily_pnl via _net_cash).
+        return unrealized
 
 
 def _headroom(current: float, cap: float) -> float:
