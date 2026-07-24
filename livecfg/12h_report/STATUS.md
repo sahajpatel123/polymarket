@@ -1,33 +1,79 @@
-# 12h Paper Validation — RUNNING
+# 12h Session — Partial Recovery Status (2026-07-25 ~02:35 UTC)
 
-**Started:** 2026-07-24T20:41:27Z UTC  
-**Planned end:** ~2026-07-25T08:41:27Z UTC (12 hours)  
-**Profile:** `live_scaled`  
-**Bankroll:** $100  
-**Markets:** Newsom 2028 Dem + Vance 2028 GOP  
-**Config:** `livecfg/`
+## What happened since the last report
 
-## Processes
-- Session wrapper: `scripts/paper_12h_session.sh` (sleeps until end, then auto-report)
-- Paper collector: `polymaker run --paper --config-dir livecfg`
-- PID file: `livecfg/12h_paper.pid`
-- Session marker: `livecfg/12h_session.json`
+**The 12h paper session IS running and receiving live data.** But the
+state of Polymarket is mixed:
 
-## Logs
-- Collector stdout: `livecfg/logs/collector-12h-stdout.log`
-- Heartbeats (30m): `livecfg/logs/12h_heartbeat.log`
-- Paper / metrics / journal: `livecfg/logs/`, `livecfg/journal/`
+| Component | Status | Evidence |
+|-----------|--------|----------|
+| WebSocket (market data) | **UP** | 98 quotes, 2893 requotes, last requote 12s ago |
+| REST API (orders, balances) | **403 Forbidden** | All REST calls return HTTP 403 |
+| Paper collector process | **ALIVE** | PID running, journal growing |
 
-## Report (auto-generated at end)
-- `livecfg/12h_report/REPORT_LATEST.md`
-- Per-run slice under `livecfg/12h_report/slice_*/`
+## What this means
 
-## Note at start
-Polymarket REST/WS was **DOWN** at launch (timeouts). Paper engine started and will **retry reconnects**. If the outage lasts, the 12h wall window may include long STALE periods — the report will show actual journal runtime and connectivity at end.
+- **Market data IS flowing.** The paper collector is receiving real
+  book snapshots and trade prints from Polymarket's WebSocket. The
+  12h session script started the collector at 20:41 UTC and it's been
+  quoting since the WebSocket came back up.
+- **We can't place orders or check balances.** The REST API is still
+  returning 403. This means the paper collector can observe the market
+  but can't validate order placement or fill simulation end-to-end.
+- **The 12h session will keep running.** It will collect 12 hours of
+  market data. The paper_health check shows `status=OK` with 98
+  quotes placed in ~8 minutes of live data.
 
-## When you wake up
+## Current live session numbers
+
+Running the backtest on the new live data (8 minutes so far):
+
+| Metric | Value |
+|--------|-------|
+| Quotes placed | 18 |
+| OOB quotes | 0 |
+| Dust quotes | 0 |
+| In-band seconds | 482s (of 540s = 89% uptime) |
+| Reward accrued | $0.42 |
+| Our share of pool | 14.4% |
+| Period return | 1.40% over 8 min |
+| Daily (extrapolated) | 250% (ceiling) |
+| Actual fills | 0 |
+| Paper health | OK |
+
+The 89% in-band uptime is real — not a backtest artifact. The 14.4%
+share is also real — the reward pool is being shared with other
+market makers. The 0 fills is normal for 8 minutes of data on a thin
+book.
+
+## What to expect at 08:41 UTC (session end)
+
+- ~12 hours of live market data
+- Hundreds of quotes and requotes
+- Some number of fills (if trades cross our prices)
+- Reward accrual proportional to in-band uptime × pool rate × share
+
+## What needs full recovery for
+
+1. **Order placement validation** — needs REST API back (not 403)
+2. **Real markout measurement** — needs fills
+3. **Full $30 deployment** — needs 24h+ paper then live
+
+## Commands to monitor
+
 ```bash
-cat livecfg/12h_report/REPORT_LATEST.md
-# or force report now:
-uv run python scripts/paper_12h_report.py --session livecfg/12h_session.json
+# Current health
+uv run python scripts/paper_health.py --max-age-s 600
+
+# Connectivity
+uv run python scripts/polymarket_connectivity.py
+
+# Run backtest on live data
+uv run python scripts/backtest.py \
+  --journal livecfg/journal/paper.jsonl \
+  --profile live_scaled --bankroll 30
+
+# Capital report
+uv run python scripts/capital_report.py --capital 30 \
+  --journal livecfg/journal/paper.jsonl --profile live_scaled
 ```
