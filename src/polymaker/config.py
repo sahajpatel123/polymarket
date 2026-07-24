@@ -68,26 +68,88 @@ class EngineConfig(BaseModel):
 
 
 class RiskConfig(BaseModel):
+    """Risk limits. Prefer setting `bankroll_usdc` once — all USDC caps scale.
+
+    When ``bankroll_usdc > 0``, absolute caps are *derived* from the fraction
+    fields (total_exposure_frac, market_notional_frac, …). That way a $30
+    paper wallet and a $5_000 live wallet share one risk policy.
+
+    When ``bankroll_usdc == 0``, the absolute USDC fields are used as-is
+    (legacy / explicit override mode).
+    """
+
+    # ── single capital knob (set this to your real balance) ─────────────
+    bankroll_usdc: float = 0.0
+
+    # ── fractions of bankroll (used when bankroll_usdc > 0) ─────────────
+    total_exposure_frac: float = 1.0       # can deploy up to 100% of bankroll
+    market_notional_frac: float = 0.35     # max ~35% in one market
+    event_group_frac: float = 0.50         # max 50% in one neg-risk event group
+    daily_loss_frac: float = 0.10          # kill at −10% day
+    market_loss_frac: float = 0.05         # reduce-only a market at −5% of bankroll
+    # Max fraction of total-exposure budget in one market (also used as a
+    # soft concentration check vs max_total when bankroll is unset).
+    max_market_concentration_pct: float = 0.5
+    # Gas circuit breaker: halt if cumulative gas ≥ this fraction of bankroll
+    # (or of day-start equity / total-exposure fallback).
+    max_gas_cost_pct: float = 0.10
+
+    # ── absolute USDC caps (legacy mode, or filled by resolve_from_bankroll) ─
     max_total_exposure_usdc: float = 5000.0
     max_event_group_loss_usdc: float = 1000.0
     max_market_notional_usdc: float = 800.0
     daily_loss_kill_usdc: float = 250.0
+    max_market_loss_usdc: float = 50.0
+
     ws_stale_halt_s: float = 10.0
     # user WS down this long -> we can't see our fills -> pull all quotes
     user_ws_blind_halt_s: float = 15.0
     # consecutive heartbeat failures -> exchange is auto-cancelling us -> halt
     heartbeat_halt_failures: int = 3
     max_order_error_rate: float = 0.25
-    # ── per-market safety (fixes the $30 wipeout problem) ──
-    # Max fraction of total exposure allowed in one market.
-    # Prevents single-market wipeout when capital is spread thin.
-    max_market_concentration_pct: float = 0.5  # 50% max per market
-    # Per-market loss kill-switch: stop quoting a market after this much
-    # unrealized loss. With $30 capital, $2 = 6.7% per-market stop.
-    max_market_loss_usdc: float = 2.0
-    # Gas cost circuit breaker: stop trading if cumulative on-chain
-    # gas costs exceed this fraction of starting equity.
-    max_gas_cost_pct: float = 0.10  # 10% of capital on gas
+
+    def resolve_from_bankroll(self) -> RiskConfig:
+        """Return a copy with absolute caps derived from bankroll when set.
+
+        Idempotent: if bankroll is 0, returns self unchanged. Always recomputes
+        from fractions when bankroll > 0 so config reloads stay consistent.
+        """
+        b = float(self.bankroll_usdc)
+        if b <= 0:
+            return self
+        data = self.model_dump()
+        data["max_total_exposure_usdc"] = b * float(self.total_exposure_frac)
+        data["max_market_notional_usdc"] = b * float(self.market_notional_frac)
+        data["max_event_group_loss_usdc"] = b * float(self.event_group_frac)
+        data["daily_loss_kill_usdc"] = b * float(self.daily_loss_frac)
+        data["max_market_loss_usdc"] = b * float(self.market_loss_frac)
+        # Concentration hard-cap also respects market_notional_frac.
+        conc = min(
+            data["max_market_notional_usdc"],
+            data["max_total_exposure_usdc"] * float(self.max_market_concentration_pct),
+        )
+        data["max_market_notional_usdc"] = conc
+        return RiskConfig(**data)
+
+    def scale_profile_sizes(self, profile: StrategyProfile) -> StrategyProfile:
+        """Scale a profile's base_size / q_max / bankroll to this risk bankroll.
+
+        Used so a single advanced profile works at $30 or $5_000 without
+        hand-editing every size knob. No-op when bankroll is unset.
+        """
+        b = float(self.bankroll_usdc)
+        if b <= 0:
+            return profile
+        # Per-order size: ~10% of bankroll (concentrated for reward share),
+        # floor $2, cap $250. Dust sizes never reach 15%+/day targets.
+        base = max(2.0, min(250.0, b * 0.10))
+        # Per-market inventory: match the market notional cap.
+        q_max = max(base, float(self.max_market_notional_usdc))
+        return profile.model_copy(update={
+            "base_size_usdc": base,
+            "q_max_usdc": q_max,
+            "bankroll_usdc": b,
+        })
 
 
 class ExecutionConfig(BaseModel):
@@ -134,7 +196,6 @@ class StrategyProfile(BaseModel):
     # regime
     event_cooloff_s: float = 60.0
     event_jump_ticks: int = 8
-    event_sweep_levels: int = 3
     # sweep = a print >= event_sweep_mult order-sizes AND >= event_sweep_frac of
     # the near-touch depth it consumed (both must hold to flag a toxic sweep)
     event_sweep_mult: float = 4.0
@@ -145,12 +206,12 @@ class StrategyProfile(BaseModel):
     # for reward-farming markets that trade rarely.
     trend_vol_ratio: float = 2.0
     # lifecycle
-    end_date_taper_days: float = 7.0
     reduce_only_hours: float = 24.0
     halt_before_hours: float = 2.0
+    end_date_taper_days: float = 7.0  # UNUSED by live path (C-04); TOML compat
     # exits
-    exit_urgency_s: float = 900.0
     merge_min_size: float = 20.0
+    exit_urgency_s: float = 900.0  # UNUSED by live path (C-04); TOML compat
     # ── advanced quoting (Tier 2 opt-in) ──
     # When True, the engine uses the Avellaneda-Stoikov optimal pricing
     # model + Kelly-inspired sizing instead of the simple linear skew.
@@ -276,10 +337,11 @@ class Config(BaseModel):
         }
         markets = [MarketEntry(**m) for m in (mkts.get("markets") or [])]
 
+        risk = RiskConfig(**main.get("risk", {})).resolve_from_bankroll()
         return cls(
             wallet=WalletConfig(**main.get("wallet", {})),
             engine=EngineConfig(**main.get("engine", {})),
-            risk=RiskConfig(**main.get("risk", {})),
+            risk=risk,
             execution=ExecutionConfig(**main.get("execution", {})),
             paths=PathsConfig(**main.get("paths", {})),
             profiles=profiles,
@@ -288,11 +350,7 @@ class Config(BaseModel):
             config_dir=cdir,
         )
 
-    def reload_markets(self) -> Config:
-        """Re-read markets.toml only (used by the hot-reload path)."""
-        mkts = _read_toml(self.config_dir / "markets.toml")
-        self.markets = [MarketEntry(**m) for m in (mkts.get("markets") or [])]
-        return self
+    
 
 
 def _read_toml(path: Path) -> dict[str, Any]:

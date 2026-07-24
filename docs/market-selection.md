@@ -58,7 +58,7 @@ competition and your actual fill share are not modeled.
    refreshes reward/fee/end-date metadata at startup and every
    `catalog_refresh_s`, and only then quotes
 
-The engine does **not** auto-add markets from the scanner. Editing
-`markets.toml` while running does not hot-reload: `Config.reload_markets`
-exists and `watchfiles` is a dependency, but nothing in the engine watches the
-file.
+The engine does **not** auto-add markets from the scanner by default. Editing
+`markets.toml` while running **does** hot-reload when `auto_discovery_hot_reload`
+is enabled (default: True): the engine watches the file via `watchfiles.awatch`
+and reconciles the trade list automatically. See `docs/AUTO_DISCOVERY.md`.

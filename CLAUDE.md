@@ -154,15 +154,16 @@ Not a backtester. Journal replay backtester is **not built**.
 
 Call these out before relying on them in strategy work:
 
-1. **`exit_urgency_s` unused by engine** — exit urgency stays 0 unless
-   REDUCE_ONLY bumps it to 0.5 inside `_maybe_exit`.
-2. **`end_date_taper_days` unused** — only `reduce_only_hours` /
-   `halt_before_hours` affect lifecycle.
-3. **`_last_quote_fv` written, never read** — comment says "requote
-   suppression" but no suppression logic uses it.
-4. **`market_resolved` never set** — closed markets use `_halted` + blind path.
-5. **Hot reload unfinished** — `Config.reload_markets` + `watchfiles` dep;
-   engine does not watch `markets.toml`.
+1. **`exit_urgency_s` removed from config** — exit urgency was always 0 unless
+   REDUCE_ONLY bumps it to 0.5 inside `_maybe_exit`; the unused config knob has
+   been removed.
+2. **`end_date_taper_days` removed from config** — only `reduce_only_hours` /
+   `halt_before_hours` affect lifecycle; the unused config knob has been removed.
+3. **`_last_quote_fv` removed** — dead store no longer in the codebase.
+4. **`market_resolved` now wired** — the engine passes `cid in self._halted` to
+   RegimeInputs, so closed/not-accepting markets flow through the correct field.
+5. **Hot reload functional** — `_hot_reload_loop` watches `markets.toml` via
+   `watchfiles.awatch` and reconciles the trade list when it changes.
 6. **Exposure comments vs code** — `config.toml` comment mentions open buy
    notional in total exposure; `_total_exposure` / `_market_notional` count
    **filled inventory only** (intentionally, to avoid self-churn).

@@ -1,8 +1,8 @@
 """Market attractiveness scoring for the scanner.
 
-Combines the v1 reward-density intuition with the new maker-rebate income
-stream and penalizes spread/extremes. Higher score = more attractive to make.
-Pure functions over MarketMeta.
+Profit-oriented ranking: reward density and rebate potential vs adverse-
+selection risk (extremity, wide band, thin books). Higher score = more
+attractive to make. Pure functions over MarketMeta.
 """
 
 from __future__ import annotations
@@ -20,6 +20,9 @@ class MarketScore:
     spread: float
     extremity: float  # 0 = mid ~0.5 (good), 1 = near 0/1 (bad payoff asymmetry)
     score: float
+    # Profitability extras (optional consumers; score remains primary rank key)
+    profit_score: float = 0.0  # bankroll-normalized expected daily return signal
+    as_risk: float = 0.0  # 0..1 adverse-selection risk proxy
 
 
 def _mid(m: MarketMeta) -> float:
@@ -71,26 +74,59 @@ def extremity(m: MarketMeta) -> float:
     return min(1.0, abs(mid - 0.5) / 0.5)
 
 
-def score_market(m: MarketMeta) -> MarketScore:
-    rd = reward_density(m)  # our estimated reward income (share-adjusted)
-    rp = rebate_potential(m)  # total daily rebate POOL (for display)
+def adverse_selection_risk(m: MarketMeta) -> float:
+    """0..1 proxy for toxic-fill risk: thin books, wide reward bands, extreme mids.
+
+    Used to down-rank markets that pay high rewards only because they are
+    hard to exit after an adverse print (Romania-style gap risk).
+    """
     ext = extremity(m)
+    # Wide reward band (cents) → more room to get picked off while "in band"
+    band = max(0.0, float(m.rewards_max_spread or 0.0))
+    band_risk = min(1.0, band / 10.0)  # 10c band → full risk
+    # Thin liquidity → higher gap risk
+    liq = max(float(m.liquidity_num or 0.0), 0.0)
+    thin = 1.0 - min(1.0, liq / 20000.0)
+    return min(1.0, 0.45 * ext + 0.30 * band_risk + 0.25 * thin)
+
+
+def score_market(m: MarketMeta, *, bankroll_usdc: float = 100.0) -> MarketScore:
+    """Rank markets by expected maker income net of AS risk.
+
+    Prefer high rewards_daily_rate with manageable competition and low AS risk
+    over raw breadth. bankroll_usdc scales the assumed quote size so small
+    accounts do not pretend they can own large pools.
+    """
+    quote_ref = max(10.0, min(200.0, bankroll_usdc * 0.15))
+    rd = reward_density(m, quote_size_usdc=quote_ref)
+    rp = rebate_potential(m)
+    ext = extremity(m)
+    as_risk = adverse_selection_risk(m)
     spread = max(0.0, m.best_ask - m.best_bid) if (m.best_bid and m.best_ask) else 1.0
 
-    # our estimated income = reward share + (rebate pool * our fill/liquidity share);
-    # extremity and wide spreads discount the score
-    ref = 100.0
-    our_share = min(0.5, ref / max(m.liquidity_num, ref))  # you won't own a whole pool
-    income = rd + rp * our_share
-    penalty = (1.0 - 0.5 * ext) * (1.0 / (1.0 + spread * 20.0))
-    # viability: a market needs real book depth to actually quote — otherwise a
-    # near-zero-liquidity market games "our share" to the top of the ranking
-    viability = min(1.0, m.liquidity_num / 2000.0)
+    ref = max(quote_ref, 50.0)
+    our_share = min(0.35, ref / max(m.liquidity_num, ref))
+    # Income: rewards (share-adjusted) dominate; rebates secondary
+    income = rd + 0.5 * rp * our_share
+    # Stronger extremity + spread + AS penalties than v1 (profit over breadth)
+    penalty = (1.0 - 0.55 * ext) * (1.0 / (1.0 + spread * 25.0)) * (1.0 - 0.6 * as_risk)
+    # Viability: need real depth; raise floor so dust books never rank high
+    viability = min(1.0, m.liquidity_num / 5000.0)
+    # Reward-rate boost: markets with large absolute pools are more worth the
+    # fixed cost of watching (scaled so $50/day is ~1.0, $300/day ~1.6)
+    rate_boost = 1.0 + min(1.0, float(m.rewards_daily_rate or 0.0) / 300.0)
+    raw = income * penalty * viability * rate_boost
+    # profit_score ≈ expected daily $ / bankroll (signal, not guarantee)
+    b = max(bankroll_usdc, 1.0)
+    profit = (rd * (1.0 - 0.5 * as_risk) + 0.25 * rp * our_share) / b
+
     return MarketScore(
         condition_id=m.condition_id,
         reward_density=round(rd, 3),
-        rebate_potential=round(rp, 3),  # the market's total daily rebate pool
+        rebate_potential=round(rp, 3),
         spread=round(spread, 4),
         extremity=round(ext, 3),
-        score=round(income * penalty * viability, 4),
+        score=round(raw, 4),
+        profit_score=round(profit, 6),
+        as_risk=round(as_risk, 4),
     )

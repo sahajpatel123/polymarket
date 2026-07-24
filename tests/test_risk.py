@@ -165,3 +165,92 @@ def test_note_gas_cost_accumulates(tmp_path, meta):
     rm.note_gas_cost(0.5)
     assert abs(rm.cumulative_gas_cost - 4.0) < 0.001
     store.close()
+
+
+def test_bankroll_scales_absolute_caps():
+    """bankroll_usdc > 0 derives absolute USDC caps from fractions."""
+    cfg = RiskConfig(
+        bankroll_usdc=1000.0,
+        total_exposure_frac=1.0,
+        market_notional_frac=0.35,
+        event_group_frac=0.5,
+        daily_loss_frac=0.1,
+        market_loss_frac=0.05,
+        max_market_concentration_pct=0.5,
+    ).resolve_from_bankroll()
+    assert abs(cfg.max_total_exposure_usdc - 1000.0) < 1e-6
+    # market notional = min(0.35*1000, 1.0*1000*0.5) = min(350, 500) = 350
+    assert abs(cfg.max_market_notional_usdc - 350.0) < 1e-6
+    assert abs(cfg.max_event_group_loss_usdc - 500.0) < 1e-6
+    assert abs(cfg.daily_loss_kill_usdc - 100.0) < 1e-6
+    assert abs(cfg.max_market_loss_usdc - 50.0) < 1e-6
+
+
+def test_bankroll_zero_keeps_absolute_caps():
+    cfg = RiskConfig(
+        bankroll_usdc=0.0,
+        max_total_exposure_usdc=777.0,
+        max_market_notional_usdc=111.0,
+    ).resolve_from_bankroll()
+    assert cfg.max_total_exposure_usdc == 777.0
+    assert cfg.max_market_notional_usdc == 111.0
+
+
+def test_scale_profile_sizes_follows_bankroll():
+    from polymaker.config import StrategyProfile
+
+    cfg = RiskConfig(bankroll_usdc=500.0, market_notional_frac=0.35).resolve_from_bankroll()
+    p = StrategyProfile(base_size_usdc=3.0, q_max_usdc=30.0, bankroll_usdc=0.0)
+    scaled = cfg.scale_profile_sizes(p)
+    assert scaled.bankroll_usdc == 500.0
+    assert scaled.base_size_usdc == max(2.0, min(250.0, 500.0 * 0.10))
+    assert scaled.q_max_usdc == cfg.max_market_notional_usdc
+    assert scaled.bankroll_usdc == 500.0
+
+
+def test_bankroll_scales_at_100_and_1000():
+    """Acceptance: two bankrolls produce proportional absolute caps."""
+    small = RiskConfig(
+        bankroll_usdc=100.0,
+        market_notional_frac=0.4,
+        daily_loss_frac=0.1,
+        max_market_concentration_pct=1.0,
+    ).resolve_from_bankroll()
+    large = RiskConfig(
+        bankroll_usdc=1000.0,
+        market_notional_frac=0.4,
+        daily_loss_frac=0.1,
+        max_market_concentration_pct=1.0,
+    ).resolve_from_bankroll()
+    assert abs(small.max_market_notional_usdc - 40.0) < 1e-6
+    assert abs(large.max_market_notional_usdc - 400.0) < 1e-6
+    assert abs(large.daily_loss_kill_usdc / small.daily_loss_kill_usdc - 10.0) < 1e-6
+    from polymaker.config import StrategyProfile
+    p100 = small.scale_profile_sizes(StrategyProfile())
+    p1000 = large.scale_profile_sizes(StrategyProfile())
+    assert p1000.base_size_usdc > p100.base_size_usdc
+    assert p1000.q_max_usdc > p100.q_max_usdc
+
+
+def test_risk_manager_uses_resolved_bankroll(tmp_path, meta):
+    """RiskManager constructor resolves bankroll so evaluate uses scaled caps."""
+    rm, store = _rm(
+        tmp_path,
+        bankroll_usdc=200.0,
+        market_notional_frac=0.25,
+        max_market_concentration_pct=1.0,  # concentration = market_notional_frac only
+        daily_loss_frac=0.1,
+        market_loss_frac=0.05,
+        total_exposure_frac=1.0,
+        event_group_frac=0.5,
+    )
+    # max market notional = 200 * 0.25 = 50
+    assert abs(rm.cfg.max_market_notional_usdc - 50.0) < 1e-6
+    # 60 notional > 50 -> market_cap reduce-only
+    store.apply_fill(Fill(meta.yes.token_id, Side.BUY, 0.50, 120, "t1"))
+    rm.update_mark(meta.yes.token_id, 0.50)
+    rm.update_mark(meta.no.token_id, 0.50)
+    d = rm.evaluate(meta, ws_stale=False, event_group_cost=0.0)
+    assert d.reduce_only
+    assert d.reason in ("market_cap",) or "concentration" in d.reason or "market" in d.reason
+    store.close()

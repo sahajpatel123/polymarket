@@ -63,6 +63,11 @@ def allocate_capital(inp: AllocationInputs) -> AllocationOutput:
 
     Markets with zero or negative expected return get zero allocation.
     Markets with zero risk get a small default allocation.
+
+    Profit bias: after risk-parity weights, boost top expected-return markets
+    slightly so capital compounds on the densest reward pools instead of
+    dusting evenly across mediocre books (critical for 15%+/day targets on
+    small bankrolls).
     """
     if inp.total_capital_usdc <= 0 or not inp.markets:
         return AllocationOutput(allocations=(), total_allocated_usdc=0.0, unallocated_usdc=0.0)
@@ -70,11 +75,14 @@ def allocate_capital(inp: AllocationInputs) -> AllocationOutput:
     # Compute raw weights: expected_return / risk^2
     raw_weights: list[tuple[str, float, float, float]] = []
     total_weight = 0.0
+    max_er = max((er for _, er, _ in inp.markets if er > 0), default=0.0)
     for cid, exp_return, risk in inp.markets:
         if exp_return <= 0 or risk <= 0:
             # Skip markets with no edge or no measurable risk
             continue
-        weight = exp_return / (risk * risk)
+        # Profit tilt: up to +50% weight for the highest-return market
+        tilt = 1.0 + 0.5 * (exp_return / max_er) if max_er > 0 else 1.0
+        weight = (exp_return / (risk * risk)) * tilt
         raw_weights.append((cid, weight, exp_return, risk))
         total_weight += weight
 

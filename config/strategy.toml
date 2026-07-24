@@ -2,9 +2,6 @@
 # market from a live microstructure sample (2026-07-06): price ~0.195, tick 0.001,
 # 2-tick spread, thin touch (~$20-250), VERY quiet tape (~0.1 trades/min),
 # rewards: min 100 shares/order, 5.5c band, ~$52/day rate, 25% maker-rebate pool.
-#
-# C-04 unused knobs (no live effect until wired): exit_urgency_s,
-# end_date_taper_days, event_sweep_levels — see scripts/unused_knob_toml_scan.py.
 
 [profiles.newsom-mm]
 # --- fair value ---
@@ -36,11 +33,9 @@ event_sweep_mult    = 6.0     # print must be >=6 order-sizes
 event_sweep_frac    = 1.0     # AND consume ~all near-touch depth to count as a sweep
 trend_flow_z        = 1.8
 # --- lifecycle (resolves 2028 — irrelevant here) ---
-end_date_taper_days = 7  # UNUSED by live path (C-04)
 reduce_only_hours   = 24
 halt_before_hours   = 2
 # --- exits ---
-exit_urgency_s      = 900  # UNUSED by live path (C-04)
 merge_min_size      = 20.0
 
 
@@ -74,7 +69,6 @@ trend_flow_z        = 1.8
 trend_vol_ratio     = 3.0
 reduce_only_hours   = 24
 halt_before_hours   = 2
-exit_urgency_s      = 900  # UNUSED by live path (C-04)
 merge_min_size      = 20.0
 
 
@@ -107,7 +101,6 @@ trend_flow_z        = 1.2
 trend_vol_ratio     = 2.5
 reduce_only_hours   = 48
 halt_before_hours   = 6
-exit_urgency_s      = 600  # UNUSED by live path (C-04)
 merge_min_size      = 20.0
 
 
@@ -149,29 +142,21 @@ trend_flow_z        = 2.6     # noisy flow z on a $4k/day tape -> raise the bar
 trend_vol_ratio     = 5.0     # ~1 trade/hr: microprice jitter must NOT halve size
                               # (real gaps still caught by event_jump_ticks)
 # --- lifecycle (end date stale/None -> these are inert; acceptingOrders governs) ---
-end_date_taper_days = 7  # UNUSED by live path (C-04)
 reduce_only_hours   = 24
 halt_before_hours   = 2
 # --- exits ---
-exit_urgency_s      = 900  # UNUSED by live path (C-04)
 merge_min_size      = 20.0
 
 
-# aggressive-$30: tuned for a $30 paper-money account across multiple
-# markets. Wider spread (3-tick floor) to cover maker fees + adverse
-# selection, smaller per-order size, uses Avellaneda-Stoikov optimal
-# pricing + Kelly sizing. Backtest before going live.
-# The previous 1-tick spread was a guaranteed loss — it couldn't cover
-# the ~0.1-0.2% maker fee + ~0.1-0.3% adverse selection. Fixed to 3 ticks
-# minimum (~0.6% on 0.5-price market) with c_vol=2.0 and c_tox=5.0 for
-# proper volatility/toxicity response.
+# aggressive_30: fixed $30 toy profile (legacy). Prefer live_scaled with
+# risk.bankroll_usdc for production — sizes are auto-scaled there.
 [profiles.aggressive_30]
 micro_levels        = 2
 flow_ewma_halflife_s = 60
 gamma               = 0.4
-delta_min_ticks     = 3       # 3-tick min spread (~0.6% on 0.5) covers fees+AS
-c_vol               = 2.0     # doubled volatility response
-c_tox               = 5.0     # 2.5x toxicity response (was 2.0, too low)
+delta_min_ticks     = 3
+c_vol               = 2.0
+c_tox               = 5.0
 vol_short_halflife_s = 8
 vol_long_halflife_s  = 600
 base_size_usdc      = 3.0
@@ -179,10 +164,10 @@ q_max_usdc          = 30.0
 q_soft_frac         = 0.5
 layers              = 2
 layer_step_ticks    = 1
-reward_size_mult    = 2.5     # bumped from 1.5 to ensure orders hit reward band
+reward_size_mult    = 2.5
 reprice_ticks       = 1
 resize_frac         = 0.15
-min_edge_ticks      = 2       # bumped from 1: never bid above FV-2ticks
+min_edge_ticks      = 2
 event_cooloff_s     = 30
 event_jump_ticks    = 4
 event_sweep_mult    = 3.0
@@ -191,7 +176,75 @@ trend_flow_z        = 1.5
 trend_vol_ratio     = 2.5
 reduce_only_hours   = 48
 halt_before_hours   = 2
-exit_urgency_s      = 600
 merge_min_size      = 5.0
 use_advanced_quoting = true
 bankroll_usdc       = 30.0
+
+
+# live_scaled: production advanced path for multi-category scaled live MM.
+# Frozen pre-profit baseline for A/B (tight reprice + low trend_vol → false TRENDING churn).
+# Used only for offline scoreboard; not a live default.
+[profiles.baseline_naive]
+micro_levels        = 3
+flow_ewma_halflife_s = 120
+gamma               = 0.5
+delta_min_ticks     = 1
+c_vol               = 1.0
+c_tox               = 1.5
+vol_short_halflife_s = 10
+vol_long_halflife_s  = 900
+base_size_usdc      = 50.0
+q_max_usdc          = 250.0
+q_soft_frac         = 0.6
+layers              = 2
+layer_step_ticks    = 2
+reward_size_mult    = 1.0
+reprice_ticks       = 1       # over-churn
+resize_frac         = 0.1
+min_edge_ticks      = 1
+event_cooloff_s     = 60
+event_jump_ticks    = 6
+event_sweep_mult    = 4.0
+event_sweep_frac    = 0.8
+trend_flow_z        = 1.2
+trend_vol_ratio     = 1.8     # false TRENDING on quiet books
+reduce_only_hours   = 24
+halt_before_hours   = 2
+exit_urgency_s      = 900
+merge_min_size      = 20.0
+use_advanced_quoting = false
+bankroll_usdc       = 0.0
+
+
+# Profit production: longdated-like uptime + C-01 false-TRENDING damp + bankroll scale.
+# Edge floors / join discipline live in strategy code (edge.py + quoting.py).
+[profiles.live_scaled]
+micro_levels        = 3
+flow_ewma_halflife_s = 120
+gamma               = 0.6
+delta_min_ticks     = 1
+c_vol               = 1.5
+c_tox               = 3.5
+vol_short_halflife_s = 10
+vol_long_halflife_s  = 900
+base_size_usdc      = 50.0
+q_max_usdc          = 250.0
+q_soft_frac         = 0.55
+layers              = 3       # more resting size → higher competition share
+layer_step_ticks    = 2
+reward_size_mult    = 1.0
+reprice_ticks       = 2
+resize_frac         = 0.2
+min_edge_ticks      = 1
+event_cooloff_s     = 45
+event_jump_ticks    = 6
+event_sweep_mult    = 4.0
+event_sweep_frac    = 0.8
+trend_flow_z        = 1.8
+trend_vol_ratio     = 5.0     # C-01: suppress vol-only false TRENDING
+reduce_only_hours   = 24
+halt_before_hours   = 2
+exit_urgency_s      = 900
+merge_min_size      = 20.0
+use_advanced_quoting = false
+bankroll_usdc       = 0.0

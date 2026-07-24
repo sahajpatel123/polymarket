@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Flag unused StrategyProfile knobs that are still set in strategy TOML.
 
-C-04 hygiene: operators often set ``exit_urgency_s`` / ``end_date_taper_days`` /
-``event_sweep_levels`` expecting an effect — those fields are unused by the
-live path today. This scan lists set-but-inert knobs without changing math.
+C-04 hygiene: operators may set unused knobs expecting an effect — this scan
+lists set-but-inert knobs without changing math.
 
 Usage:
   uv run python scripts/unused_knob_toml_scan.py

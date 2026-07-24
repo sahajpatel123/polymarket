@@ -9,9 +9,9 @@ from polymaker.strategy.knob_audit import audit_profile_knobs
 
 def test_audit_flags_known_unused_knobs() -> None:
     rep = audit_profile_knobs()
-    # Documented dead knobs — if these start being read, update docs + this test.
-    for name in ("exit_urgency_s", "end_date_taper_days", "event_sweep_levels"):
-        assert name in rep.unused, f"expected {name} unused, got unused={rep.unused}"
+    # The audit only knows about fields defined on StrategyProfile.
+    # Removing dead knobs (exit_urgency_s, end_date_taper_days, event_sweep_levels)
+    # from the model means they no longer appear in the audit at all.
     assert "gamma" in rep.used
     assert "trend_vol_ratio" in rep.used
     assert "reprice_ticks" in rep.used
@@ -24,4 +24,5 @@ def test_audit_tmp_tree_detects_only_referenced(tmp_path: Path) -> None:
     rep = audit_profile_knobs([tmp_path])
     assert "gamma" in rep.used
     assert "c_tox" in rep.used
-    assert "exit_urgency_s" in rep.unused
+    # exit_urgency_s was removed from the model, so it's not in unused either
+    assert "exit_urgency_s" not in rep.used

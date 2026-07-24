@@ -363,14 +363,13 @@ class ExecutionGateway:
             log.warning("get_full_book_failed", err=str(exc))
             return None
 
-    async def token_balance(self, token_id: str) -> float:
+    async def token_balance(self, token_id: str) -> float | None:
         """Exact on-chain conditional-token balance (shares) held by the funder.
 
         Returns None on total RPC failure so callers can distinguish "0 shares"
         from "couldn't read".
         """
-        bal = await self._token_balance_opt(token_id)
-        return bal if bal is not None else 0.0
+        return await self._token_balance_opt(token_id)
 
     async def _token_balance_opt(self, token_id: str) -> float | None:
         def _read() -> float | None:

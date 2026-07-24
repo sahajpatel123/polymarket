@@ -30,7 +30,7 @@ from polymaker.catalog.gamma import GammaClient, fetch_reward_rates, parse_marke
 from polymaker.catalog.scoring import score_market
 from polymaker.catalog.store import CatalogStore
 from polymaker.config import Config, StrategyProfile
-from polymaker.domain import Fill, MarketMeta, Regime, Side
+from polymaker.domain import Fill, MarketMeta, Quote, Regime, Side, TargetQuotes
 from polymaker.execution.gateway import ExecutionGateway
 from polymaker.execution.reconciler import reconcile
 from polymaker.journal import Journal
@@ -57,9 +57,6 @@ from polymaker.strategy.estimators import (
 from polymaker.strategy.quoting import QuoteInputs, compute_fair_value, construct_quotes
 from polymaker.strategy.regime import RegimeInputs, RegimeMachine
 from polymaker.userstream.client import UserStream
-
-log = get_logger("engine")
-
 
 log = get_logger("engine")
 
@@ -670,6 +667,7 @@ class Engine:
         cid = self._token_cid.get(tp.asset_id)
         if cid is None:
             return
+        meta = self.metas[cid]
         p = self.profiles[cid]
         self.est[cid].flow.update(tp.aggressor, tp.size, tp.ts)
 
@@ -684,7 +682,7 @@ class Engine:
         # by a deep book doesn't move the price and isn't toxic — for a liquid
         # market the FV-jump detector is the real event signal. event_sweep_mult
         # sets how many order-sizes big the print must be to even be considered.
-        base = p.base_size_usdc / max(tp.price, 0.01)
+        base = p.base_size_usdc / max(tp.price, meta.tick_size)
         if tp.size < p.event_sweep_mult * base:
             return
         book = self.md.book(tp.asset_id)
@@ -702,7 +700,11 @@ class Engine:
             self._sweep[cid] = True
 
     def _simulate_fills(self, tp: TradePrint) -> None:
-        """Match a trade print against paper-mode resting orders and process fills."""
+        """Match a trade print against paper-mode resting orders and process fills.
+
+        Caller is responsible for acquiring self._fill_sim_lock to avoid
+        concurrent mutation of the fill simulator's internal state.
+        """
         fills = self._fill_sim.match(tp.asset_id, tp.aggressor, tp.price, tp.size, tp.ts)
         if not fills:
             return
@@ -890,23 +892,28 @@ class Engine:
                 vol_ratio=est.vol.ratio, flow_z=est.flow.z, inventory_util=inv_util,
                 hours_to_end=hours_to_end, sweep_flagged=self._sweep.pop(cid, False),
                 ws_stale=ws_stale, risk_halt=rd.halt, risk_reduce_only=rd.reduce_only,
+                market_resolved=cid in self._halted,
             ),
             p,
         )
 
         tq: Any
-        if p.use_advanced_quoting:
-            # Use Avellaneda-Stoikov optimal pricing + Kelly sizing
-            from polymaker.domain import Quote, Side
-            bankroll = p.bankroll_usdc if p.bankroll_usdc > 0 else p.q_max_usdc
+        # Scale sizes to risk bankroll when set (capital-adaptive profiles).
+        p = self.risk.cfg.scale_profile_sizes(p)
+        # Advanced path for entries; REDUCE_ONLY needs exit legs from construct_quotes.
+        use_adv = p.use_advanced_quoting and regime is not Regime.REDUCE_ONLY
+
+        if use_adv:
+            bankroll = self.risk.cfg.bankroll_usdc or p.bankroll_usdc or p.q_max_usdc
+            tox = float(getattr(est.markout, "toxicity", 0.0) or 0.0)
             adv = compute_advanced_quotes(AdvancedQuoteInputs(
                 meta=meta, fv=fv, sigma=est.vol.short,
                 yes_view=yes_view,
                 no_view=(no_book.view() if no_book else BookView(None, 0.0, None, 0.0, None, None, 0.0, 0.0)),
                 pos_yes=pos_yes, pos_no=pos_no, profile=p,
-                bankroll_usdc=bankroll, now=now,
+                bankroll_usdc=float(bankroll), now=now,
+                regime=regime, toxicity=tox, risk_size_scale=rd.size_scale,
             ))
-            # Build a TargetQuotes from the advanced output
             yes_price = adv.bid
             no_price = 1.0 - adv.ask
             adv_quotes: list[Any] = []
@@ -920,8 +927,7 @@ class Engine:
                     token_id=meta.no.token_id, side=Side.BUY,
                     price=no_price, size=adv.size_no_shares,
                 ))
-            from polymaker.domain import TargetQuotes as _TQ
-            tq = _TQ(cid, regime, tuple(adv_quotes))
+            tq = TargetQuotes(cid, regime, tuple(adv_quotes))
         else:
             tq = construct_quotes(QuoteInputs(
                 meta=meta, regime=regime, fv=fv, vol_short=est.vol.short,

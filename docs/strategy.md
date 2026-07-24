@@ -67,12 +67,14 @@ the touch; each order is bumped toward `rewards_min_size · reward_size_mult`
 so reward-eligible resting orders actually score.
 
 **Exits** (`_maybe_exit`): SELL held inventory at a maker price between
-`token_FV + δ` and `best_bid + tick`, walked by `exit_urgency ∈ [0,1]`.
+`token_FV + δ` and `best_bid + tick`, walked by urgency ∈ [0,1].
 REDUCE_ONLY forces urgency ≥ 0.5.
 
-> **Gap:** `QuoteInputs.yes_exit_urgency` / `no_exit_urgency` default to `0.0`.
-> The engine never computes hold-time / adverse-drift urgency from
-> `exit_urgency_s`. That profile knob is currently unused by the live path.
+> **Note:** `QuoteInputs.yes_exit_urgency` / `no_exit_urgency` default to `0.0`;
+> the engine does not currently compute hold-time / adverse-drift urgency.
+> The former `exit_urgency_s` config knob (which never had live effect) has been
+> removed. The exit urgency plumbing (engine → `QuoteInputs`) is preserved for
+> future use.
 
 ## Online estimators
 
@@ -108,20 +110,16 @@ vol_only / both (C-01 evidence). Thresholds themselves are unchanged.
 print must be ≥ `event_sweep_mult · (base_size_usdc/price)` **and** ≥
 `event_sweep_frac` of near-touch depth on the consumed side.
 
-> **Gap:** `event_sweep_levels` is on `StrategyProfile` but unused — sweep
+> **Note:** `event_sweep_levels` has been removed from config — sweep
 > depth uses near-touch sizing via `event_sweep_frac` / `event_sweep_mult`
-> only. Confirm with `scripts/profile_knob_audit.py` /
-> `scripts/unused_knob_toml_scan.py`.
+> only.
 
-**Resolved markets:** `RegimeInputs.market_resolved` is never set by the
-engine. Closed / not-accepting markets are instead added to `Engine._halted`
-via metadata refresh, which feeds the blind/HALTED path.
+**Resolved markets:** `RegimeInputs.market_resolved` is set to `cid in self._halted`
+by the engine, so closed / not-accepting markets flow through the HALTED regime
+via the resolved field (in addition to the blind/stale path).
 
-> **Gap:** `end_date_taper_days` is on `StrategyProfile` but unused. Lifecycle
+> **Note:** `end_date_taper_days` has been removed from config. Lifecycle
 > tapering uses only `reduce_only_hours` and `halt_before_hours`.
-
-> **Dead store (engine):** `Engine._last_quote_fv` is written each requote with
-> a comment about "requote suppression" but never read.
 
 ## Profile knobs (strategy.toml)
 

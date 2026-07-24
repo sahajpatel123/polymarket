@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from polymaker.config import StrategyProfile
 from polymaker.domain import MarketMeta, Position, Quote, Regime, Side, TargetQuotes
 from polymaker.marketdata.orderbook import BookView
+from polymaker.strategy.edge import clamp_to_reward_band, half_spread_floor
 
 _EPS = 1e-9
 
@@ -76,14 +77,34 @@ def construct_quotes(inp: QuoteInputs) -> TargetQuotes:
     u = _clamp(net_shares / q_max_shares, -1.0, 1.0) if q_max_shares > 0 else 0.0
     reward_floor = m.rewards_min_size * p.reward_size_mult  # scoring size w/ margin
 
-    skew = p.gamma * inp.vol_short * u
+    # Inventory skew: quadratic taper near |u|→1 so edge compounds without
+    # over-skewing mid-range inventory (linear gamma·σ·u under-reacts at tails).
+    skew = p.gamma * inp.vol_short * u * (1.0 + 0.5 * abs(u))
 
-    # ── half-spread ─────────────────────────────────────────────────────
-    base = p.delta_min_ticks * tick
-    delta = base + p.c_vol * inp.vol_short + p.c_tox * inp.toxicity
+    # ── half-spread: fee/AS economic floor + vol/tox + reward-band clamp ─
+    econ = half_spread_floor(
+        m,
+        fv=inp.fv,
+        sigma=inp.vol_short,
+        toxicity=inp.toxicity,
+        tick=tick,
+        delta_min_ticks=p.delta_min_ticks,
+    )
     reward_band = m.rewards_max_spread / 100.0
+    # QUIET farming: stay inside the reward band so we keep scoring; AS is
+    # handled via size cuts (tox_scale), not by walking out of band.
+    # Non-QUIET: use full economic floor (protect capital over rewards).
     if inp.regime == Regime.QUIET and reward_band > 0:
-        delta = _clamp(delta, base, max(base, reward_band))
+        base = max(p.delta_min_ticks * tick, min(econ, reward_band))
+    else:
+        base = econ
+    delta = base + p.c_vol * inp.vol_short + p.c_tox * max(0.0, inp.toxicity)
+    delta = clamp_to_reward_band(
+        delta,
+        base=base,
+        reward_band=reward_band,
+        quiet=(inp.regime == Regime.QUIET),
+    )
     delta = max(delta, tick)
 
     r = inp.fv - skew
@@ -91,17 +112,25 @@ def construct_quotes(inp: QuoteInputs) -> TargetQuotes:
     no_bid_target = (1.0 - r) - delta
 
     # ── size scaling ────────────────────────────────────────────────────
-    regime_scale = 0.5 if inp.regime == Regime.TRENDING else 1.0
-    tox_scale = 1.0 / (1.0 + inp.toxicity * 10.0)
+    # TRENDING: cut size hard (was 0.5) — false TRENDING is common; real trends
+    # need even smaller add-size to avoid bagging inventory.
+    regime_scale = 0.35 if inp.regime == Regime.TRENDING else 1.0
+    tox_scale = 1.0 / (1.0 + inp.toxicity * 12.0)
     common_scale = regime_scale * tox_scale * _clamp(inp.risk_size_scale, 0.0, 1.0)
 
     soft_cap = p.q_soft_frac  # fraction of q_max at which the adding side pulls
     add_yes = inp.regime not in (Regime.REDUCE_ONLY,) and u < soft_cap
     add_no = inp.regime not in (Regime.REDUCE_ONLY,) and u > -soft_cap
 
+    # Join distance: stay inside reward band when farming (QUIET)
+    join_dist = reward_band if (inp.regime == Regime.QUIET and reward_band > 0) else None
+
     # entry: BUY YES
     if add_yes:
-        price = _place_bid(yes_bid_target, inp.yes_view, tick, dec, inp.fv, p.min_edge_ticks)
+        price = _place_bid(
+            yes_bid_target, inp.yes_view, tick, dec, inp.fv, p.min_edge_ticks,
+            max_join_distance=join_dist,
+        )
         if price is not None:
             _add_layers(quotes, m.yes.token_id, Side.BUY, price, tick, dec,
                         _size_shares(p.base_size_usdc, price, common_scale * (1 - max(u, 0.0)), m),
@@ -111,7 +140,10 @@ def construct_quotes(inp: QuoteInputs) -> TargetQuotes:
     # entry: BUY NO
     if add_no:
         no_fv = 1.0 - inp.fv
-        price = _place_bid(no_bid_target, inp.no_view, tick, dec, no_fv, p.min_edge_ticks)
+        price = _place_bid(
+            no_bid_target, inp.no_view, tick, dec, no_fv, p.min_edge_ticks,
+            max_join_distance=join_dist,
+        )
         if price is not None:
             _add_layers(quotes, m.no.token_id, Side.BUY, price, tick, dec,
                         _size_shares(p.base_size_usdc, price, common_scale * (1 - max(-u, 0.0)), m),
@@ -135,15 +167,23 @@ def _clamp(x: float, lo: float, hi: float) -> float:
 
 
 def _place_bid(
-    target: float, view: BookView, tick: float, dec: int, fv: float, min_edge_ticks: int
+    target: float, view: BookView, tick: float, dec: int, fv: float, min_edge_ticks: int,
+    *, max_join_distance: float | None = None,
 ) -> float | None:
-    """Position a BUY: join the touch or sit behind, never cross, keep min edge vs FV."""
+    """Position a BUY: join the touch or sit behind, never cross, keep min edge vs FV.
+
+    max_join_distance: if set, only join best_bid when it is within that
+    distance of FV (prevents chasing dust bids at 0.001 on thin books).
+    """
     price = target
     # never bid above (FV - min_edge*tick): we don't pay through fair value
     price = min(price, fv - min_edge_ticks * tick)
-    # join the queue rather than jump it (conservative maker default)
+    # join the queue rather than jump it (conservative maker default) —
+    # but never follow a junk bid far below FV (kills reward-band uptime).
     if view.best_bid is not None and price >= view.best_bid:
-        price = view.best_bid
+        bb = view.best_bid
+        if max_join_distance is None or abs(bb - fv) <= max_join_distance:
+            price = bb
     # never cross the ask
     if view.best_ask is not None and price >= view.best_ask:
         price = view.best_ask - tick

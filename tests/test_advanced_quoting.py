@@ -44,6 +44,72 @@ def _make_profile() -> StrategyProfile:
     )
 
 
+def test_quiet_bid_stays_in_reward_band() -> None:
+    """QUIET advanced quotes must stay inside the liquidity-reward band."""
+    from polymaker.domain import Regime
+
+    meta = _make_meta()  # rewards_max_spread=3.0 → 0.03 band
+    inp = AdvancedQuoteInputs(
+        meta=meta,
+        fv=0.50,
+        sigma=0.05,  # large vol would over-widen without band clamp
+        yes_view=BookView(0.01, 100.0, 0.99, 100.0, 0.01, 0.99, 100.0, 100.0),  # junk book
+        no_view=BookView(0.01, 100.0, 0.99, 100.0, 0.01, 0.99, 100.0, 100.0),
+        pos_yes=Position("yes-tok"),
+        pos_no=Position("no-tok"),
+        profile=_make_profile(),
+        bankroll_usdc=1000.0,
+        now=1700000000.0,
+        regime=Regime.QUIET,
+    )
+    out = compute_advanced_quotes(inp)
+    band = meta.rewards_max_spread / 100.0
+    assert out.bid >= 0.50 - band - meta.tick_size
+    assert out.bid <= 0.50 - meta.tick_size + 1e-9
+    no_bid = 1.0 - out.ask
+    assert no_bid >= 0.50 - band - meta.tick_size
+
+
+def test_event_regime_zero_size() -> None:
+    from polymaker.domain import Regime
+
+    inp = AdvancedQuoteInputs(
+        meta=_make_meta(),
+        fv=0.50,
+        sigma=0.01,
+        yes_view=BookView(0.49, 100.0, 0.51, 100.0, 0.48, 0.52, 100.0, 100.0),
+        no_view=BookView(0.49, 100.0, 0.51, 100.0, 0.48, 0.52, 100.0, 100.0),
+        pos_yes=Position("yes-tok"),
+        pos_no=Position("no-tok"),
+        profile=_make_profile(),
+        bankroll_usdc=1000.0,
+        now=1700000000.0,
+        regime=Regime.EVENT,
+    )
+    out = compute_advanced_quotes(inp)
+    assert out.size_yes_shares == 0.0
+    assert out.size_no_shares == 0.0
+
+
+def test_toxicity_widens_spread() -> None:
+    base = AdvancedQuoteInputs(
+        meta=_make_meta(),
+        fv=0.50,
+        sigma=0.01,
+        yes_view=BookView(0.49, 100.0, 0.51, 100.0, 0.48, 0.52, 100.0, 100.0),
+        no_view=BookView(0.49, 100.0, 0.51, 100.0, 0.48, 0.52, 100.0, 100.0),
+        pos_yes=Position("yes-tok"),
+        pos_no=Position("no-tok"),
+        profile=_make_profile(),
+        bankroll_usdc=1000.0,
+        now=1700000000.0,
+        toxicity=0.0,
+    )
+    clean = compute_advanced_quotes(base)
+    toxic = compute_advanced_quotes(dataclasses.replace(base, toxicity=0.5))
+    assert toxic.half_spread >= clean.half_spread
+
+
 def test_advanced_quotes_basic() -> None:
     """Basic test that the advanced quoting model produces valid output."""
     inp = AdvancedQuoteInputs(

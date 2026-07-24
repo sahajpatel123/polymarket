@@ -28,7 +28,8 @@ class RiskDecision:
 
 class RiskManager:
     def __init__(self, cfg: RiskConfig, store: StateStore) -> None:
-        self._cfg = cfg
+        # Always store bankroll-resolved caps so absolute limits match policy.
+        self._cfg = cfg.resolve_from_bankroll()
         self._store = store
         self._marks: dict[str, float] = {}  # token_id -> fair value
         self._net_cash = 0.0  # cumulative signed cash from fills (+sell, -buy)
@@ -37,6 +38,11 @@ class RiskManager:
         self._order_attempts = 0
         self._order_errors = 0
         self._cumulative_gas_cost = 0.0  # cumulative on-chain gas cost (USDC)
+
+    @property
+    def cfg(self) -> RiskConfig:
+        """Resolved risk config (absolute caps derived from bankroll when set)."""
+        return self._cfg
 
     # ── PnL bookkeeping ─────────────────────────────────────────────────
     def note_fill(self, fill: Fill) -> None:
@@ -72,10 +78,17 @@ class RiskManager:
         self._day_start_equity = self.equity
 
     # ── error-rate breaker ──────────────────────────────────────────────
-    def note_order_result(self, ok: bool) -> None:
+    def note_order_result(self, ok: bool, reason: str = "") -> None:
+        """Record an order placement result.
+
+        ok=True increments attempts only. ok=False increments both
+        attempts and errors (used for the max_order_error_rate breaker).
+        reason is logged for diagnostics but does not affect the breaker.
+        """
         self._order_attempts += 1
         if not ok:
             self._order_errors += 1
+            log.warning("order_failed", reason=reason)
 
     @property
     def error_rate(self) -> float:

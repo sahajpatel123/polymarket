@@ -69,6 +69,25 @@ def test_score_penalizes_extremity():
     assert score_market(extreme).extremity > score_market(balanced).extremity
 
 
+def test_score_prefers_dense_rewards_over_dust_pools():
+    dense = parse_market({**RAW, "conditionId": "0xdense", "liquidityNum": 25000.0},
+                         {"0xdense": 250.0})
+    dust = parse_market({**RAW, "conditionId": "0xdust", "liquidityNum": 25000.0},
+                        {"0xdust": 5.0})
+    assert score_market(dense).score > score_market(dust).score
+    assert score_market(dense).profit_score > score_market(dust).profit_score
+
+
+def test_score_as_risk_higher_on_thin_extreme():
+    thin = parse_market({**RAW, "conditionId": "0xthin", "bestBid": 0.92, "bestAsk": 0.95,
+                         "liquidityNum": 500.0, "rewardsMaxSpread": 9.0},
+                        {"0xthin": 100.0})
+    deep = parse_market({**RAW, "conditionId": "0xdeep", "liquidityNum": 50000.0,
+                         "rewardsMaxSpread": 3.0},
+                        {"0xdeep": 100.0})
+    assert score_market(thin).as_risk > score_market(deep).as_risk
+
+
 def test_store_roundtrip_and_top(tmp_path):
     store = CatalogStore(tmp_path / "s.db")
     m = parse_market(RAW, {"0xabc": 42.0})

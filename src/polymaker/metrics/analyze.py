@@ -198,20 +198,30 @@ def analyze(path: Path) -> MetricsReport:
             rep.markout[key] = 0.0
             rep.markout_n[key] = 0
 
-    # reward accrual: if we had any in-band quote, accrue rewards_daily_rate *
-    # (time span of in-band quotes / 86400). Crude share=1 placeholder until
-    # competition is logged — still computed purely from the metrics log.
+    # reward accrual: rewards_daily_rate * (in-band seconds / 86400).
+    # Timeline merges quote samples with mark timestamps so sticky profiles
+    # (few requotes) still accrue while resting in-band — previously only
+    # quote→quote gaps counted, which rewarded churn over rest time.
     for cid, samples in quote_band.items():
         meta = meta_by_cid.get(cid, {})
         daily = float(meta.get("rewards_daily_rate") or 0.0)
-        if daily <= 0 or len(samples) < 2:
+        if daily <= 0 or not samples:
             rep.reward_accrual_usdc[cid] = 0.0
             continue
-        samples = sorted(samples)
+        # events: (ts, in_band_or_None) — None means mark (hold last quote state)
+        events: list[tuple[float, bool | None]] = [(t, b) for t, b in samples]
+        for t, _ in marks_by_cid.get(cid, []):
+            events.append((t, None))
+        events.sort(key=lambda x: x[0])
         in_band_s = 0.0
-        for (t0, b0), (t1, _) in zip(samples, samples[1:], strict=False):
-            if b0:
-                in_band_s += max(0.0, t1 - t0)
+        last_t: float | None = None
+        last_in_band = False
+        for t, flag in events:
+            if last_t is not None and last_in_band:
+                in_band_s += max(0.0, t - last_t)
+            if flag is not None:
+                last_in_band = bool(flag)
+            last_t = t
         rep.reward_accrual_usdc[cid] = daily * (in_band_s / 86400.0)
 
     return rep

@@ -62,8 +62,16 @@ class RegimeMachine:
         if inp.hours_to_end is not None and inp.hours_to_end <= p.reduce_only_hours:
             return Regime.REDUCE_ONLY
 
-        # 4. trending
-        if abs(inp.flow_z) >= p.trend_flow_z or inp.vol_ratio >= p.trend_vol_ratio:
+        # 4. trending — flow always qualifies; pure vol-ratio needs a higher
+        # bar (1.5×) so microprice jitter on quiet books does not cut size
+        # (false TRENDING was ~100% of TRENDING on paper; that kills reward share).
+        flow_hit = abs(inp.flow_z) >= p.trend_flow_z
+        vol_strong = inp.vol_ratio >= p.trend_vol_ratio * 1.5
+        vol_with_flow = (
+            inp.vol_ratio >= p.trend_vol_ratio
+            and abs(inp.flow_z) >= 0.5 * p.trend_flow_z
+        )
+        if flow_hit or vol_strong or vol_with_flow:
             return Regime.TRENDING
 
         # 5. default

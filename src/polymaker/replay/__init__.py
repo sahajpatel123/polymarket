@@ -13,7 +13,16 @@ from pathlib import Path
 from typing import Any
 
 from polymaker.config import StrategyProfile
-from polymaker.domain import Fill, MarketMeta, OpenOrder, Position, Side
+from polymaker.domain import (
+    Fill,
+    MarketMeta,
+    OpenOrder,
+    Position,
+    Quote,
+    Regime,
+    Side,
+    TargetQuotes,
+)
 from polymaker.execution.reconciler import reconcile
 from polymaker.marketdata.orderbook import OrderBook
 from polymaker.marketdata.parse import (
@@ -236,15 +245,16 @@ def _recompute(st: ReplayState, now: float) -> None:
         p,
     )
     tq: Any
-    if p.use_advanced_quoting:
-        from polymaker.domain import Quote, Side
+    if p.use_advanced_quoting and regime is not Regime.REDUCE_ONLY:
         bankroll = p.bankroll_usdc if p.bankroll_usdc > 0 else p.q_max_usdc
+        tox = float(getattr(st.est.markout, "toxicity", 0.0) or 0.0)
         adv = compute_advanced_quotes(AdvancedQuoteInputs(
             meta=meta, fv=fv, sigma=st.est.vol.short,
             yes_view=yes_view,
             no_view=nb.view() if not nb.is_empty else _empty_view(),
             pos_yes=st.pos_yes, pos_no=st.pos_no, profile=p,
             bankroll_usdc=bankroll, now=now,
+            regime=regime, toxicity=tox, risk_size_scale=1.0,
         ))
         adv_quotes: list[Any] = []
         yes_price = adv.bid
@@ -259,8 +269,7 @@ def _recompute(st: ReplayState, now: float) -> None:
                 token_id=meta.no.token_id, side=Side.BUY,
                 price=no_price, size=adv.size_no_shares,
             ))
-        from polymaker.domain import TargetQuotes as _TQ
-        tq = _TQ(meta.condition_id, regime, tuple(adv_quotes))
+        tq = TargetQuotes(meta.condition_id, regime, tuple(adv_quotes))
     else:
         tq = construct_quotes(
             QuoteInputs(

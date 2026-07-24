@@ -162,8 +162,7 @@ reconciler + heartbeat, market/user websockets, risk manager, merger (EOA /
 Safe / deposit-wallet with builder creds), engine, CLI, paper mode, journal
 capture. Offline test suite under `tests/`; ruff + mypy strict configured.
 
-Not built: journal/L2 **replay backtester**; external news/cross-venue feeds;
-engine hot-reload of `markets.toml` (`watchfiles` is listed but unused).
+Not built: journal/L2 **replay backtester**; external news/cross-venue feeds.
 
 ## License
 
