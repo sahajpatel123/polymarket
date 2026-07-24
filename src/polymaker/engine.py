@@ -764,16 +764,20 @@ class Engine:
             await self._recompute_locked(cid)
 
     async def _recompute_locked(self, cid: str) -> None:
+        # ── hot path: cache frequently accessed attributes as locals ──
+        # This function is called on every book update. Avoiding repeated
+        # attribute lookups (meta.x, p.x, self.x) shaves microseconds off
+        # the critical path, which compounds across 30+ markets.
         meta = self.metas[cid]
         p = self.profiles[cid]
-        yes_book = self.md.book(meta.yes.token_id)
-        no_book = self.md.book(meta.no.token_id)
+        yes_token = meta.yes.token_id
+        no_token = meta.no.token_id
+        tick = meta.tick_size
+        yes_book = self.md.book(yes_token)
         if yes_book is None or yes_book.is_empty:
             return
 
         # crossed/locked or one-sided book -> FV is unreliable; skip this tick.
-        # Compute view once and reuse for the check + construct_quotes to avoid
-        # redundant best_bid()/best_ask() calls on the hot path.
         yes_view = yes_book.view()
         if yes_view.best_bid is None or yes_view.best_ask is None:
             return
@@ -786,15 +790,16 @@ class Engine:
             return
         est = self.est[cid]
         est.flow.decay_to(now)
-        fv = compute_fair_value(micro, est.flow.z, meta.tick_size)
+        fv = compute_fair_value(micro, est.flow.z, tick)
         prev_fv = est.last_fv
         est.on_fair_value(fv, now)
 
-        self.risk.update_mark(meta.yes.token_id, fv)
-        self.risk.update_mark(meta.no.token_id, 1.0 - fv)
+        self.risk.update_mark(yes_token, fv)
+        self.risk.update_mark(no_token, 1.0 - fv)
 
-        pos_yes = self.state.position(meta.yes.token_id)
-        pos_no = self.state.position(meta.no.token_id)
+        no_book = self.md.book(no_token)
+        pos_yes = self.state.position(yes_token)
+        pos_no = self.state.position(no_token)
         q_max = p.q_max_usdc
         inv_util = abs(pos_yes.size - pos_no.size) * fv / q_max if q_max > 0 else 0.0
         hours_to_end = _hours_to_end(meta.end_date_iso, now)

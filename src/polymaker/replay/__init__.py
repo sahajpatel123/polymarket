@@ -25,6 +25,10 @@ from polymaker.marketdata.parse import (
 )
 from polymaker.metrics import MetricsLogger, inventory_fields
 from polymaker.paper.fill_sim import FillSimulator
+from polymaker.strategy.advanced_quoting import (
+    AdvancedQuoteInputs,
+    compute_advanced_quotes,
+)
 from polymaker.strategy.estimators import (
     FlowEstimator,
     MarketEstimators,
@@ -231,21 +235,48 @@ def _recompute(st: ReplayState, now: float) -> None:
         ),
         p,
     )
-    tq = construct_quotes(
-        QuoteInputs(
-            meta=meta,
-            regime=regime,
-            fv=fv,
-            vol_short=st.est.vol.short,
-            toxicity=st.est.markout.toxicity,
+    tq: Any
+    if p.use_advanced_quoting:
+        from polymaker.domain import Quote, Side
+        bankroll = p.bankroll_usdc if p.bankroll_usdc > 0 else p.q_max_usdc
+        adv = compute_advanced_quotes(AdvancedQuoteInputs(
+            meta=meta, fv=fv, sigma=st.est.vol.short,
             yes_view=yes_view,
             no_view=nb.view() if not nb.is_empty else _empty_view(),
-            pos_yes=st.pos_yes,
-            pos_no=st.pos_no,
-            profile=p,
-            now=now,
+            pos_yes=st.pos_yes, pos_no=st.pos_no, profile=p,
+            bankroll_usdc=bankroll, now=now,
+        ))
+        adv_quotes: list[Any] = []
+        yes_price = adv.bid
+        no_price = 1.0 - adv.ask
+        if adv.size_yes_shares > 0 and 0 < yes_price < 1:
+            adv_quotes.append(Quote(
+                token_id=meta.yes.token_id, side=Side.BUY,
+                price=yes_price, size=adv.size_yes_shares,
+            ))
+        if adv.size_no_shares > 0 and 0 < no_price < 1:
+            adv_quotes.append(Quote(
+                token_id=meta.no.token_id, side=Side.BUY,
+                price=no_price, size=adv.size_no_shares,
+            ))
+        from polymaker.domain import TargetQuotes as _TQ
+        tq = _TQ(meta.condition_id, regime, tuple(adv_quotes))
+    else:
+        tq = construct_quotes(
+            QuoteInputs(
+                meta=meta,
+                regime=regime,
+                fv=fv,
+                vol_short=st.est.vol.short,
+                toxicity=st.est.markout.toxicity,
+                yes_view=yes_view,
+                no_view=nb.view() if not nb.is_empty else _empty_view(),
+                pos_yes=st.pos_yes,
+                pos_no=st.pos_no,
+                profile=p,
+                now=now,
+            )
         )
-    )
     live = list(st.live.values())
     plan = reconcile(
         tq, live, tick=meta.tick_size, reprice_ticks=p.reprice_ticks, resize_frac=p.resize_frac
