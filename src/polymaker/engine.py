@@ -108,6 +108,8 @@ class Engine:
         # so paper mode can track inventory, PnL, and toxicity (live mode uses
         # the user WS for real fills).
         self._fill_sim = FillSimulator()
+        # discovery capital allocation (cid → USDC) from allocate_capital
+        self._discovery_capital: dict[str, float] = {}
 
     # ── lifecycle ───────────────────────────────────────────────────────
     async def start(self) -> None:
@@ -434,12 +436,11 @@ class Engine:
             return
 
         # Score and filter with profitability gates
-        candidates: list[MarketMeta] = []
+        scored: list[tuple[float, MarketMeta]] = []
         for meta in scanned:
-            sc = score_market(meta)
+            sc = score_market(meta, bankroll_usdc=float(self.cfg.risk.bankroll_usdc or 100.0))
             if sc.score < min_score:
                 continue
-            # Profitability gates (fixes the "add unprofitable markets" problem)
             if meta.liquidity_num < min_liquidity:
                 log.debug("skip_low_liquidity", slug=meta.slug, liq=meta.liquidity_num)
                 continue
@@ -449,22 +450,59 @@ class Engine:
             if meta.rewards_max_spread > max_spread_cents:
                 log.debug("skip_wide_spread", slug=meta.slug, spread=meta.rewards_max_spread)
                 continue
-            candidates.append(meta)
+            scored.append((sc.score, meta))
 
-        # Add new markets (cap at max_markets total auto-discovered)
+        # Risk-parity capital allocation ranks which markets deserve a slot.
+        # Expected return ≈ score (already reward/AS-aware); risk proxy from
+        # inverse viability (thin books → higher risk).
+        from polymaker.strategy.allocation import AllocationInputs, allocate_capital
+
+        bankroll = float(self.cfg.risk.bankroll_usdc or self.cfg.risk.max_total_exposure_usdc or 100.0)
+        alloc_markets: list[tuple[str, float, float]] = []
+        by_cid = {m.condition_id: m for _, m in scored}
+        for sc_val, meta in scored:
+            risk = max(0.01, 1.0 / max(meta.liquidity_num / 10000.0, 0.1))
+            alloc_markets.append((meta.condition_id, max(sc_val, 1e-6), risk))
+        alloc = allocate_capital(AllocationInputs(
+            markets=tuple(alloc_markets),
+            total_capital_usdc=bankroll,
+            max_concentration=float(self.cfg.risk.max_market_concentration_pct or 0.4),
+            min_allocation=0.05,
+        ))
+        # Prefer allocation order (highest capital first); fall back to score sort
+        if alloc.allocations:
+            ordered = [by_cid[a.condition_id] for a in
+                       sorted(alloc.allocations, key=lambda a: -a.capital_usdc)
+                       if a.condition_id in by_cid]
+            # Stash per-market capital on profile overrides via add_market sizing
+            self._discovery_capital = {
+                a.condition_id: a.capital_usdc for a in alloc.allocations
+            }
+        else:
+            ordered = [m for _, m in sorted(scored, key=lambda x: -x[0])]
+            self._discovery_capital = {}
+
         auto_count = sum(
             1 for cid in self.metas
             if cid not in {e.condition_id for e in self.cfg.enabled_markets if e.condition_id}
         )
         added = 0
-        for meta in candidates:
+        for meta in ordered:
             if meta.condition_id in self.metas:
                 continue
             if auto_count + added >= max_markets:
                 break
-            # Refresh metadata (rewards/fee may have changed since the scan)
             await self._apply_meta_to_market(meta)
-            ok = await self.add_market(meta, profile)
+            # Scale profile q_max/base to allocated capital when available
+            mkt_profile = profile
+            cap = float(self._discovery_capital.get(meta.condition_id, 0.0) or 0.0)
+            if cap > 0:
+                mkt_profile = profile.model_copy(update={
+                    "q_max_usdc": min(profile.q_max_usdc, cap),
+                    "base_size_usdc": min(profile.base_size_usdc, max(2.0, cap * 0.25)),
+                    "bankroll_usdc": cap,
+                })
+            ok = await self.add_market(meta, mkt_profile)
             if ok:
                 added += 1
                 log.info(
@@ -472,6 +510,7 @@ class Engine:
                     condition_id=meta.condition_id,
                     slug=meta.slug,
                     score=round(score_market(meta).score, 4),
+                    allocated_usdc=round(cap, 2),
                 )
 
         # Remove markets that are no longer accepting orders (closed/resolved)

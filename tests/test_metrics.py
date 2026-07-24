@@ -52,6 +52,7 @@ def test_analyze_computes_spread_markout_inventory_reward(tmp_path: Path) -> Non
          "inventory_yes": 0, "inventory_no": 0, "inventory_net": 0},
         {"ts": t0 + 1, "event": "quote", "condition_id": "c1", "token_id": "yes",
          "side": "BUY", "price": 0.48, "size": 100, "in_reward_band": True,
+         "order_id": "o1",
          "inventory_yes": 0, "inventory_no": 0, "inventory_net": 0},
         {"ts": t0 + 10, "event": "fill", "condition_id": "c1", "token_id": "yes",
          "side": "BUY", "price": 0.48, "size": 100, "mid": 0.50,
@@ -65,15 +66,23 @@ def test_analyze_computes_spread_markout_inventory_reward(tmp_path: Path) -> Non
          "inventory_yes": 80, "inventory_no": 0, "inventory_net": 80},
         {"ts": t0 + 400, "event": "quote", "condition_id": "c1", "token_id": "yes",
          "side": "BUY", "price": 0.45, "size": 50, "in_reward_band": True,
+         "order_id": "o2",
          "inventory_yes": 80, "inventory_no": 0, "inventory_net": 80},
-        {"ts": t0 + 500, "event": "cancel", "condition_id": "c1", "token_id": "yes",
-         "side": "BUY", "price": 0.45, "size": 50,
+        # cancel both resting orders → accrual stops
+        {"ts": t0 + 400, "event": "cancel", "condition_id": "c1", "token_id": "yes",
+         "side": "BUY", "price": 0.48, "size": 100, "order_id": "o1",
+         "inventory_yes": 80, "inventory_no": 0, "inventory_net": 80},
+        {"ts": t0 + 400, "event": "cancel", "condition_id": "c1", "token_id": "yes",
+         "side": "BUY", "price": 0.45, "size": 50, "order_id": "o2",
+         "inventory_yes": 80, "inventory_no": 0, "inventory_net": 80},
+        # post-cancel marks must NOT earn reward rent
+        {"ts": t0 + 4000, "event": "mark", "condition_id": "c1", "fv": 0.46,
          "inventory_yes": 80, "inventory_no": 0, "inventory_net": 80},
     ]
     path.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
     rep = analyze(path)
     assert rep.n_quote == 2
-    assert rep.n_cancel == 1
+    assert rep.n_cancel == 2
     assert rep.n_fill == 1
     # BUY at 0.48 vs mid 0.50 → +0.02 * 100 = 2.0
     assert abs(rep.realized_spread_usdc - 2.0) < 1e-9
@@ -83,9 +92,112 @@ def test_analyze_computes_spread_markout_inventory_reward(tmp_path: Path) -> Non
     assert abs(rep.markout["300s"] - (-0.04)) < 1e-9
     assert rep.inventory_drift_abs_peak == 100.0
     assert rep.inventory_net_end["c1"] == 80.0
-    # in-band from t0+1 to t0+400 = 399s; daily 86.4 → 86.4 * 399/86400
+    # in-band while o1/o2 live: t0+1 → t0+400 = 399s (post-cancel hour ignored)
+    assert abs(rep.in_band_seconds["c1"] - 399.0) < 1e-6
     assert abs(rep.reward_accrual_usdc["c1"] - 86.4 * 399 / 86400) < 1e-6
     assert rep.rebate_pool_daily_usdc["c1"] == 12.0
+
+
+def test_cancel_stops_reward_accrual(tmp_path: Path) -> None:
+    """A single in-band quote then cancel must not rent the rest of the window."""
+    path = tmp_path / "m.jsonl"
+    t0 = 2_000_000.0
+    daily = 240.0  # $240/day pool
+    rows = [
+        {"ts": t0, "event": "market_meta", "condition_id": "c1", "rewards_daily_rate": daily},
+        {"ts": t0, "event": "quote", "condition_id": "c1", "token_id": "yes",
+         "side": "BUY", "price": 0.5, "size": 10, "in_reward_band": True, "order_id": "o1"},
+        {"ts": t0 + 60, "event": "cancel", "condition_id": "c1", "token_id": "yes",
+         "side": "BUY", "price": 0.5, "size": 10, "order_id": "o1"},
+        # 1h of marks after cancel — must not count
+        {"ts": t0 + 60 + 3600, "event": "mark", "condition_id": "c1", "fv": 0.5},
+    ]
+    path.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+    rep = analyze(path)
+    # only 60s in-band → 240 * 60/86400 = $0.1667, NOT $10 from 1h post-cancel
+    assert abs(rep.in_band_seconds["c1"] - 60.0) < 1e-6
+    assert abs(rep.reward_accrual_usdc["c1"] - daily * 60 / 86400) < 1e-6
+    assert rep.reward_accrual_usdc["c1"] < 1.0  # nowhere near $10
+
+
+def test_quote_quality_counters(tmp_path: Path) -> None:
+    """Dust and OOB counters: prove the band_lo filter is working."""
+    path = tmp_path / "m.jsonl"
+    rows = [
+        {"ts": 1.0, "event": "market_meta", "condition_id": "c1",
+         "rewards_daily_rate": 100.0, "rewards_max_spread": 5.0},
+        # In-band quote: counts as in_band
+        {"ts": 1.0, "event": "quote", "condition_id": "c1", "token_id": "yes",
+         "side": "BUY", "price": 0.5, "size": 10, "in_reward_band": True, "mid": 0.5,
+         "order_id": "o1"},
+        # Dust quote (sub-cent): counts as dust
+        {"ts": 2.0, "event": "quote", "condition_id": "c1", "token_id": "yes",
+         "side": "BUY", "price": 0.001, "size": 10, "in_reward_band": True, "mid": 0.5,
+         "order_id": "o2"},
+        # OOB quote: not in band, counts as oob
+        {"ts": 3.0, "event": "quote", "condition_id": "c1", "token_id": "yes",
+         "side": "BUY", "price": 0.30, "size": 10, "in_reward_band": False, "mid": 0.5,
+         "order_id": "o3"},
+    ]
+    path.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+    rep = analyze(path)
+    assert rep.n_quote == 3
+    # 2 in-band: the normal quote and the dust quote (both in_reward_band=True).
+    # Dust is a SEPARATE counter; an in-band dust still counts as dust.
+    assert rep.n_in_band_quotes == 2
+    assert rep.n_dust_quotes == 1
+    # OOB: |0.30 - 0.5| = 0.20 > 5c band (0.05)
+    assert rep.n_oob_quotes == 1
+
+
+def test_analyze_runtime_from_journal_timestamps(tmp_path: Path) -> None:
+    """Runtime must be computed from journal timestamps, not wall-clock.
+
+    Regression: market_meta used time.time() which made max-min span span
+    hours/days for historical tapes, inflating daily_return_pct by 7x+.
+    """
+    # This test validates the same concept but at the replay level: the
+    # market_meta event must use the journal's first timestamp, not time.time().
+    # We import run_replay to verify by checking the metrics output.
+    from polymaker.config import StrategyProfile
+    from polymaker.domain import MarketMeta, TokenMeta
+    from polymaker.replay import run_replay
+
+    path = tmp_path / "m.jsonl"
+    journal = tmp_path / "j.jsonl"
+    # 3-hour journal window from 2026-07-22
+    j_rows = [
+        {"ts": 1_784_703_581.0, "kind": "book",
+         "data": {"market": "0xtest", "asset_id": "yes-tok",
+                  "bids": [{"price": "0.49", "size": "100"}],
+                  "asks": [{"price": "0.51", "size": "100"}],
+                  "timestamp": "1784703581000", "tick_size": "0.01"}},
+        {"ts": 1_784_714_381.0, "kind": "book",
+         "data": {"market": "0xtest", "asset_id": "yes-tok",
+                  "bids": [{"price": "0.49", "size": "100"}],
+                  "asks": [{"price": "0.51", "size": "100"}],
+                  "timestamp": "1784714381000", "tick_size": "0.01"}},
+    ]
+    journal.write_text("\n".join(json.dumps(r) for r in j_rows) + "\n")
+    meta = MarketMeta(
+        condition_id="0xtest", question="test?", slug="t",
+        tokens=(TokenMeta("yes-tok", "Yes"), TokenMeta("no-tok", "No")),
+        tick_size=0.01, neg_risk=False, min_order_size=5.0,
+        rewards_min_size=5.0, rewards_max_spread=3.0,
+        rewards_daily_rate=0.0, maker_fee_bps=0, taker_fee_bps=400,
+        fees_enabled=True, end_date_iso=None, event_id=None,
+        rebate_rate=0.0,
+    )
+    run_replay(journal, meta, StrategyProfile(), path)
+    # Check the market_meta event uses journal timestamp, not wall-clock
+    events = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    market_meta = next(e for e in events if e["event"] == "market_meta")
+    # Journal starts at 1784703581; market_meta ts must be close to that,
+    # not ~2 years in the future (wall-clock 2026-07-26 = ~1784_800_000)
+    assert abs(market_meta["ts"] - 1_784_703_581.0) < 1.0, (
+        f"market_meta ts {market_meta['ts']} should match journal start, "
+        f"not wall-clock (would be ~2 years off)"
+    )
 
 
 async def test_engine_paper_recompute_emits_metrics(tmp_path: Path, meta) -> None:

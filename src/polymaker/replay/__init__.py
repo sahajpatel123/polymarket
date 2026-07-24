@@ -462,8 +462,13 @@ def run_replay(
     rows = load_journal(journal_path)
     st = ReplayState(meta=meta, profile=profile)
     st.metrics = MetricsLogger(metrics_path, enabled=True)
+    # Use journal timeline, not wall-clock: MetricsLogger defaults ts to
+    # time.time() which inflates max−min runtime (and daily_return_pct) by
+    # hours/days when replaying historical tapes.
+    first_ts = float(rows[0].get("ts") or 0.0) if rows else 0.0
     st.metrics.emit(
         "market_meta",
+        ts=first_ts,
         condition_id=meta.condition_id,
         slug=meta.slug,
         rewards_daily_rate=meta.rewards_daily_rate,

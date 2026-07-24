@@ -1,9 +1,10 @@
+# Fixed pair for 12h paper validation of live_scaled
 [[markets]]
 slug    = "will-gavin-newsom-win-the-2028-democratic-presidential-nomination-568"
-profile = "live-tiny"
+profile = "live_scaled"
 enabled = true
 
 [[markets]]
 slug    = "will-jd-vance-win-the-2028-republican-presidential-nomination"
-profile = "live-tiny"
+profile = "live_scaled"
 enabled = true

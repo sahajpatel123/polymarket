@@ -35,6 +35,14 @@ class MetricsReport:
     # reward / rebate accrual estimates from logged meta + quote time-in-band
     reward_accrual_usdc: dict[str, float] = field(default_factory=dict)
     rebate_pool_daily_usdc: dict[str, float] = field(default_factory=dict)
+    # mean resting USDC notional while any order open (for competition share)
+    mean_resting_notional_usdc: dict[str, float] = field(default_factory=dict)
+    # seconds with at least one in-band resting order
+    in_band_seconds: dict[str, float] = field(default_factory=dict)
+    # Quote quality counters (proves OOB_CHECK / dust filter effectiveness)
+    n_dust_quotes: int = 0       # price < 0.01 (sub-cent, sub-penny)
+    n_oob_quotes: int = 0        # |price - mid| > rewards_max_spread/100
+    n_in_band_quotes: int = 0    # in_reward_band=True
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -55,6 +63,13 @@ class MetricsReport:
             "rebate_pool_daily_usdc": {
                 k: round(v, 6) for k, v in self.rebate_pool_daily_usdc.items()
             },
+            "mean_resting_notional_usdc": {
+                k: round(v, 6) for k, v in self.mean_resting_notional_usdc.items()
+            },
+            "in_band_seconds": {k: round(v, 3) for k, v in self.in_band_seconds.items()},
+            "n_dust_quotes": self.n_dust_quotes,
+            "n_oob_quotes": self.n_oob_quotes,
+            "n_in_band_quotes": self.n_in_band_quotes,
         }
 
 
@@ -88,8 +103,28 @@ def analyze(path: Path) -> MetricsReport:
 
     marks_by_cid: dict[str, list[tuple[float, float]]] = {}
     meta_by_cid: dict[str, dict[str, Any]] = {}
-    # quote intervals in-band for reward estimate: list of (ts, in_band)
-    quote_band: dict[str, list[tuple[float, bool]]] = {}
+    # Resting state timeline for reward: (ts, any_in_band_resting).
+    # Tracks per-order open book so cancel / empty book ends accrual
+    # (a lone in-band quote then cancel must NOT earn the rest of the day).
+    band_state: dict[str, list[tuple[float, bool]]] = {}
+    live_in_band: dict[str, dict[str, bool]] = {}  # cid -> order_id -> in_band
+    # Mean resting notional while any order is open (for share-aware PnL)
+    resting_notional_samples: dict[str, list[float]] = {}
+
+    def _push_band(cid: str, ts: float) -> None:
+        live = live_in_band.get(cid) or {}
+        any_band = any(live.values()) if live else False
+        band_state.setdefault(cid, []).append((ts, any_band))
+        # sum notional of resting in-band orders when known from last quotes
+        if live:
+            # notional tracked separately via quote price*size
+            pass
+
+    def _resting_notional(cid: str) -> float:
+        live = live_in_band.get(cid) or {}
+        return float(sum(resting_sizes.get(cid, {}).get(oid, 0.0) for oid in live))
+
+    resting_sizes: dict[str, dict[str, float]] = {}  # cid -> order_id -> usdc notional
 
     for e in events:
         ev = str(e.get("event"))
@@ -115,12 +150,39 @@ def analyze(path: Path) -> MetricsReport:
                     rep.inventory_drift_abs_peak, abs(float(net))
                 )
                 rep.inventory_net_end[cid] = float(net)
+            # sample resting notional while anything is live
+            if live_in_band.get(cid):
+                resting_notional_samples.setdefault(cid, []).append(_resting_notional(cid))
             continue
 
         if ev == "quote":
             rep.n_quote += 1
             in_band = bool(e.get("in_reward_band", False))
-            quote_band.setdefault(cid, []).append((ts, in_band))
+            oid = str(e.get("order_id") or f"anon-{rep.n_quote}")
+            live_in_band.setdefault(cid, {})[oid] = in_band
+            try:
+                px = float(e.get("price") or 0.0)
+                sz = float(e.get("size") or 0.0)
+                resting_sizes.setdefault(cid, {})[oid] = max(0.0, px * sz)
+            except (TypeError, ValueError):
+                resting_sizes.setdefault(cid, {})[oid] = 0.0
+            _push_band(cid, ts)
+            resting_notional_samples.setdefault(cid, []).append(_resting_notional(cid))
+            # Quote quality counters (proves the band_lo filter works)
+            if in_band:
+                rep.n_in_band_quotes += 1
+            if 0 < px < 0.01:
+                # sub-cent dust (e.g. 0.001 on a 0.001-tick market) — useless
+                rep.n_dust_quotes += 1
+            else:
+                # OOB: outside the market's reward band of the logged mid
+                m_meta = meta_by_cid.get(cid, {})
+                band = float(m_meta.get("rewards_max_spread") or 0.0) / 100.0
+                mid = e.get("mid")
+                if mid is None:
+                    mid = e.get("fv_yes") or e.get("fv")
+                if band > 0 and mid is not None and abs(px - float(mid)) > band + 0.01:
+                    rep.n_oob_quotes += 1
             net = e.get("inventory_net")
             if net is not None:
                 rep.inventory_drift_abs_peak = max(
@@ -131,6 +193,16 @@ def analyze(path: Path) -> MetricsReport:
 
         if ev == "cancel":
             rep.n_cancel += 1
+            oid = str(e.get("order_id") or "")
+            if oid and cid in live_in_band:
+                live_in_band[cid].pop(oid, None)
+                resting_sizes.get(cid, {}).pop(oid, None)
+            elif cid in live_in_band and live_in_band[cid]:
+                # no order_id: drop one open order (FIFO) then recompute state
+                dead = next(iter(live_in_band[cid]))
+                live_in_band[cid].pop(dead, None)
+                resting_sizes.get(cid, {}).pop(dead, None)
+            _push_band(cid, ts)  # cancel → may end in-band accrual
             net = e.get("inventory_net")
             if net is not None:
                 rep.inventory_net_end[cid] = float(net)
@@ -198,17 +270,16 @@ def analyze(path: Path) -> MetricsReport:
             rep.markout[key] = 0.0
             rep.markout_n[key] = 0
 
-    # reward accrual: rewards_daily_rate * (in-band seconds / 86400).
-    # Timeline merges quote samples with mark timestamps so sticky profiles
-    # (few requotes) still accrue while resting in-band — previously only
-    # quote→quote gaps counted, which rewarded churn over rest time.
-    for cid, samples in quote_band.items():
+    # reward accrual: rewards_daily_rate * (seconds with ≥1 in-band resting order / 86400).
+    # Marks extend the clock only while live_in_band is non-empty and any order
+    # is in-band. Cancels clear orders → accrual stops (no phantom post-cancel rent).
+    for cid, samples in band_state.items():
         meta = meta_by_cid.get(cid, {})
         daily = float(meta.get("rewards_daily_rate") or 0.0)
         if daily <= 0 or not samples:
             rep.reward_accrual_usdc[cid] = 0.0
+            rep.in_band_seconds[cid] = 0.0
             continue
-        # events: (ts, in_band_or_None) — None means mark (hold last quote state)
         events: list[tuple[float, bool | None]] = [(t, b) for t, b in samples]
         for t, _ in marks_by_cid.get(cid, []):
             events.append((t, None))
@@ -222,6 +293,11 @@ def analyze(path: Path) -> MetricsReport:
             if flag is not None:
                 last_in_band = bool(flag)
             last_t = t
+        rep.in_band_seconds[cid] = in_band_s
         rep.reward_accrual_usdc[cid] = daily * (in_band_s / 86400.0)
+
+    for cid, samples in resting_notional_samples.items():
+        if samples:
+            rep.mean_resting_notional_usdc[cid] = sum(samples) / len(samples)
 
     return rep

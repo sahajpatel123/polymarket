@@ -71,9 +71,9 @@ so reward-eligible resting orders actually score.
 REDUCE_ONLY forces urgency ≥ 0.5.
 
 > **Note:** `QuoteInputs.yes_exit_urgency` / `no_exit_urgency` default to `0.0`;
-> the engine does not currently compute hold-time / adverse-drift urgency.
-> The former `exit_urgency_s` config knob (which never had live effect) has been
-> removed. The exit urgency plumbing (engine → `QuoteInputs`) is preserved for
+> the engine does not currently compute hold-time / adverse-drift urgency from
+> `StrategyProfile.exit_urgency_s` (field exists for TOML compat, live path
+> unused). Exit urgency plumbing (engine → `QuoteInputs`) is preserved for
 > future use.
 
 ## Online estimators
@@ -118,8 +118,9 @@ print must be ≥ `event_sweep_mult · (base_size_usdc/price)` **and** ≥
 by the engine, so closed / not-accepting markets flow through the HALTED regime
 via the resolved field (in addition to the blind/stale path).
 
-> **Note:** `end_date_taper_days` has been removed from config. Lifecycle
-> tapering uses only `reduce_only_hours` and `halt_before_hours`.
+> **Note:** `end_date_taper_days` remains on `StrategyProfile` for TOML compat
+> but is unused by the live path. Lifecycle uses only `reduce_only_hours` and
+> `halt_before_hours`.
 
 ## Profile knobs (strategy.toml)
 

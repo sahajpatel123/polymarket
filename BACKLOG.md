@@ -237,7 +237,9 @@ done without evidence (script output / tests) from that cycle.
   `exit_urgency_s`, `end_date_taper_days`, `event_sweep_levels` as unused.
 - Evidence: `src/polymaker/strategy/knob_audit.py`,
   `scripts/profile_knob_audit.py`, `tests/test_profile_knob_audit.py`;
-  status n_unused=0 (dead knobs removed: exit_urgency_s, end_date_taper_days, event_sweep_levels)
+  status n_unused≥2 — `exit_urgency_s` / `end_date_taper_days` remain on
+  StrategyProfile for TOML compat but are UNUSED by live path;
+  `event_sweep_levels` was removed from the model
 
 ### T1-32 Richest paper-log discovery (gate shadowing fix)
 - Status: `done`
@@ -474,20 +476,23 @@ done without evidence (script output / tests) from that cycle.
 - Status: `done`
 - Done when: unused_knob_toml_scan lists unused knobs present in
   config/livecfg strategy.toml; tests cover hit/miss.
-- Evidence: live n_set_unused=0 (dead knobs exit_urgency_s/end_date_taper/event_sweep
-  removed from model in T1-94; remaining StrategyProfile fields are all live)
+- Evidence: live n_set_unused reflects TOML-compat unused knobs still present
+  on StrategyProfile (`exit_urgency_s`, `end_date_taper_days`);
+  `event_sweep_levels` removed from model. Not all remaining fields are live.
 
 ### T1-70 Annotate livecfg dead knobs + include scan in strategy_tick
-- Status: `done` (superseded by T1-94: dead knobs removed from model)
+- Status: `done`
 - Done when: livecfg/strategy.toml comments mark C-04 unused knobs;
   strategy_tick status surfaces unused_set.
-- Evidence: live unused_set=0 (knobs removed); live-tiny cleaned up
+- Evidence: unused knobs annotated as TOML-compat / live-path-unused;
+  strategy_tick surfaces unused_set count from scan
 
 ### T1-71 Annotate config/strategy.toml C-04 unused knobs
-- Status: `done` (superseded by T1-94: dead knobs removed from model)
+- Status: `done`
 - Done when: config profiles comment exit_urgency_s / end_date_taper_days
   as unused; strategy.md points at unused_knob_toml_scan.
-- Evidence: file header + inline comments removed; knobs gone from all profiles
+- Evidence: strategy.toml + strategy.md document fields as unused by live path
+  (kept on model for TOML compat, not deleted)
 
 ### T1-72 Record unused_set in strategy cycle trail
 - Status: `done`

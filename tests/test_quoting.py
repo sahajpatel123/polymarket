@@ -84,7 +84,14 @@ def test_never_bids_through_fair_value(meta, profile):
 
 
 def test_layers_split_size(meta, profile):
-    tq = construct_quotes(_inputs(meta, profile))
+    # Wide reward band so layer steps stay in-band (band floor would else collapse layers)
+    wide = meta
+    from dataclasses import replace
+    try:
+        wide = replace(meta, rewards_max_spread=10.0)  # 10c band
+    except TypeError:
+        pass
+    tq = construct_quotes(_inputs(wide, profile))
     yes = sorted((q for q in tq.quotes if q.token_id == "yes-token" and q.side == Side.BUY),
                  key=lambda q: -q.price)
     assert len(yes) == profile.layers
@@ -166,16 +173,22 @@ def test_no_exit_when_position_is_dust(meta, profile):
 # ── spread widening ──────────────────────────────────────────────────────────
 
 
-def test_toxicity_widens_spread(meta, profile):
-    """Higher toxicity should push the YES bid lower (wider spread)."""
+def test_toxicity_widens_spread_or_cuts_size(meta, profile):
+    """Higher toxicity must worsen the quote: wider (lower) bid and/or smaller size.
+
+    When the book best bid pins the join price, size is the free lever.
+    """
     calm = construct_quotes(_inputs(meta, profile, regime=Regime.TRENDING, toxicity=0.0))
     toxic = construct_quotes(_inputs(meta, profile, regime=Regime.TRENDING, toxicity=0.02))
 
-    def top_yes(tq):
-        ps = [q.price for q in tq.quotes if q.token_id == "yes-token" and q.side == Side.BUY]
-        return max(ps) if ps else None
+    def yes_buys(tq):
+        return [q for q in tq.quotes if q.token_id == "yes-token" and q.side == Side.BUY]
 
-    assert top_yes(toxic) < top_yes(calm)
+    c, t = yes_buys(calm), yes_buys(toxic)
+    assert c and t
+    c_top, t_top = max(q.price for q in c), max(q.price for q in t)
+    c_sz, t_sz = sum(q.size for q in c), sum(q.size for q in t)
+    assert t_top < c_top or t_sz < c_sz
 
 
 def test_quiet_regime_clamps_spread_to_reward_band(meta, profile):
@@ -185,6 +198,30 @@ def test_quiet_regime_clamps_spread_to_reward_band(meta, profile):
     top_yes = max(q.price for q in tq.quotes if q.token_id == "yes-token" and q.side == Side.BUY)
     # bid should be within (band + a tick of rounding) of FV
     assert top_yes >= 0.50 - band - meta.tick_size
+
+
+def test_entry_bids_never_dust_oob_on_junk_book(meta, profile):
+    """Production path must not post 0.001 dust bids when best bid is junk.
+
+    Livecfg regression: simple construct_quotes joined far best-bids and layers
+    stepped out of the reward band → zero reward score.
+    """
+    from tests.conftest import view as _view
+
+    junk = _view(0.001, 0.999)  # best bid dust, wide ask
+    tq = construct_quotes(_inputs(
+        meta, profile, regime=Regime.QUIET, fv=0.50, vol_short=0.01,
+        yes_view=junk, no_view=junk,
+    ))
+    band = meta.rewards_max_spread / 100.0
+    buys = [q for q in tq.quotes if q.side == Side.BUY]
+    assert buys, "expected at least one in-band entry bid"
+    for q in buys:
+        # no dust
+        assert q.price > 0.01
+        # YES and NO must sit within reward band of their token FV
+        tok_fv = 0.50  # both sides at mid for this fixture
+        assert abs(q.price - tok_fv) <= band + meta.tick_size + 1e-9
 
 
 def test_zero_inventory_quotes_both_entry_sides(meta, profile):

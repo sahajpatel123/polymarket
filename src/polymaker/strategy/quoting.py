@@ -122,33 +122,43 @@ def construct_quotes(inp: QuoteInputs) -> TargetQuotes:
     add_yes = inp.regime not in (Regime.REDUCE_ONLY,) and u < soft_cap
     add_no = inp.regime not in (Regime.REDUCE_ONLY,) and u > -soft_cap
 
-    # Join distance: stay inside reward band when farming (QUIET)
-    join_dist = reward_band if (inp.regime == Regime.QUIET and reward_band > 0) else None
+    # Join + hard floor: never rest entry bids outside the reward band when
+    # the market has a scoring band (production live_scaled path). Layers that
+    # would step out of band are dropped — dust 0.001 bids earn zero rewards.
+    band_active = reward_band > 0
+    join_dist = reward_band if band_active else None
+    # Floor at fv - band so abs(price-fv) <= band (matches metrics in_reward_band)
+    yes_band_lo = (inp.fv - reward_band) if band_active else None
+    no_fv = 1.0 - inp.fv
+    no_band_lo = (no_fv - reward_band) if band_active else None
 
     # entry: BUY YES
     if add_yes:
         price = _place_bid(
             yes_bid_target, inp.yes_view, tick, dec, inp.fv, p.min_edge_ticks,
             max_join_distance=join_dist,
+            band_lo=yes_band_lo,
         )
         if price is not None:
             _add_layers(quotes, m.yes.token_id, Side.BUY, price, tick, dec,
                         _size_shares(p.base_size_usdc, price, common_scale * (1 - max(u, 0.0)), m),
                         p.layers, p.layer_step_ticks, down=True,
-                        exchange_min=m.min_order_size, reward_floor=reward_floor)
+                        exchange_min=m.min_order_size, reward_floor=reward_floor,
+                        band_lo=yes_band_lo)
 
     # entry: BUY NO
     if add_no:
-        no_fv = 1.0 - inp.fv
         price = _place_bid(
             no_bid_target, inp.no_view, tick, dec, no_fv, p.min_edge_ticks,
             max_join_distance=join_dist,
+            band_lo=no_band_lo,
         )
         if price is not None:
             _add_layers(quotes, m.no.token_id, Side.BUY, price, tick, dec,
                         _size_shares(p.base_size_usdc, price, common_scale * (1 - max(-u, 0.0)), m),
                         p.layers, p.layer_step_ticks, down=True,
-                        exchange_min=m.min_order_size, reward_floor=reward_floor)
+                        exchange_min=m.min_order_size, reward_floor=reward_floor,
+                        band_lo=no_band_lo)
 
     # ── exits: SELL held inventory (maker, never cross) ─────────────────
     _maybe_exit(quotes, m.yes.token_id, inp.pos_yes, inp.fv, delta, inp.yes_view, tick, dec,
@@ -169,15 +179,19 @@ def _clamp(x: float, lo: float, hi: float) -> float:
 def _place_bid(
     target: float, view: BookView, tick: float, dec: int, fv: float, min_edge_ticks: int,
     *, max_join_distance: float | None = None,
+    band_lo: float | None = None,
 ) -> float | None:
     """Position a BUY: join the touch or sit behind, never cross, keep min edge vs FV.
 
     max_join_distance: if set, only join best_bid when it is within that
     distance of FV (prevents chasing dust bids at 0.001 on thin books).
+    band_lo: hard floor for reward-band eligibility; after all adjustments the
+    bid is raised to band_lo (or dropped if that would violate min-edge / cross).
     """
     price = target
     # never bid above (FV - min_edge*tick): we don't pay through fair value
-    price = min(price, fv - min_edge_ticks * tick)
+    edge_cap = fv - min_edge_ticks * tick
+    price = min(price, edge_cap)
     # join the queue rather than jump it (conservative maker default) —
     # but never follow a junk bid far below FV (kills reward-band uptime).
     if view.best_bid is not None and price >= view.best_bid:
@@ -187,8 +201,18 @@ def _place_bid(
     # never cross the ask
     if view.best_ask is not None and price >= view.best_ask:
         price = view.best_ask - tick
+    # Hard reward-band floor AFTER join/cross so dust best_bids cannot pull us
+    # to 0.001 (production OOB regression on livecfg tape).
+    if band_lo is not None:
+        price = max(price, band_lo)
+        price = min(price, edge_cap)
+        if view.best_ask is not None and price >= view.best_ask:
+            # cannot be in-band without crossing — skip this side
+            return None
     p = round_to_tick(price, tick, dec, up=False)
     if p <= 0 or p >= 1:
+        return None
+    if band_lo is not None and p + 1e-12 < band_lo:
         return None
     return p
 
@@ -204,6 +228,7 @@ def _add_layers(
     quotes: list[Quote], token_id: str, side: Side, top_price: float, tick: float, dec: int,
     total_size: float, layers: int, step_ticks: int, *, down: bool,
     exchange_min: float = 0.0, reward_floor: float = 0.0,
+    band_lo: float | None = None,
 ) -> None:
     """Split size across `layers` price levels stepping away from the touch.
 
@@ -212,6 +237,9 @@ def _add_layers(
     actually scores — the program scores per order, so a floor applied to the
     total is worthless. Layers that can't reach the floor are consolidated into
     fewer, larger orders rather than resting unscoring dust.
+
+    band_lo: for BUY layers stepping down, stop once price would leave the
+    reward band (no dust OOB layers).
     """
     if total_size <= 0:
         return
@@ -223,6 +251,18 @@ def _add_layers(
         return
     layers = max(1, layers)
     reward_floor = max(reward_floor, exchange_min)
+    # Count how many layers stay inside band_lo before splitting size
+    if band_lo is not None and down:
+        max_steps = 0
+        n0 = round(top_price / tick)
+        for i in range(layers):
+            px = round((n0 - i * step_ticks) * tick, dec)
+            if px + 1e-12 < band_lo or px <= 0:
+                break
+            max_steps += 1
+        layers = max(1, max_steps) if max_steps > 0 else 0
+        if layers <= 0:
+            return
     per = round(total_size / layers, 2)
     # consolidate: if a split layer would fall below half the reward floor,
     # use fewer layers so each resting order can still score
@@ -240,6 +280,8 @@ def _add_layers(
     for i in range(layers):
         ni = n - i * step_ticks if down else n + i * step_ticks
         price = round(ni * tick, dec)
+        if band_lo is not None and down and price + 1e-12 < band_lo:
+            break
         if 0 < price < 1:
             quotes.append(Quote(token_id, side, price, per))
 

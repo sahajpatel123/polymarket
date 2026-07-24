@@ -208,10 +208,12 @@ class StrategyProfile(BaseModel):
     # lifecycle
     reduce_only_hours: float = 24.0
     halt_before_hours: float = 2.0
-    end_date_taper_days: float = 7.0  # UNUSED by live path (C-04); TOML compat
+    # TOML-compat unused by live path (C-04) — kept so strategy.toml loads.
+    end_date_taper_days: float = 7.0
     # exits
     merge_min_size: float = 20.0
-    exit_urgency_s: float = 900.0  # UNUSED by live path (C-04); TOML compat
+    # TOML-compat unused by live path (C-04) — engine never maps hold-time → urgency.
+    exit_urgency_s: float = 900.0
     # ── advanced quoting (Tier 2 opt-in) ──
     # When True, the engine uses the Avellaneda-Stoikov optimal pricing
     # model + Kelly-inspired sizing instead of the simple linear skew.

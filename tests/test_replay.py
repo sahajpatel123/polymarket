@@ -108,6 +108,36 @@ def test_replay_emits_metrics_analyzable_by_t1_script(tmp_path: Path, meta) -> N
         assert key in d
 
 
+def test_market_meta_uses_journal_first_ts_not_wall_clock(tmp_path: Path, meta) -> None:
+    """Replay market_meta must stamp the journal timeline (not time.time()).
+
+    Wall-clock defaults inflate max−min runtime and make daily_return_pct
+    meaningless (observed ~7× inflation on livecfg tapes).
+    """
+    import time
+
+    journal = tmp_path / "j.jsonl"
+    metrics = tmp_path / "m.jsonl"
+    t0 = 1_700_000_000.0
+    _journal_fixture(journal, yes=meta.yes.token_id, no=meta.no.token_id,
+                     market=meta.condition_id)
+    before = time.time()
+    run_replay(journal, meta, StrategyProfile(), metrics)
+    after = time.time()
+    rows = [json.loads(line) for line in metrics.read_text().splitlines() if line.strip()]
+    meta_rows = [r for r in rows if r.get("event") == "market_meta"]
+    assert meta_rows, "expected market_meta event"
+    meta_ts = float(meta_rows[0]["ts"])
+    assert abs(meta_ts - t0) < 1e-6, f"market_meta ts={meta_ts} expected journal t0={t0}"
+    # Must not be wall-clock
+    assert not (before - 5.0 <= meta_ts <= after + 5.0 and abs(meta_ts - t0) > 1.0)
+    activity = [float(r["ts"]) for r in rows if r.get("event") in ("quote", "mark", "fill", "cancel")]
+    assert activity
+    span_h = (max(activity) - min(activity)) / 3600.0
+    # Fixture is only a few seconds long
+    assert span_h < 1.0 / 60.0
+
+
 def test_replay_is_deterministic(tmp_path: Path, meta) -> None:
     journal = tmp_path / "j.jsonl"
     _journal_fixture(journal, yes=meta.yes.token_id, no=meta.no.token_id,

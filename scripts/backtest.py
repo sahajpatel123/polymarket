@@ -207,9 +207,15 @@ def _journal_condition_ids(journal_path: Path) -> list[str]:
 
 
 def _runtime_hours_from_metrics(metrics_path: Path) -> float:
+    """Span of strategy activity on the journal timeline (quote/mark/fill).
+
+    Excludes market_meta-only stamps so a stray wall-clock default cannot
+    inflate daily_return_pct. Prefer quote timestamps when present.
+    """
     import json as _json
 
-    ts: list[float] = []
+    activity_ts: list[float] = []
+    all_ts: list[float] = []
     if not metrics_path.exists():
         return 0.0
     with metrics_path.open() as fh:
@@ -219,14 +225,20 @@ def _runtime_hours_from_metrics(metrics_path: Path) -> float:
             except _json.JSONDecodeError:
                 continue
             t = obj.get("ts")
-            if t is not None:
-                try:
-                    ts.append(float(t))
-                except (TypeError, ValueError):
-                    pass
-    if len(ts) < 2:
+            if t is None:
+                continue
+            try:
+                tf = float(t)
+            except (TypeError, ValueError):
+                continue
+            all_ts.append(tf)
+            ev = str(obj.get("event") or "")
+            if ev in ("quote", "mark", "fill", "cancel"):
+                activity_ts.append(tf)
+    use = activity_ts if len(activity_ts) >= 2 else all_ts
+    if len(use) < 2:
         return 0.0
-    return max(0.0, (max(ts) - min(ts)) / 3600.0)
+    return max(0.0, (max(use) - min(use)) / 3600.0)
 
 
 def main() -> int:
@@ -265,8 +277,11 @@ def main() -> int:
         )
         return 1
     profile = cfg.profiles[args.profile]
-    # Scale sizes from bankroll when risk bankroll is set
-    bankroll = float(args.bankroll) or float(cfg.risk.bankroll_usdc) or 100.0
+    # Scale sizes from bankroll. --bankroll flag wins over risk.bankroll_usdc.
+    if args.bankroll > 0:
+        bankroll = float(args.bankroll)
+    else:
+        bankroll = float(cfg.risk.bankroll_usdc) or 100.0
     if cfg.risk.bankroll_usdc <= 0 and args.bankroll > 0:
         from polymaker.config import RiskConfig
 
@@ -274,7 +289,9 @@ def main() -> int:
         profile = risk.scale_profile_sizes(profile)
     elif cfg.risk.bankroll_usdc > 0:
         profile = cfg.risk.scale_profile_sizes(profile)
-        bankroll = float(cfg.risk.bankroll_usdc)
+        # Don't override bankroll here — the --bankroll flag already won above.
+        if args.bankroll <= 0:
+            bankroll = float(cfg.risk.bankroll_usdc)
 
     cids = discover_condition_ids(journal_path)
     if not cids:
@@ -296,12 +313,13 @@ def main() -> int:
     max_runtime_h = 0.0
     # Split bankroll across markets so portfolio return does not claim
     # max_share of every pool with the same dollars (overstatement).
-    # Prefer densest reward markets first (profit ranking); cap how many we fund
-    # so capital is not dusted (matches auto_discovery_max_markets posture).
+    # Risk-parity allocation across journal markets (same path as engine discovery)
+    from polymaker.catalog.scoring import score_market
+    from polymaker.strategy.allocation import AllocationInputs, allocate_capital
+
     max_markets = max(1, int(getattr(cfg.engine, "auto_discovery_max_markets", 2) or 2))
-    # Pre-resolve metas for ranking
-    ranked: list[tuple[float, str]] = []
     meta_cache: dict[str, MarketMeta] = {}
+    alloc_rows: list[tuple[str, float, float]] = []
     for cid in cids:
         meta = _load_meta_from_catalog(Path(args.db), cid)
         if meta is None:
@@ -313,15 +331,33 @@ def main() -> int:
         if metrics_src.exists():
             meta = _enrich_meta_rewards(meta, metrics_src)
         meta_cache[cid] = meta
-        ranked.append((float(meta.rewards_daily_rate or 0.0), cid))
-    ranked.sort(reverse=True)
-    cids = [cid for _, cid in ranked[:max_markets]] or cids[:max_markets]
+        sc = score_market(meta, bankroll_usdc=bankroll)
+        risk = max(0.01, 1.0 / max(meta.liquidity_num / 10000.0, 0.1))
+        # Expected return for allocation: prefer score when available
+        # (already reward/AS-aware), else fall back to raw daily rate.
+        # Floor at 1e-6 so zero-reward markets don't dominate the pool.
+        exp_return = max(max(sc.score, float(meta.rewards_daily_rate or 0.0)), 1e-6)
+        alloc_rows.append((cid, exp_return, risk))
+    alloc = allocate_capital(AllocationInputs(
+        markets=tuple(alloc_rows),
+        total_capital_usdc=bankroll,
+        max_concentration=float(cfg.risk.max_market_concentration_pct or 0.45),
+        min_allocation=0.05,
+    ))
+    capital_by_cid: dict[str, float] = {a.condition_id: a.capital_usdc for a in alloc.allocations}
+    if capital_by_cid:
+        ordered = sorted(capital_by_cid, key=lambda c: -capital_by_cid[c])[:max_markets]
+        cids = [c for c in ordered if c in meta_cache]
+    else:
+        cids = sorted(meta_cache, key=lambda c: -float(meta_cache[c].rewards_daily_rate or 0))[:max_markets]
     n_mkts = max(1, len(cids))
-    capital_per_market = bankroll / n_mkts
-    print(f"funding top {n_mkts} market(s) by rewards_daily_rate: {[c[:16] for c in cids]}")
+    print(f"funding {n_mkts} market(s) via allocate_capital: "
+          f"{[(c[:16], round(capital_by_cid.get(c, bankroll / n_mkts), 1)) for c in cids]}")
 
     for cid in cids:
-        print(f"\n--- Backtesting {cid[:16]}... with profile '{args.profile}' ---")
+        capital_per_market = float(capital_by_cid.get(cid, bankroll / n_mkts))
+        print(f"\n--- Backtesting {cid[:16]}... with profile '{args.profile}' "
+              f"capital=${capital_per_market:.1f} ---")
 
         meta = meta_cache.get(cid)
         if meta is None:
@@ -358,6 +394,9 @@ def main() -> int:
         )
 
         metrics_path = out_dir / f"metrics_{cid[:12]}.jsonl"
+        # MetricsLogger opens append-mode; wipe so A/B runs don't mix old quotes
+        if metrics_path.exists():
+            metrics_path.unlink()
         result = run_replay(journal_path, meta, profile, metrics_path)
 
         print(
@@ -393,10 +432,17 @@ def main() -> int:
 
         runtime_h = _runtime_hours_from_metrics(metrics_path)
         max_runtime_h = max(max_runtime_h, runtime_h)
-        # Resting notional on this market (two-sided × layers), capped by allocated capital
-        raw_quote = float(profile.base_size_usdc) * max(1, int(profile.layers)) * 2.0
-        our_quote = min(raw_quote, capital_per_market)
-        # Per-market return uses allocated capital; portfolio sums dollars then / bankroll
+        # Honest share: measured mean resting notional from metrics (not profile
+        # layers post-hoc). Equal-share fallback when no resting samples.
+        measured_notional = float(report.mean_resting_notional_usdc.get(cid, 0.0) or 0.0)
+        if measured_notional <= 0:
+            # equal competition among n markets (no free max_share bump)
+            measured_notional = capital_per_market
+            equal_share = True
+        else:
+            equal_share = False
+        our_quote = min(measured_notional, capital_per_market)
+        in_band_s = float(report.in_band_seconds.get(cid, 0.0) or 0.0)
         est = estimate_daily_return(
             bankroll_usdc=capital_per_market,
             runtime_hours=max(runtime_h, 1.0 / 60.0),
@@ -409,7 +455,9 @@ def main() -> int:
 
         print("\n  PnL Estimate:")
         print(f"    spread_pnl=${spread_pnl:.4f}")
-        print(f"    reward_pool=${reward_pnl:.4f} our_share={est.our_reward_share:.4f} our=${est.reward_our_usdc:.4f}")
+        print(f"    reward_pool=${reward_pnl:.4f} in_band_s={in_band_s:.1f}")
+        print(f"    resting_notional=${our_quote:.2f} equal_share_fallback={equal_share}")
+        print(f"    our_share={est.our_reward_share:.4f} our_reward=${est.reward_our_usdc:.4f}")
         print(f"    rebate_est=${rebate_estimate:.4f}")
         print(f"    total_est=${est.total_est_usdc:.4f}")
         print(f"    runtime_hours={runtime_h:.4f}")
@@ -439,6 +487,8 @@ def main() -> int:
             "pnl_estimate": {
                 "spread_usdc": round(spread_pnl, 6),
                 "reward_pool_usdc": round(reward_pnl, 6),
+                "in_band_seconds": round(in_band_s, 3),
+                "mean_resting_notional_usdc": round(our_quote, 4),
                 "reward_our_usdc": round(est.reward_our_usdc, 6),
                 "our_reward_share": round(est.our_reward_share, 6),
                 "rebate_est_usdc": round(rebate_estimate, 6),
@@ -450,24 +500,63 @@ def main() -> int:
             },
         })
 
-    # Portfolio-level return (sum components over max runtime)
+    # Portfolio-level returns over the *journal* window (not wall-clock).
     portfolio_total = total_spread + total_reward_our + total_rebate
+    b = max(bankroll, 1e-9)
+    period_return = portfolio_total / b  # return over the observed window
     days = max(max_runtime_h, 1.0 / 60.0) / 24.0
-    portfolio_daily = (portfolio_total / max(bankroll, 1e-9)) / days if days > 0 else 0.0
+    # Annualize to a 24h rate only as an extrapolation of this window.
+    portfolio_daily = period_return / days if days > 0 else 0.0
     gap = max(0.0, 0.15 - portfolio_daily)
+
+    # OOB / dust validation on this run's metrics (separate, explicit check)
+    oob_n = dust_n = quote_n = fill_n = 0
+    for cid in cids:
+        mp = out_dir / f"metrics_{cid[:12]}.jsonl"
+        if not mp.exists():
+            continue
+        with mp.open() as fh:
+            for line in fh:
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                ev = obj.get("event")
+                if ev == "fill":
+                    fill_n += 1
+                if ev != "quote":
+                    continue
+                quote_n += 1
+                try:
+                    px = float(obj.get("price") or 0.0)
+                except (TypeError, ValueError):
+                    px = 0.0
+                if px <= 0.001 + 1e-9:
+                    dust_n += 1
+                if not obj.get("in_reward_band"):
+                    oob_n += 1
 
     summary = {
         "profile": args.profile,
         "bankroll_usdc": bankroll,
-        "runtime_hours": max_runtime_h,
+        "runtime_hours": round(max_runtime_h, 6),
         "spread_usdc": round(total_spread, 6),
         "reward_pool_usdc": round(total_reward_pool, 6),
         "reward_our_usdc": round(total_reward_our, 6),
         "rebate_est_usdc": round(total_rebate, 6),
         "total_est_usdc": round(portfolio_total, 6),
+        "period_return_pct": round(period_return, 8),
         "daily_return_pct": round(portfolio_daily, 8),
         "gap_to_15pct": round(gap, 8),
         "target_band_hit": portfolio_daily >= 0.15,
+        "n_fill": fill_n,
+        "estimate_is_reward_only": fill_n == 0 and abs(total_spread) < 1e-9,
+        "oob_check": {
+            "quotes": quote_n,
+            "dust_le_0.001": dust_n,
+            "oob": oob_n,
+            "ok": dust_n == 0 and oob_n == 0,
+        },
         "results": all_results,
     }
     summary_path = out_dir / "backtest_summary.json"
@@ -475,8 +564,16 @@ def main() -> int:
         json.dump(summary, fh, indent=2, default=str)
 
     print("\n=== PORTFOLIO ===")
-    print(f"total_est=${portfolio_total:.4f} daily_return_pct={portfolio_daily:.4%} "
-          f"gap_to_15pct={gap:.4%} target_band_hit={portfolio_daily >= 0.15}")
+    print(f"total_est=${portfolio_total:.4f}")
+    print(f"period_return_pct={period_return:.4%}  # over journal window only")
+    print(f"daily_return_pct={portfolio_daily:.4%}  # period / (runtime_h/24) extrapolation")
+    print(f"gap_to_15pct={gap:.4%} target_band_hit={portfolio_daily >= 0.15}")
+    print(f"runtime_hours={max_runtime_h:.4f} (journal activity span, not wall-clock)")
+    print(f"n_fill={fill_n} estimate_is_reward_only={summary['estimate_is_reward_only']}")
+    if summary["estimate_is_reward_only"]:
+        print("  NOTE: 0 fills — total_est is share-adjusted reward accrual only, not fill PnL")
+    print(f"oob_check quotes={quote_n} dust_le_0.001={dust_n} oob={oob_n} "
+          f"ok={summary['oob_check']['ok']}")
     print(f"Summary written to {summary_path}")
     return 0
 

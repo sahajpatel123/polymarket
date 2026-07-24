@@ -1,4 +1,6 @@
-# Tiny, defensive profile for the live test — small size, quick to pull.
+# 12h paper validation profiles — production path under test.
+
+# Tiny fallback (legacy livecfg)
 [profiles.live-tiny]
 micro_levels        = 3
 flow_ewma_halflife_s = 90
@@ -19,6 +21,42 @@ min_edge_ticks      = 1
 event_cooloff_s     = 90
 event_jump_ticks    = 6
 trend_flow_z        = 1.2
+trend_vol_ratio     = 2.0
 reduce_only_hours   = 48
 halt_before_hours   = 6
+exit_urgency_s      = 900
 merge_min_size      = 20.0
+use_advanced_quoting = false
+bankroll_usdc       = 0.0
+
+# Production candidate under 12h paper validation
+[profiles.live_scaled]
+micro_levels        = 3
+flow_ewma_halflife_s = 120
+gamma               = 0.6
+delta_min_ticks     = 1
+c_vol               = 1.5
+c_tox               = 3.5
+vol_short_halflife_s = 10
+vol_long_halflife_s  = 900
+base_size_usdc      = 50.0
+q_max_usdc          = 250.0
+q_soft_frac         = 0.55
+layers              = 3
+layer_step_ticks    = 2
+reward_size_mult    = 1.0
+reprice_ticks       = 2
+resize_frac         = 0.2
+min_edge_ticks      = 1
+event_cooloff_s     = 45
+event_jump_ticks    = 6
+event_sweep_mult    = 4.0
+event_sweep_frac    = 0.8
+trend_flow_z        = 1.8
+trend_vol_ratio     = 5.0
+reduce_only_hours   = 24
+halt_before_hours   = 2
+exit_urgency_s      = 900
+merge_min_size      = 20.0
+use_advanced_quoting = false
+bankroll_usdc       = 0.0

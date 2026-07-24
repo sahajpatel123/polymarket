@@ -154,11 +154,12 @@ Not a backtester. Journal replay backtester is **not built**.
 
 Call these out before relying on them in strategy work:
 
-1. **`exit_urgency_s` removed from config** — exit urgency was always 0 unless
-   REDUCE_ONLY bumps it to 0.5 inside `_maybe_exit`; the unused config knob has
-   been removed.
-2. **`end_date_taper_days` removed from config** — only `reduce_only_hours` /
-   `halt_before_hours` affect lifecycle; the unused config knob has been removed.
+1. **`exit_urgency_s` still on StrategyProfile but UNUSED by live path** — exit
+   urgency stays 0 unless REDUCE_ONLY bumps it to 0.5 inside `_maybe_exit`.
+   The TOML field remains for profile compat; engine never maps hold-time → urgency.
+2. **`end_date_taper_days` still on StrategyProfile but UNUSED** — only
+   `reduce_only_hours` / `halt_before_hours` affect lifecycle. Field kept for
+   TOML compat only.
 3. **`_last_quote_fv` removed** — dead store no longer in the codebase.
 4. **`market_resolved` now wired** — the engine passes `cid in self._halted` to
    RegimeInputs, so closed/not-accepting markets flow through the correct field.
