@@ -12,6 +12,12 @@ Components:
 - IntelligenceState: per-market state combining all components
 - DecisionFramework: top-level decision engine
 - TradingDecision: the output of the decision framework
+- SignalProcessor: Kalman filter, CUSUM change-point, HMM regime
+- InformationProcessor: entropy, KL divergence, autocorrelation, TE
+- PortfolioState: capital allocation, correlation, diversification
+- RiskState: dynamic stop-loss, adaptive position limits
+- SelfEvaluation: calibration, decay detection, PnL attribution
+- SmartExecutor: timing, anti-gaming, iceberg sizing
 
 All components are pure functions / state machines — no I/O. The
 engine feeds them raw data and queries decisions.
@@ -40,6 +46,20 @@ from polymaker.intelligence.decision import (
     IntelligenceState,
     TradingDecision,
 )
+from polymaker.intelligence.execution import (
+    AntiGamingDetector,
+    IcebergSizer,
+    OrderTimingOptimizer,
+    SmartExecutor,
+)
+from polymaker.intelligence.info_theory import (
+    AutocorrelationTracker,
+    EntropyTracker,
+    InformationFeatures,
+    InformationProcessor,
+    KLDivergenceTracker,
+    TransferEntropyTracker,
+)
 from polymaker.intelligence.microstructure import (
     MicrostructureFeatures,
     MicrostructureTracker,
@@ -51,6 +71,10 @@ from polymaker.intelligence.microstructure import (
     compute_opportunity_score,
     compute_realized_vol,
 )
+from polymaker.intelligence.portfolio import (
+    MarketAllocationState,
+    PortfolioState,
+)
 from polymaker.intelligence.regime_detector import (
     FeatureExtractor,
     MarketFeatures,
@@ -58,19 +82,61 @@ from polymaker.intelligence.regime_detector import (
     RegimeDecision,
     detect_regime,
 )
+from polymaker.intelligence.risk import (
+    AdaptivePositionLimit,
+    DynamicStopLoss,
+    RiskState,
+)
+from polymaker.intelligence.self_eval import (
+    CalibrationTracker,
+    PnLAttribution,
+    SelfEvaluation,
+    StrategyDecayDetector,
+)
+from polymaker.intelligence.signal_processing import (
+    CUSUMDetector,
+    KalmanMidPrice,
+    SignalProcessor,
+    VolatilityRegimeHMM,
+    WaveletDenoiser,
+)
 
 __all__ = [
+    "AdaptivePositionLimit",
     "AdaptiveSpreadParams",
+    "AntiGamingDetector",
+    "AutocorrelationTracker",
+    "CUSUMDetector",
+    "CalibrationTracker",
     "DecisionFramework",
+    "DynamicStopLoss",
+    "EntropyTracker",
     "FeatureExtractor",
+    "IcebergSizer",
+    "InformationFeatures",
+    "InformationProcessor",
     "IntelligenceState",
+    "KLDivergenceTracker",
+    "KalmanMidPrice",
+    "MarketAllocationState",
     "MarketFeatures",
     "MarketFillStats",
     "MarketRegime",
     "MicrostructureFeatures",
     "MicrostructureTracker",
+    "OrderTimingOptimizer",
+    "PnLAttribution",
+    "PortfolioState",
     "RegimeDecision",
+    "RiskState",
+    "SelfEvaluation",
+    "SignalProcessor",
+    "SmartExecutor",
+    "StrategyDecayDetector",
     "TradingDecision",
+    "TransferEntropyTracker",
+    "VolatilityRegimeHMM",
+    "WaveletDenoiser",
     "compute_adverse_selection_risk",
     "compute_depth_imbalance",
     "compute_fill_probability",

@@ -174,14 +174,25 @@ class AdaptiveSpreadParams:
         edge: float,
         markout: float,
     ) -> None:
-        """Record a fill outcome and update the learned offset."""
+        """Record a fill outcome and update the learned offset.
+
+        Toxic fills (markout < 0 and edge <= 0) push placement more passive
+        (larger |buy| offset). Benign fills with positive edge pull toward
+        the offset that filled.
+        """
         if condition_id not in self.stats:
             self.stats[condition_id] = MarketFillStats()
         stats = self.stats[condition_id]
+        # Ensure a quote was recorded at this offset so fill_rate is defined
+        if offset_ticks not in stats._bins:
+            stats.record_quote(offset_ticks)
         stats.record_fill(offset_ticks, edge, markout)
-        # If this is the best offset so far, update the market offset
-        if stats.best_fill_rate > 0:
-            self.market_offsets[condition_id] = stats.best_offset
+        if markout < 0 and edge <= 0:
+            # Defensive: step buy offset one tick further from mid
+            cur = self.market_offsets.get(condition_id, self.base_delta_min_ticks)
+            self.market_offsets[condition_id] = min(cur + 1, 20)
+        elif stats.best_fill_rate > 0:
+            self.market_offsets[condition_id] = abs(stats.best_offset)
 
     def record_quote(self, condition_id: str, offset_ticks: int) -> None:
         """Record that a quote was placed at a given offset."""

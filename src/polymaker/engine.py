@@ -57,6 +57,7 @@ from polymaker.strategy.estimators import (
 from polymaker.strategy.quoting import QuoteInputs, compute_fair_value, construct_quotes
 from polymaker.strategy.regime import RegimeInputs, RegimeMachine
 from polymaker.userstream.client import UserStream
+from polymaker.intelligence import DecisionFramework, MarketFeatures
 
 log = get_logger("engine")
 
@@ -110,6 +111,11 @@ class Engine:
         self._fill_sim = FillSimulator()
         # discovery capital allocation (cid → USDC) from allocate_capital
         self._discovery_capital: dict[str, float] = {}
+        # Intelligence / trade-judgment brain (pure; fed from book/trade/fills)
+        self.intel = DecisionFramework(max_active_markets=0)
+        # Per-market trade timestamps for dead/stale detection (last hour)
+        self._trade_ts: dict[str, list[float]] = {}
+        self._last_book_ts: dict[str, float] = {}
 
     # ── lifecycle ───────────────────────────────────────────────────────
     async def start(self) -> None:
@@ -709,6 +715,16 @@ class Engine:
         meta = self.metas[cid]
         p = self.profiles[cid]
         self.est[cid].flow.update(tp.aggressor, tp.size, tp.ts)
+        # Feed judgment layer: trade history for dead-tape / microstructure
+        ts = float(tp.ts or time.time())
+        hist = self._trade_ts.setdefault(cid, [])
+        hist.append(ts)
+        # Keep ~1h of trade times
+        cutoff = ts - 3600.0
+        self._trade_ts[cid] = [t for t in hist if t >= cutoff]
+        if p.use_intelligence:
+            side = "BUY" if tp.aggressor is Side.BUY else "SELL"
+            self.intel.update_trade(cid, side, tp.price, tp.size, ts)
 
         # Paper-mode fill simulation: match the trade print against our resting
         # orders so we can track inventory, PnL, and toxicity without a user WS.
@@ -766,8 +782,20 @@ class Engine:
         est = self.est[cid]
         fv = est.last_fv if est.last_fv is not None else fill.price
         meta = self.metas[cid]
+        p = self.profiles.get(cid)
         token_fv = fv if fill.token_id == meta.yes.token_id else (1.0 - fv)
         est.markout.record_fill(fill.side, token_fv, fill.ts)
+        # Judgment: learn from fill edge + markout proxy (toxicity)
+        if p is not None and p.use_intelligence:
+            tick = max(meta.tick_size, 1e-9)
+            # Offset of fill vs FV in ticks (BUY below FV → negative)
+            offset = int(round((fill.price - token_fv) / tick))
+            edge = (token_fv - fill.price) if fill.side is Side.BUY else (fill.price - token_fv)
+            markout = -float(getattr(est.markout, "toxicity", 0.0) or 0.0)
+            # Prefer short-horizon markout when available
+            if hasattr(est.markout, "short_term_toxicity"):
+                markout = -float(est.markout.short_term_toxicity or 0.0)
+            self.intel.record_fill(cid, offset, edge, markout)
         pos_yes = self.state.position(meta.yes.token_id)
         pos_no = self.state.position(meta.no.token_id)
         self.metrics.emit(
@@ -939,8 +967,60 @@ class Engine:
         tq: Any
         # Scale sizes to risk bankroll when set (capital-adaptive profiles).
         p = self.risk.cfg.scale_profile_sizes(p)
+
+        # ── Intelligence: judge whether this quote is worth placing ─────
+        intel_skip = False
+        intel_size = 1.0
+        intel_band_frac = 0.0
+        intel_reason = ""
+        if p.use_intelligence and regime not in (Regime.HALTED, Regime.EVENT):
+            self._last_book_ts[cid] = now
+            n_trades_1h = len(self._trade_ts.get(cid, []))
+            last_trade = max(self._trade_ts[cid]) if n_trades_1h else 0.0
+            secs_stale = (now - last_trade) if last_trade > 0 else (
+                0.0 if n_trades_1h == 0 and meta.rewards_daily_rate > 0 else 120.0
+            )
+            # If we have book updates but no trades, use book recency for stale
+            if n_trades_1h == 0 and meta.rewards_daily_rate > 0:
+                secs_stale = 0.0  # reward market with no trades yet still worth farming
+            tox = float(getattr(est.markout, "toxicity", 0.0) or 0.0)
+            feats = MarketFeatures(
+                best_bid=float(yes_view.best_bid or 0.0),
+                best_ask=float(yes_view.best_ask or 0.0),
+                mid_price=fv,
+                bid_depth=float(yes_view.best_bid_size or 0.0),
+                ask_depth=float(yes_view.best_ask_size or 0.0),
+                flow_z=float(est.flow.z),
+                vol_short=float(est.vol.short),
+                vol_long=float(getattr(est.vol, "long", est.vol.short) or est.vol.short),
+                vol_ratio=float(est.vol.ratio),
+                toxicity=tox,
+                markout_short=-tox,
+                seconds_since_last_update=secs_stale,
+                n_trades_last_hour=n_trades_1h,
+                rewards_daily_rate=float(meta.rewards_daily_rate or 0.0),
+                reward_band_cents=float(meta.rewards_max_spread or 0.0),
+            )
+            self.intel.update_features(cid, feats)
+            self.intel.update_microstructure(
+                cid,
+                float(yes_view.best_bid or 0.0),
+                float(yes_view.best_ask or 0.0),
+                float(yes_view.best_bid_size or 0.0),
+                float(yes_view.best_ask_size or 0.0),
+                now,
+            )
+            decision = self.intel.decide(cid)
+            intel_skip = not decision.should_quote
+            intel_size = float(decision.size_multiplier)
+            intel_band_frac = float(decision.buy_band_frac)
+            intel_reason = decision.reason
+            if not intel_skip:
+                # record placement preference for learning
+                self.intel.record_quote(cid, decision.buy_offset_ticks)
+
         # Advanced path for entries; REDUCE_ONLY needs exit legs from construct_quotes.
-        use_adv = p.use_advanced_quoting and regime is not Regime.REDUCE_ONLY
+        use_adv = p.use_advanced_quoting and regime is not Regime.REDUCE_ONLY and not intel_skip
 
         if use_adv:
             bankroll = self.risk.cfg.bankroll_usdc or p.bankroll_usdc or p.q_max_usdc
@@ -951,7 +1031,8 @@ class Engine:
                 no_view=(no_book.view() if no_book else BookView(None, 0.0, None, 0.0, None, None, 0.0, 0.0)),
                 pos_yes=pos_yes, pos_no=pos_no, profile=p,
                 bankroll_usdc=float(bankroll), now=now,
-                regime=regime, toxicity=tox, risk_size_scale=rd.size_scale,
+                regime=regime, toxicity=tox,
+                risk_size_scale=rd.size_scale * intel_size,
             ))
             yes_price = adv.bid
             no_price = 1.0 - adv.ask
@@ -974,6 +1055,9 @@ class Engine:
                 no_view=(no_book.view() if no_book else BookView(None, 0.0, None, 0.0, None, None, 0.0, 0.0)),
                 pos_yes=pos_yes, pos_no=pos_no, profile=p, now=now,
                 risk_size_scale=rd.size_scale,
+                intel_size_scale=intel_size,
+                intel_buy_band_frac=intel_band_frac,
+                intel_skip=intel_skip,
             ))
 
         live = self.state.orders_for(meta.yes.token_id) + self.state.orders_for(meta.no.token_id)
@@ -988,6 +1072,10 @@ class Engine:
             fv=fv,
             regime=regime.value,
             paper=self.paper,
+            intel_skip=intel_skip,
+            intel_size=intel_size,
+            intel_band_frac=intel_band_frac,
+            intel_reason=intel_reason[:120] if intel_reason else "",
             **inv,
         )
 

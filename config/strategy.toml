@@ -219,6 +219,7 @@ bankroll_usdc       = 0.0
 
 # Profit production: longdated-like uptime + C-01 false-TRENDING damp + bankroll scale.
 # Edge floors / join discipline live in strategy code (edge.py + quoting.py).
+# Judgment: DecisionFramework gates dead/toxic tape and learns band position.
 [profiles.live_scaled]
 micro_levels        = 3
 flow_ewma_halflife_s = 120
@@ -231,7 +232,7 @@ vol_long_halflife_s  = 900
 base_size_usdc      = 50.0
 q_max_usdc          = 250.0
 q_soft_frac         = 0.55
-layers              = 3       # more resting size → higher competition share
+layers              = 2
 layer_step_ticks    = 2
 reward_size_mult    = 1.0
 reprice_ticks       = 2
@@ -249,3 +250,6 @@ exit_urgency_s      = 900
 merge_min_size      = 20.0
 use_advanced_quoting = false
 bankroll_usdc       = 0.0
+use_intelligence    = true
+max_open_orders_per_market = 4
+

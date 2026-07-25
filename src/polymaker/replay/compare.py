@@ -26,7 +26,12 @@ METRIC_KEYS = (
     "n_cancel",
     "n_fill",
     "n_mark",
+    "brier_score",
+    "log_loss",
+    "expected_calibration_error",
+    "ev_per_quote_usdc",
 )
+
 
 
 @dataclass(frozen=True)

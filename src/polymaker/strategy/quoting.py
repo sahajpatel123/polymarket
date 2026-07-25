@@ -57,6 +57,11 @@ class QuoteInputs:
     risk_size_scale: float = 1.0  # RiskManager may throttle size in [0,1]
     yes_exit_urgency: float = 0.0  # [0,1]; engine raises with hold time / adverse drift
     no_exit_urgency: float = 0.0
+    # Intelligence layer (DecisionFramework) — optional judgment knobs
+    intel_size_scale: float = 1.0  # extra size mult from brain (0 → empty entries)
+    # 0.0 = rest at band floor (passive); 1.0 = near FV − min_edge (aggressive)
+    intel_buy_band_frac: float = 0.0
+    intel_skip: bool = False  # brain says do not quote entries
 
 
 def construct_quotes(inp: QuoteInputs) -> TargetQuotes:
@@ -119,17 +124,25 @@ def construct_quotes(inp: QuoteInputs) -> TargetQuotes:
     # need even smaller add-size to avoid bagging inventory.
     regime_scale = 0.35 if inp.regime == Regime.TRENDING else 1.0
     tox_scale = 1.0 / (1.0 + inp.toxicity * 12.0)
-    common_scale = regime_scale * tox_scale * _clamp(inp.risk_size_scale, 0.0, 1.0)
+    common_scale = (
+        regime_scale
+        * tox_scale
+        * _clamp(inp.risk_size_scale, 0.0, 1.0)
+        * _clamp(inp.intel_size_scale, 0.0, 2.0)
+    )
 
     soft_cap = p.q_soft_frac  # fraction of q_max at which the adding side pulls
-    add_yes = inp.regime not in (Regime.REDUCE_ONLY,) and u < soft_cap
-    add_no = inp.regime not in (Regime.REDUCE_ONLY,) and u > -soft_cap
+    # intel_skip: brain refuses *new* risk (entries) but never blocks exits —
+    # REDUCE_ONLY / inventory unwind must still work on dead/stale tape.
+    can_enter = not inp.intel_skip
+    add_yes = can_enter and inp.regime not in (Regime.REDUCE_ONLY,) and u < soft_cap
+    add_no = can_enter and inp.regime not in (Regime.REDUCE_ONLY,) and u > -soft_cap
     # For SELL: add YES when we have inventory to offload (u > -soft_cap → long
     # YES → sell YES), or when we want to add short exposure (u < -soft_cap).
     # For SELL, we only enter SELL orders when we have inventory to exit
     # (handled by _maybe_exit below) or when intentionally shorting.
-    add_sell_yes = inp.regime not in (Regime.REDUCE_ONLY,) and u > soft_cap
-    add_sell_no = inp.regime not in (Regime.REDUCE_ONLY,) and u < -soft_cap
+    add_sell_yes = can_enter and inp.regime not in (Regime.REDUCE_ONLY,) and u > soft_cap
+    add_sell_no = can_enter and inp.regime not in (Regime.REDUCE_ONLY,) and u < -soft_cap
 
     # Join + hard floor/ceiling: never rest entry orders outside the reward
     # band when the market has a scoring band. Layers that would step out
@@ -142,6 +155,21 @@ def construct_quotes(inp: QuoteInputs) -> TargetQuotes:
     no_fv = 1.0 - inp.fv
     no_band_lo = (no_fv - reward_band) if band_active else None
     no_band_hi = (no_fv + reward_band) if band_active else None
+
+    # Intelligence: prefer a band position between floor and FV−min_edge.
+    # Still clamped by band_lo in _place_bid so we never go OOB/dust.
+    frac = _clamp(inp.intel_buy_band_frac, 0.0, 1.0)
+    if band_active and frac > 0:
+        edge_cap = inp.fv - p.min_edge_ticks * tick
+        lo = yes_band_lo if yes_band_lo is not None else yes_bid_target
+        hi = min(edge_cap, yes_band_hi if yes_band_hi is not None else edge_cap)
+        if hi > lo:
+            yes_bid_target = lo + frac * (hi - lo)
+        no_edge = no_fv - p.min_edge_ticks * tick
+        nlo = no_band_lo if no_band_lo is not None else no_bid_target
+        nhi = min(no_edge, no_band_hi if no_band_hi is not None else no_edge)
+        if nhi > nlo:
+            no_bid_target = nlo + frac * (nhi - nlo)
 
     # entry: BUY YES
     if add_yes:

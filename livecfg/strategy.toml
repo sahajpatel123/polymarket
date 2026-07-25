@@ -60,3 +60,5 @@ exit_urgency_s      = 900
 merge_min_size      = 20.0
 use_advanced_quoting = false
 bankroll_usdc       = 0.0
+# Judgment: DecisionFramework gates dead/toxic tape and learns band position
+use_intelligence    = true

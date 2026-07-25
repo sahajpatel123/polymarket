@@ -229,6 +229,11 @@ class StrategyProfile(BaseModel):
     # Total bankroll for Kelly sizing (USD). When 0, uses profile base_size.
     # For a $30 paper account, set this to 30.0.
     bankroll_usdc: float = 0.0
+    # ── intelligence / judgment layer ──
+    # When True, DecisionFramework gates quoting (skip dead/stale/toxic),
+    # scales size, and chooses buy_band_frac from regime + fill learning.
+    # Default False preserves blind in-band farming.
+    use_intelligence: bool = False
 
     def with_overrides(self, overrides: dict[str, Any]) -> StrategyProfile:
         """Return a copy with per-market override values applied."""

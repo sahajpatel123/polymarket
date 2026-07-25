@@ -56,12 +56,15 @@ class TradingDecision:
     regime: MarketRegime
     # Spread parameters
     spread_multiplier: float = 1.0
-    # Offset from FV (positive = above, negative = below)
+    # Offset from FV in ticks (BUY negative = below FV; SELL positive = above)
     buy_offset_ticks: int = 0
     sell_offset_ticks: int = 0
     # Size parameters
     size_multiplier: float = 1.0
-    # Intelligence
+    # Where in the reward band to rest BUY: 0.0 = band floor (passive),
+    # 1.0 = near FV − min_edge (aggressive, more fills). Learned + regime.
+    buy_band_frac: float = 0.25
+    # Intelligence diagnostics
     opportunity_score: float = 0.0
     expected_edge: float = 0.0
     fill_probability: float = 0.0
@@ -231,6 +234,26 @@ class DecisionFramework:
         spread_mult = regime_decision.spread_multiplier
         size_mult = regime_decision.size_multiplier
 
+        # 6. Band position: how aggressive inside the reward band
+        # Start moderately passive (0.25); toxic/AS → floor (0.0); good edge → up.
+        buy_band_frac = 0.25
+        stats = state.adaptive.get_stats(condition_id)
+        if stats.n_fills > 0:
+            avg_m = stats.get_avg_markout()
+            # Negative markout (adverse) → more passive; positive → more aggressive
+            if avg_m < -0.005:
+                buy_band_frac = 0.0
+            elif avg_m > 0.002:
+                buy_band_frac = min(0.7, 0.25 + 0.1 * stats.n_fills)
+        if as_risk > 0.5 or state.regime_features.toxicity > 0.05:
+            buy_band_frac = min(buy_band_frac, 0.05)
+        if regime_decision.regime in (MarketRegime.TOXIC, MarketRegime.VOLATILE):
+            buy_band_frac = min(buy_band_frac, 0.1)
+            size_mult = min(size_mult, 0.5)
+        if buy_flow_signal > 0.2 and as_risk < 0.3:
+            # Favorable flow: step toward mid for fill probability
+            buy_band_frac = min(0.8, buy_band_frac + 0.2)
+
         decision = TradingDecision(
             market_id=condition_id,
             should_quote=True,
@@ -239,13 +262,16 @@ class DecisionFramework:
             buy_offset_ticks=buy_offset,
             sell_offset_ticks=sell_offset,
             size_multiplier=size_mult,
+            buy_band_frac=buy_band_frac,
             opportunity_score=opportunity,
             expected_edge=expected_edge,
             fill_probability=fill_prob,
             adverse_selection_risk=as_risk,
-            reason=f"regime={regime_decision.regime.value} "
-                   f"buy_off={buy_offset} sell_off={sell_offset} "
-                   f"as_risk={as_risk:.2f}",
+            reason=(
+                f"regime={regime_decision.regime.value} "
+                f"buy_off={buy_offset} sell_off={sell_offset} "
+                f"band_frac={buy_band_frac:.2f} as_risk={as_risk:.2f}"
+            ),
         )
         state.last_decision = decision
         return decision

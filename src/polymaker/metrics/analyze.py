@@ -43,6 +43,11 @@ class MetricsReport:
     n_dust_quotes: int = 0       # price < 0.01 (sub-cent, sub-penny)
     n_oob_quotes: int = 0        # |price - mid| > rewards_max_spread/100
     n_in_band_quotes: int = 0    # in_reward_band=True
+    # Calibration & proper scoring rules (Brier score, Log loss, ECE, EV per quote)
+    brier_score: float = 0.25
+    log_loss: float = 0.693147
+    expected_calibration_error: float = 0.0
+    ev_per_quote_usdc: float = 0.0
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -70,7 +75,12 @@ class MetricsReport:
             "n_dust_quotes": self.n_dust_quotes,
             "n_oob_quotes": self.n_oob_quotes,
             "n_in_band_quotes": self.n_in_band_quotes,
+            "brier_score": round(self.brier_score, 6),
+            "log_loss": round(self.log_loss, 6),
+            "expected_calibration_error": round(self.expected_calibration_error, 6),
+            "ev_per_quote_usdc": round(self.ev_per_quote_usdc, 6),
         }
+
 
 
 def load_events(path: Path) -> tuple[list[dict[str, Any]], int, int]:
@@ -300,4 +310,47 @@ def analyze(path: Path) -> MetricsReport:
         if samples:
             rep.mean_resting_notional_usdc[cid] = sum(samples) / len(samples)
 
+    # ── Calibration & Proper Scoring Rules evaluation ───────────────────
+    # Evaluate calibration of logged fair value predictions against 30s horizon outcome direction
+    from polymaker.strategy.calibration import evaluate_calibration, expected_value_per_quote
+
+    probs: list[float] = []
+    outcomes: list[int] = []
+    horizon_s = 30.0
+
+    for cid, marks in marks_by_cid.items():
+        if len(marks) < 2:
+            continue
+        for i in range(len(marks) - 1):
+            ts_i, fv_i = marks[i]
+            target_t = ts_i + horizon_s
+            # Find mark at or after target_t
+            fv_future = None
+            for k in range(i + 1, len(marks)):
+                if marks[k][0] >= target_t:
+                    fv_future = marks[k][1]
+                    break
+            if fv_future is not None:
+                probs.append(fv_i)
+                outcomes.append(1 if fv_future >= fv_i else 0)
+
+    if probs:
+        cal = evaluate_calibration(probs, outcomes)
+        rep.brier_score = cal.brier_score
+        rep.log_loss = cal.log_loss
+        rep.expected_calibration_error = cal.expected_calibration_error
+
+    total_rewards = sum(rep.reward_accrual_usdc.values())
+    total_rebates = sum(rep.rebate_pool_daily_usdc.values())
+    m30 = rep.markout.get("30s", 0.0)
+    as_cost = max(0.0, -m30) * rep.n_fill
+    rep.ev_per_quote_usdc = expected_value_per_quote(
+        spread_capture_usdc=rep.realized_spread_usdc,
+        reward_accrual_usdc=total_rewards,
+        rebate_usdc=total_rebates,
+        adverse_selection_cost_usdc=as_cost,
+        n_quotes=rep.n_quote,
+    )
+
     return rep
+

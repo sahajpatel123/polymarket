@@ -9,9 +9,12 @@ observations with timestamps, read scalar summaries. No I/O.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from polymaker.domain import Side
+from polymaker.strategy.kyle_lambda import KyleLambdaEstimator
+from polymaker.strategy.ofi import OFICalculator
+from polymaker.strategy.vpin import VPINEstimator
 
 
 class Ewma:
@@ -258,7 +261,10 @@ class MarketEstimators:
 
     vol: VolEstimator
     flow: FlowEstimator
-    markout: MarkoutTracker
+    markout: MarkoutTracker | MultiHorizonMarkout
+    vpin: VPINEstimator = field(default_factory=VPINEstimator)
+    kyle: KyleLambdaEstimator = field(default_factory=KyleLambdaEstimator)
+    ofi: OFICalculator = field(default_factory=OFICalculator)
     last_fv: float | None = None
     last_fv_ts: float = 0.0
 
@@ -267,3 +273,4 @@ class MarketEstimators:
         self.markout.evaluate(fv, ts)
         self.last_fv = fv
         self.last_fv_ts = ts
+
