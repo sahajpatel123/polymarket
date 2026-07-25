@@ -179,6 +179,7 @@ halt_before_hours   = 2
 merge_min_size      = 5.0
 use_advanced_quoting = true
 bankroll_usdc       = 30.0
+max_open_orders_per_market = 2  # cap: 2/side × 2 sides = 4 orders max per market
 
 
 # live_scaled: production advanced path for multi-category scaled live MM.

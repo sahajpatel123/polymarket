@@ -110,6 +110,9 @@ def construct_quotes(inp: QuoteInputs) -> TargetQuotes:
     r = inp.fv - skew
     yes_bid_target = r - delta
     no_bid_target = (1.0 - r) - delta
+    # SELL targets: YES ask at fv+delta, NO ask at (1-fv)+delta
+    yes_ask_target = r + delta
+    no_ask_target = (1.0 - r) + delta
 
     # ── size scaling ────────────────────────────────────────────────────
     # TRENDING: cut size hard (was 0.5) — false TRENDING is common; real trends
@@ -121,16 +124,24 @@ def construct_quotes(inp: QuoteInputs) -> TargetQuotes:
     soft_cap = p.q_soft_frac  # fraction of q_max at which the adding side pulls
     add_yes = inp.regime not in (Regime.REDUCE_ONLY,) and u < soft_cap
     add_no = inp.regime not in (Regime.REDUCE_ONLY,) and u > -soft_cap
+    # For SELL: add YES when we have inventory to offload (u > -soft_cap → long
+    # YES → sell YES), or when we want to add short exposure (u < -soft_cap).
+    # For SELL, we only enter SELL orders when we have inventory to exit
+    # (handled by _maybe_exit below) or when intentionally shorting.
+    add_sell_yes = inp.regime not in (Regime.REDUCE_ONLY,) and u > soft_cap
+    add_sell_no = inp.regime not in (Regime.REDUCE_ONLY,) and u < -soft_cap
 
-    # Join + hard floor: never rest entry bids outside the reward band when
-    # the market has a scoring band (production live_scaled path). Layers that
-    # would step out of band are dropped — dust 0.001 bids earn zero rewards.
+    # Join + hard floor/ceiling: never rest entry orders outside the reward
+    # band when the market has a scoring band. Layers that would step out
+    # of band are dropped — dust 0.001 orders earn zero rewards.
     band_active = reward_band > 0
     join_dist = reward_band if band_active else None
-    # Floor at fv - band so abs(price-fv) <= band (matches metrics in_reward_band)
+    # Floor/ceiling: BUY at fv-band (bottom), SELL at fv+band (top).
     yes_band_lo = (inp.fv - reward_band) if band_active else None
+    yes_band_hi = (inp.fv + reward_band) if band_active else None
     no_fv = 1.0 - inp.fv
     no_band_lo = (no_fv - reward_band) if band_active else None
+    no_band_hi = (no_fv + reward_band) if band_active else None
 
     # entry: BUY YES
     if add_yes:
@@ -144,7 +155,23 @@ def construct_quotes(inp: QuoteInputs) -> TargetQuotes:
                         _size_shares(p.base_size_usdc, price, common_scale * (1 - max(u, 0.0)), m),
                         p.layers, p.layer_step_ticks, down=True,
                         exchange_min=m.min_order_size, reward_floor=reward_floor,
-                        band_lo=yes_band_lo)
+                        band_lo=yes_band_lo,
+                        max_orders=p.max_open_orders_per_market)
+
+    # entry: SELL YES (when we have YES inventory to exit or want to short)
+    if add_sell_yes and inp.pos_yes.size >= m.min_order_size:
+        price = _place_ask(
+            yes_ask_target, inp.yes_view, tick, dec, inp.fv, p.min_edge_ticks,
+            max_join_distance=join_dist,
+            band_hi=yes_band_hi,
+        )
+        if price is not None:
+            _add_layers(quotes, m.yes.token_id, Side.SELL, price, tick, dec,
+                        _size_shares(p.base_size_usdc, price, common_scale * (1 - max(-u, 0.0)), m),
+                        p.layers, p.layer_step_ticks, down=False,
+                        exchange_min=m.min_order_size, reward_floor=reward_floor,
+                        band_lo=yes_band_hi,
+                        max_orders=p.max_open_orders_per_market)
 
     # entry: BUY NO
     if add_no:
@@ -158,7 +185,23 @@ def construct_quotes(inp: QuoteInputs) -> TargetQuotes:
                         _size_shares(p.base_size_usdc, price, common_scale * (1 - max(-u, 0.0)), m),
                         p.layers, p.layer_step_ticks, down=True,
                         exchange_min=m.min_order_size, reward_floor=reward_floor,
-                        band_lo=no_band_lo)
+                        band_lo=no_band_lo,
+                        max_orders=p.max_open_orders_per_market)
+
+    # entry: SELL NO (when we have NO inventory to exit or want to short)
+    if add_sell_no and inp.pos_no.size >= m.min_order_size:
+        price = _place_ask(
+            no_ask_target, inp.no_view, tick, dec, no_fv, p.min_edge_ticks,
+            max_join_distance=join_dist,
+            band_hi=no_band_hi,
+        )
+        if price is not None:
+            _add_layers(quotes, m.no.token_id, Side.SELL, price, tick, dec,
+                        _size_shares(p.base_size_usdc, price, common_scale * (1 - max(u, 0.0)), m),
+                        p.layers, p.layer_step_ticks, down=False,
+                        exchange_min=m.min_order_size, reward_floor=reward_floor,
+                        band_lo=no_band_hi,
+                        max_orders=p.max_open_orders_per_market)
 
     # ── exits: SELL held inventory (maker, never cross) ─────────────────
     _maybe_exit(quotes, m.yes.token_id, inp.pos_yes, inp.fv, delta, inp.yes_view, tick, dec,
@@ -217,6 +260,54 @@ def _place_bid(
     return p
 
 
+def _place_ask(
+    target: float, view: BookView, tick: float, dec: int, fv: float, min_edge_ticks: int,
+    *, max_join_distance: float | None = None,
+    band_hi: float | None = None,
+) -> float | None:
+    """Position a SELL: join the touch or sit behind, never cross, keep min edge vs FV.
+
+    Mirror of _place_bid for SELL orders:
+    - Start at the target price (f(target) = fv + delta for SELL)
+    - Never sell below (FV + min_edge*tick): we don't sell through fair value
+    - Join the best ask (or sit behind if too far from FV)
+    - Never cross the bid
+    - Hard reward-band CEILING: if band_hi is set, cap the price at
+      band_hi so we stay inside the reward band
+
+    band_hi: hard ceiling for reward-band eligibility; if the joined/sized
+    price would exceed band_hi, we cap at band_hi (or drop if that would
+    violate min-edge / cross).
+    """
+    price = target
+    # never sell below (FV + min_edge*tick): we don't sell through fair value
+    edge_floor = fv + min_edge_ticks * tick
+    price = max(price, edge_floor)
+    # join the queue rather than jump it (conservative maker default) —
+    # but never follow a junk ask far above FV (kills reward-band uptime).
+    if view.best_ask is not None and price >= view.best_ask:
+        ba = view.best_ask
+        if max_join_distance is None or abs(ba - fv) <= max_join_distance:
+            price = ba
+    # never cross the bid
+    if view.best_bid is not None and price <= view.best_bid:
+        price = view.best_bid + tick
+    # Hard reward-band CEILING AFTER join/cross so dust best_asks cannot
+    # pull us above the band (production OOB regression on livecfg tape).
+    if band_hi is not None:
+        price = min(price, band_hi)
+        price = max(price, edge_floor)
+        if view.best_bid is not None and price <= view.best_bid:
+            # cannot be in-band without crossing — skip this side
+            return None
+    p = round_to_tick(price, tick, dec, up=True)
+    if p <= 0 or p >= 1:
+        return None
+    if band_hi is not None and p - 1e-12 > band_hi:
+        return None
+    return p
+
+
 def _size_shares(base_usdc: float, price: float, scale: float, m: MarketMeta) -> float:
     """USDC-notional sizing -> shares. Per-order minimums applied in _add_layers
     (reward scoring is per ORDER, so the floor must hold per layer, not per total)."""
@@ -229,6 +320,7 @@ def _add_layers(
     total_size: float, layers: int, step_ticks: int, *, down: bool,
     exchange_min: float = 0.0, reward_floor: float = 0.0,
     band_lo: float | None = None,
+    max_orders: int = 0,
 ) -> None:
     """Split size across `layers` price levels stepping away from the touch.
 
@@ -239,7 +331,11 @@ def _add_layers(
     fewer, larger orders rather than resting unscoring dust.
 
     band_lo: for BUY layers stepping down, stop once price would leave the
-    reward band (no dust OOB layers).
+    reward band (no dust OOB layers). For SELL layers stepping up, this is
+    treated as a CEILING — stop once price would exceed band_lo.
+
+    max_orders: hard cap on number of orders created (0 = unlimited). Prevents
+    order book accumulation when the strategy requotes on every book change.
     """
     if total_size <= 0:
         return
@@ -249,15 +345,23 @@ def _add_layers(
     # *after* dividing, which still created orders that were too small.
     if exchange_min > 0 and total_size < exchange_min:
         return
+    # Hard cap on number of orders to prevent accumulation.
+    if max_orders > 0:
+        layers = min(layers, max_orders)
     layers = max(1, layers)
     reward_floor = max(reward_floor, exchange_min)
-    # Count how many layers stay inside band_lo before splitting size
-    if band_lo is not None and down:
+    # Count how many layers stay inside band_lo before splitting size.
+    # For BUY (down=True): price steps down from top_price; stop if price
+    # would fall below band_lo. For SELL (down=False): price steps up from
+    # top_price; stop if price would exceed band_lo.
+    if band_lo is not None:
         max_steps = 0
         n0 = round(top_price / tick)
         for i in range(layers):
-            px = round((n0 - i * step_ticks) * tick, dec)
-            if px + 1e-12 < band_lo or px <= 0:
+            px = round((n0 - i * step_ticks if down else n0 + i * step_ticks) * tick, dec)
+            if down and (px + 1e-12 < band_lo or px <= 0):
+                break
+            if not down and (px - 1e-12 > band_lo or px >= 1):
                 break
             max_steps += 1
         layers = max(1, max_steps) if max_steps > 0 else 0
@@ -273,6 +377,9 @@ def _add_layers(
         per = reward_floor  # bump each order up to scoring size
     if per < exchange_min or per <= 0:
         return
+    # Apply max_orders cap after consolidation too.
+    if max_orders > 0:
+        layers = min(layers, max_orders)
     # Compute prices as integer tick multiples to avoid per-layer round() calls.
     # top_price is already tick-aligned (from round_to_tick); stepping by
     # step_ticks*tick keeps every layer on-grid. round() only cleans FP residue.
@@ -281,6 +388,8 @@ def _add_layers(
         ni = n - i * step_ticks if down else n + i * step_ticks
         price = round(ni * tick, dec)
         if band_lo is not None and down and price + 1e-12 < band_lo:
+            break
+        if band_lo is not None and not down and price - 1e-12 > band_lo:
             break
         if 0 < price < 1:
             quotes.append(Quote(token_id, side, price, per))

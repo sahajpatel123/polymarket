@@ -7,6 +7,7 @@ import pytest
 from polymaker.domain import Position, Regime, Side
 from polymaker.strategy.quoting import (
     QuoteInputs,
+    _place_ask,
     compute_fair_value,
     construct_quotes,
     round_to_tick,
@@ -41,6 +42,47 @@ def test_round_to_tick_down_and_up():
     # clamps inside (0,1)
     assert round_to_tick(0.0, 0.01, 2, up=False) == 0.01
     assert round_to_tick(1.0, 0.01, 2, up=True) == 0.99
+
+
+def test_place_ask_basic():
+    """_place_ask: SELL at target above FV, never below edge floor, never crosses bid."""
+    # target $0.52, FV $0.50, no book → just at target
+    v = view(None, None)
+    p = _place_ask(0.52, v, 0.01, 2, 0.50, 1)  # min_edge_ticks=1
+    assert p == 0.52
+    # below edge floor (FV + 1 tick = 0.51) → bumped up
+    p2 = _place_ask(0.505, v, 0.01, 2, 0.50, 1)
+    assert p2 == 0.51
+
+
+def test_place_ask_joins_best_ask():
+    """Joins the best_ask when within range."""
+    v = view(0.49, 0.53)  # best_bid=0.49, best_ask=0.53
+    p = _place_ask(0.55, v, 0.01, 2, 0.50, 1)
+    assert p == 0.53  # joined the ask
+
+
+def test_place_ask_never_crosses_bid():
+    """Won't cross the bid (pulls to best_bid + tick)."""
+    v = view(0.55, 0.58)  # best_bid=0.55, best_ask=0.58
+    # target 0.56, FV 0.50, min_edge=1 → floor 0.51
+    # price=max(0.56, 0.51)=0.56; 0.56>=0.58? No (no join).
+    # 0.56<=0.55? No (no cross). result: 0.56.
+    p = _place_ask(0.56, v, 0.01, 2, 0.50, 1)
+    assert p == 0.56  # no cross, no join
+    # Now try a price that WOULD cross: target 0.54, bid 0.55
+    # floor 0.51, price=0.54; 0.54<=0.55 → cross → pull to 0.56 (bid+tick)
+    v2 = view(0.55, 0.58)
+    p2 = _place_ask(0.54, v2, 0.01, 2, 0.50, 1)
+    assert p2 == 0.56  # pulled up to best_bid + tick
+
+
+def test_place_ask_band_hi_ceiling():
+    """band_hi caps the price (SELL ceiling)."""
+    v = view(None, None)
+    # target 0.55, band_hi=0.52 → capped at 0.52
+    p = _place_ask(0.55, v, 0.01, 2, 0.50, 1, band_hi=0.52)
+    assert p == 0.52
 
 
 def test_compute_fair_value_flow_nudge():
@@ -249,3 +291,52 @@ def test_missing_book_view_does_not_crash(meta, profile):
     tq = construct_quotes(_inputs(meta, profile, yes_view=empty, no_view=empty))
     assert tq.condition_id == meta.condition_id
     assert isinstance(tq.quotes, tuple)
+
+
+def test_sell_quotes_when_inventory_present(meta, profile):
+    """When inventory is present, SELL quotes are placed to exit."""
+    tq = construct_quotes(
+        _inputs(meta, profile, pos_yes=Position("yes-token", 50, 0.5))
+    )
+    sells = [q for q in tq.quotes if q.side == Side.SELL]
+    assert sells, "expected SELL quotes when YES inventory present"
+    for q in sells:
+        assert q.token_id == "yes-token"
+        assert q.price > 0.5  # SELL above mid
+
+
+def test_both_sides_quoted_with_inventory_on_both(meta, profile):
+    """When both YES and NO inventory, both SELL sides are quoted."""
+    tq = construct_quotes(
+        _inputs(
+            meta, profile,
+            pos_yes=Position("yes-token", 50, 0.5),
+            pos_no=Position("no-token", 50, 0.5),
+        )
+    )
+    yes_sells = [q for q in tq.quotes if q.token_id == "yes-token" and q.side == Side.SELL]
+    no_sells = [q for q in tq.quotes if q.token_id == "no-token" and q.side == Side.SELL]
+    assert yes_sells, "expected YES SELL quotes"
+    assert no_sells, "expected NO SELL quotes"
+
+
+def test_max_open_orders_caps_accumulation(meta, profile):
+    """max_open_orders_per_market prevents order book accumulation."""
+    from polymaker.config import StrategyProfile
+    capped = StrategyProfile(
+        base_size_usdc=profile.base_size_usdc,
+        q_max_usdc=profile.q_max_usdc,
+        layers=5,
+        layer_step_ticks=profile.layer_step_ticks,
+        max_open_orders_per_market=2,
+    )
+    tq = construct_quotes(_inputs(meta, capped))
+    yes_orders = [q for q in tq.quotes if q.token_id == "yes-token"]
+    assert len(yes_orders) <= 2, f"expected ≤2 YES orders, got {len(yes_orders)}"
+
+
+def test_zero_inventory_no_sells(meta, profile):
+    """With zero inventory, no SELL orders (only entries/exits from inventory)."""
+    tq = construct_quotes(_inputs(meta, profile))
+    sells = [q for q in tq.quotes if q.side == Side.SELL]
+    assert sells == [], f"expected no SELL with zero inventory, got {sells}"

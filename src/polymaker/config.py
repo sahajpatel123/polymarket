@@ -214,6 +214,12 @@ class StrategyProfile(BaseModel):
     merge_min_size: float = 20.0
     # TOML-compat unused by live path (C-04) — engine never maps hold-time → urgency.
     exit_urgency_s: float = 900.0
+    # ── order book safety ──
+    # Max open orders per market (per side). Prevents order book accumulation
+    # when the strategy requotes on every book change. With layers=3 and
+    # max_open_orders_per_market=2, each side has at most 2 orders = 4 total
+    # per market. Set to 0 to disable.
+    max_open_orders_per_market: int = 0
     # ── advanced quoting (Tier 2 opt-in) ──
     # When True, the engine uses the Avellaneda-Stoikov optimal pricing
     # model + Kelly-inspired sizing instead of the simple linear skew.
