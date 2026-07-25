@@ -59,8 +59,14 @@ class QuoteInputs:
     no_exit_urgency: float = 0.0
     # Intelligence layer (DecisionFramework) — optional judgment knobs
     intel_size_scale: float = 1.0  # extra size mult from brain (0 → empty entries)
-    # 0.0 = rest at band floor (passive); 1.0 = near FV − min_edge (aggressive)
-    intel_buy_band_frac: float = 0.0
+    # None = intelligence not controlling band (legacy economic target).
+    # When set: 0.0 = rest at band floor (most passive); 1.0 = near FV − min_edge.
+    intel_buy_band_frac: float | None = None
+    # Optional extra half-spread mult from brain (1.0 = no change).
+    intel_spread_mult: float = 1.0
+    # Optional BUY offset in ticks vs FV (negative = below FV). Applied after
+    # band frac so adaptive passive offsets can widen further from mid.
+    intel_buy_offset_ticks: int | None = None
     intel_skip: bool = False  # brain says do not quote entries
 
 
@@ -104,6 +110,9 @@ def construct_quotes(inp: QuoteInputs) -> TargetQuotes:
     else:
         base = econ
     delta = base + p.c_vol * inp.vol_short + p.c_tox * max(0.0, inp.toxicity)
+    # Intelligence may widen half-spread (toxic/volatile); never shrink below econ.
+    spread_mult = max(1.0, float(inp.intel_spread_mult or 1.0))
+    delta = delta * spread_mult
     delta = clamp_to_reward_band(
         delta,
         base=base,
@@ -156,10 +165,11 @@ def construct_quotes(inp: QuoteInputs) -> TargetQuotes:
     no_band_lo = (no_fv - reward_band) if band_active else None
     no_band_hi = (no_fv + reward_band) if band_active else None
 
-    # Intelligence: prefer a band position between floor and FV−min_edge.
-    # Still clamped by band_lo in _place_bid so we never go OOB/dust.
-    frac = _clamp(inp.intel_buy_band_frac, 0.0, 1.0)
-    if band_active and frac > 0:
+    # Intelligence: place BUY between band floor and FV−min_edge.
+    # None = leave economic target; 0.0 = floor (most passive); 1.0 = aggressive.
+    # Always apply when set so toxic learning (frac=0) is not a no-op.
+    if band_active and inp.intel_buy_band_frac is not None:
+        frac = _clamp(float(inp.intel_buy_band_frac), 0.0, 1.0)
         edge_cap = inp.fv - p.min_edge_ticks * tick
         lo = yes_band_lo if yes_band_lo is not None else yes_bid_target
         hi = min(edge_cap, yes_band_hi if yes_band_hi is not None else edge_cap)
@@ -170,6 +180,16 @@ def construct_quotes(inp: QuoteInputs) -> TargetQuotes:
         nhi = min(no_edge, no_band_hi if no_band_hi is not None else no_edge)
         if nhi > nlo:
             no_bid_target = nlo + frac * (nhi - nlo)
+
+    # Adaptive offset: further passive step below FV (BUY only). More negative
+    # offset → lower bid; still clamped by band_lo in _place_bid.
+    if inp.intel_buy_offset_ticks is not None and tick > 0:
+        off = int(inp.intel_buy_offset_ticks)
+        # Convention: negative = below FV. If caller passes positive magnitude,
+        # treat as "ticks below FV" for BUY safety.
+        buy_off = off if off <= 0 else -abs(off)
+        yes_bid_target = min(yes_bid_target, inp.fv + buy_off * tick)
+        no_bid_target = min(no_bid_target, no_fv + buy_off * tick)
 
     # entry: BUY YES
     if add_yes:

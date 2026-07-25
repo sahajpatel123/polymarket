@@ -152,19 +152,13 @@ class AdaptiveSpreadParams:
         if condition_id not in self.market_offsets:
             return (-self.base_delta_min_ticks, self.base_delta_min_ticks)
 
-        # Get the learned optimal offset for this market
-        optimal = self.market_offsets[condition_id]
-        # Gradual adaptation: move 20% toward optimal each requote
-        # (prevents oscillation around the optimal)
-        current = self.stats.get(condition_id)
-        if current and current.best_fill_rate > 0:
-            # Use the learned offset directly (it's already the best)
-            buy_offset = -optimal
-            sell_offset = optimal
-        else:
-            # No fills yet: use profile defaults
-            buy_offset = -self.base_delta_min_ticks
-            sell_offset = self.base_delta_min_ticks
+        # Always honor learned/defensive offsets once set — including after
+        # toxic fills (non-positive edge) that step market_offsets wider.
+        # Previously we only applied when best_fill_rate > 0, which ignored
+        # toxic-only learning (best_fill_rate stays 0 when edge <= 0).
+        optimal = abs(self.market_offsets[condition_id])
+        buy_offset = -optimal
+        sell_offset = optimal
         return buy_offset, sell_offset
 
     def learn_from_fill(

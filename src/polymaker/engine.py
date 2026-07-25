@@ -971,7 +971,9 @@ class Engine:
         # ── Intelligence: judge whether this quote is worth placing ─────
         intel_skip = False
         intel_size = 1.0
-        intel_band_frac = 0.0
+        intel_band_frac: float | None = None  # None = economic target (flag off)
+        intel_spread_mult = 1.0
+        intel_buy_offset: int | None = None
         intel_reason = ""
         if p.use_intelligence and regime not in (Regime.HALTED, Regime.EVENT):
             self._last_book_ts[cid] = now
@@ -1014,6 +1016,8 @@ class Engine:
             intel_skip = not decision.should_quote
             intel_size = float(decision.size_multiplier)
             intel_band_frac = float(decision.buy_band_frac)
+            intel_spread_mult = max(1.0, float(decision.spread_multiplier))
+            intel_buy_offset = int(decision.buy_offset_ticks)
             intel_reason = decision.reason
             if not intel_skip:
                 # record placement preference for learning
@@ -1057,6 +1061,8 @@ class Engine:
                 risk_size_scale=rd.size_scale,
                 intel_size_scale=intel_size,
                 intel_buy_band_frac=intel_band_frac,
+                intel_spread_mult=intel_spread_mult,
+                intel_buy_offset_ticks=intel_buy_offset,
                 intel_skip=intel_skip,
             ))
 
