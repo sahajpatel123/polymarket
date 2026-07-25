@@ -234,6 +234,11 @@ class StrategyProfile(BaseModel):
     # scales size, and chooses buy_band_frac from regime + fill learning.
     # Default False preserves blind in-band farming.
     use_intelligence: bool = False
+    # Ablation mode when use_intelligence is True:
+    #   "full"      — skip + size + band + offsets (default)
+    #   "gate_only" — only skip dead/stale; no size/band learning
+    #   "off"       — force intelligence off even if flag True
+    intelligence_mode: str = "full"
 
     def with_overrides(self, overrides: dict[str, Any]) -> StrategyProfile:
         """Return a copy with per-market override values applied."""

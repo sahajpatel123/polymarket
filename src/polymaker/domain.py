@@ -156,6 +156,9 @@ class Fill:
     trade_id: str
     ts: float = field(default_factory=time.time)
     is_maker: bool = True
+    # Resting order that was matched (paper/replay sim). Empty for exchange fills
+    # that arrive without correlating order id.
+    order_id: str = ""
 
 
 # ── Strategy output ────────────────────────────────────────────────────────

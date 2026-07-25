@@ -36,8 +36,6 @@ from __future__ import annotations
 import math
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Optional
-
 
 # ── Kalman Filter ──────────────────────────────────────────────────────
 
@@ -262,7 +260,6 @@ class WaveletDenoiser:
             return x
         # Simple moving average as a stand-in for wavelet denoising
         # (real implementation would do Haar decomposition)
-        n = len(self.history)
         recent = list(self.history)[-4:]
         return sum(recent) / len(recent)
 

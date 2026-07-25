@@ -179,9 +179,10 @@ class RealisticFillSimulator(FillSimulator):
                     side=entry.side,
                     price=entry.price,
                     size=fill_size,
-                    trade_id=f"paper-fill-{ts:.6f}-{entry.order_id[:8]}",
+                    trade_id=f"paper-fill-{ts:.6f}-{entry.order_id}",
                     ts=ts,
                     is_maker=True,
+                    order_id=entry.order_id,
                 ))
                 entry.size -= fill_size
                 remaining -= fill_size

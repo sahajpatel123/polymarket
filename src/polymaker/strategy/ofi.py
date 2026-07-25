@@ -24,6 +24,7 @@ Pure state machine — no I/O.
 from __future__ import annotations
 
 from dataclasses import dataclass
+
 from polymaker.marketdata.orderbook import BookView
 
 
@@ -69,9 +70,7 @@ class OFICalculator:
             e_bid = 0.0
 
         # Compute e_ask
-        if ask_p is None or self._last_ask_price is None:
-            e_ask = 0.0
-        elif ask_p > self._last_ask_price:
+        if ask_p is None or self._last_ask_price is None or ask_p > self._last_ask_price:
             e_ask = 0.0
         elif ask_p == self._last_ask_price:
             e_ask = ask_v - self._last_ask_size

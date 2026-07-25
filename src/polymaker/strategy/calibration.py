@@ -14,9 +14,8 @@ No I/O — pure mathematical evaluation module.
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence, Tuple
-
 
 _EPS = 1e-12
 
@@ -56,9 +55,9 @@ class CalibrationReport:
     log_loss: float
     expected_calibration_error: float  # ECE
     max_calibration_error: float       # MCE
-    bin_counts: Tuple[int, ...]
-    bin_mean_probs: Tuple[float, ...]
-    bin_mean_outcomes: Tuple[float, ...]
+    bin_counts: tuple[int, ...]
+    bin_mean_probs: tuple[float, ...]
+    bin_mean_outcomes: tuple[float, ...]
 
 
 def evaluate_calibration(
@@ -148,7 +147,7 @@ def bootstrap_confidence_interval(
     n_resamples: int = 1000,
     ci: float = 0.95,
     seed: int = 42,
-) -> Tuple[float, float, float]:
+) -> tuple[float, float, float]:
     """Compute non-parametric bootstrap confidence interval for a metric series.
     
     Returns (mean, ci_lower, ci_upper).

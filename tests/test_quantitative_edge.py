@@ -9,12 +9,10 @@
 
 from __future__ import annotations
 
-import math
 import pytest
 
 from polymaker.domain import Side
 from polymaker.marketdata.orderbook import BookView
-
 from polymaker.strategy.calibration import (
     bootstrap_confidence_interval,
     brier_score,
@@ -30,7 +28,6 @@ from polymaker.strategy.covariance_sizing import (
 from polymaker.strategy.kyle_lambda import KyleLambdaEstimator
 from polymaker.strategy.ofi import OFICalculator
 from polymaker.strategy.vpin import VPINEstimator
-
 
 # ── Calibration & Proper Scoring Rules Tests ─────────────────────────────
 

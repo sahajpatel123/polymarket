@@ -21,6 +21,7 @@ Pure state machine — no I/O.
 from __future__ import annotations
 
 from dataclasses import dataclass
+
 from polymaker.domain import Side
 
 

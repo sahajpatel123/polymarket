@@ -29,18 +29,14 @@ accrual and "risk" is the variance of fill outcomes.
 from __future__ import annotations
 
 import math
-from collections import deque
 from dataclasses import dataclass, field
-from typing import Optional
 
+from polymaker.intelligence.decision import (
+    TradingDecision,
+)
 from polymaker.strategy.allocation import (
     AllocationInputs,
-    MarketAllocation,
     allocate_capital,
-)
-from polymaker.intelligence.decision import (
-    DecisionFramework,
-    TradingDecision,
 )
 
 

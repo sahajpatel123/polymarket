@@ -1,8 +1,16 @@
-"""Deterministic journal replay through the pure strategy stack.
+"""Deterministic journal replay through the shared decision pipeline.
 
 Reads Journal JSONL (`book` / `price_change` / `last_trade_price`) and drives
-OrderBook + estimators + RegimeMachine + construct_quotes + reconcile, emitting
-the same MetricsLogger events as live/paper (T1-01). No network I/O.
+OrderBook + estimators + DecisionFramework + RegimeMachine + construct_quotes
++ reconcile + FillSimulator, emitting MetricsLogger events.
+
+Order lifecycle (authoritative):
+  CREATED → LIVE → PARTIALLY_FILLED → FILLED
+                       └────────→ CANCELLED
+
+After every event that mutates orders:
+  replay_live_order_ids == fill_simulator_order_ids
+  replay_order_remaining == fill_simulator_remaining
 """
 
 from __future__ import annotations
@@ -12,18 +20,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from polymaker.accounting.equity_ledger import EquityLedger
 from polymaker.config import StrategyProfile
 from polymaker.domain import (
     Fill,
     MarketMeta,
     OpenOrder,
+    OrderState,
     Position,
-    Quote,
-    Regime,
     Side,
-    TargetQuotes,
 )
 from polymaker.execution.reconciler import reconcile
+from polymaker.intelligence import DecisionFramework
 from polymaker.marketdata.orderbook import OrderBook
 from polymaker.marketdata.parse import (
     TradePrint,
@@ -34,18 +42,14 @@ from polymaker.marketdata.parse import (
 )
 from polymaker.metrics import MetricsLogger, inventory_fields
 from polymaker.paper.fill_sim import FillSimulator
-from polymaker.strategy.advanced_quoting import (
-    AdvancedQuoteInputs,
-    compute_advanced_quotes,
-)
+from polymaker.strategy.decision_pipeline import build_targets
 from polymaker.strategy.estimators import (
     FlowEstimator,
     MarketEstimators,
     MarkoutTracker,
     VolEstimator,
 )
-from polymaker.strategy.quoting import QuoteInputs, compute_fair_value, construct_quotes
-from polymaker.strategy.regime import RegimeInputs, RegimeMachine
+from polymaker.strategy.regime import RegimeMachine
 
 
 @dataclass
@@ -58,6 +62,11 @@ class ReplayResult:
     n_cancel: int = 0
     n_mark: int = 0
     n_fill: int = 0
+    state_divergence_events: int = 0
+    fills_after_cancel: int = 0
+    overfills: int = 0
+    final_equity: float = 0.0
+    final_cash: float = 0.0
 
 
 @dataclass
@@ -78,6 +87,17 @@ class ReplayState:
     recomputes: int = 0
     fill_sim: FillSimulator = field(default_factory=FillSimulator)
     n_fill: int = 0
+    intel: DecisionFramework = field(default_factory=DecisionFramework)
+    trade_ts: list[float] = field(default_factory=list)
+    ledger: EquityLedger = field(default_factory=EquityLedger)
+    # Lifecycle integrity counters
+    state_divergence_events: int = 0
+    fills_after_cancel: int = 0
+    overfills: int = 0
+    cancelled_ids: set[str] = field(default_factory=set)
+    # Seen trade print ids for dedupe (asset, ts, price, size, side)
+    _seen_trades: set[str] = field(default_factory=set)
+    strict_sync: bool = True
 
     def __post_init__(self) -> None:
         self.pos_yes = Position(self.meta.yes.token_id)
@@ -90,6 +110,35 @@ class ReplayState:
             flow=FlowEstimator(p.flow_ewma_halflife_s),
             markout=MarkoutTracker(),
         )
+
+
+def assert_order_sync(st: ReplayState) -> list[str]:
+    """Return list of divergence messages (empty if in sync)."""
+    errs: list[str] = []
+    live_ids = set(st.live.keys())
+    sim_ids = st.fill_sim.order_ids()
+    if live_ids != sim_ids:
+        errs.append(
+            f"id_set_mismatch live={sorted(live_ids)} sim={sorted(sim_ids)}"
+        )
+    for oid in live_ids & sim_ids:
+        live_rem = st.live[oid].size
+        sim_rem = st.fill_sim.remaining(oid)
+        if abs(live_rem - sim_rem) > 1e-9:
+            errs.append(
+                f"remaining_mismatch {oid}: live={live_rem} sim={sim_rem}"
+            )
+    return errs
+
+
+def check_and_record_sync(st: ReplayState) -> None:
+    errs = assert_order_sync(st)
+    if errs:
+        st.state_divergence_events += 1
+        if st.strict_sync:
+            raise AssertionError(
+                "replay order state divergence: " + "; ".join(errs)
+            )
 
 
 def load_journal(path: Path) -> list[dict[str, Any]]:
@@ -112,11 +161,7 @@ def filter_rows_for_tokens(
     yes_token: str,
     no_token: str,
 ) -> list[dict[str, Any]]:
-    """Keep journal rows that touch the given YES/NO token ids.
-
-    Multi-market journals otherwise poison time/event holdout splits: the last
-    30% of rows may be almost entirely a different market.
-    """
+    """Keep journal rows that touch the given YES/NO token ids."""
     wanted = {yes_token, no_token}
     out: list[dict[str, Any]] = []
     for row in rows:
@@ -136,11 +181,13 @@ def filter_rows_for_tokens(
             continue
         if kind == "price_change" and isinstance(data, dict):
             changes = data.get("price_changes") or []
-            if any(str(ch.get("asset_id") or "") in wanted for ch in changes if isinstance(ch, dict)):
-                # Keep row; apply_journal_event ignores non-matching assets.
+            if any(
+                str(ch.get("asset_id") or "") in wanted
+                for ch in changes
+                if isinstance(ch, dict)
+            ):
                 out.append(row)
             continue
-        # drop orders_out / unknown
     return out
 
 
@@ -205,14 +252,41 @@ def _empty_view():
     return BookView(None, 0.0, None, 0.0, None, None, 0.0, 0.0)
 
 
+def _sync_live_after_fill(st: ReplayState, fill: Fill) -> None:
+    """Update st.live remaining size from fill; remove if fully filled."""
+    oid = fill.order_id
+    if not oid:
+        return
+    if oid in st.cancelled_ids:
+        st.fills_after_cancel += 1
+        return
+    o = st.live.get(oid)
+    if o is None:
+        # Already removed from live but sim filled — divergence unless sim also gone
+        if oid in st.fill_sim.order_ids() or st.fill_sim.remaining(oid) > 0:
+            st.state_divergence_events += 1
+        return
+    new_size = o.size - fill.size
+    if new_size <= 1e-12:
+        st.live.pop(oid, None)
+    else:
+        st.live[oid] = OpenOrder(
+            o.order_id,
+            o.token_id,
+            o.side,
+            o.price,
+            new_size,
+            OrderState.LIVE,
+            o.created_ts,
+        )
+
+
 def _recompute(st: ReplayState, now: float) -> None:
     assert st.est is not None and st.metrics is not None
     meta, p = st.meta, st.profile
     yb, nb = st.yes_book, st.no_book
     if yb.is_empty:
         return
-    # Compute view once and reuse for crossed/locked check + construct_quotes,
-    # avoiding redundant best_bid()/best_ask() calls (4992 saved per 5k replay).
     yes_view = yb.view()
     if yes_view.best_bid is None or yes_view.best_ask is None:
         return
@@ -222,86 +296,71 @@ def _recompute(st: ReplayState, now: float) -> None:
     micro = yb.microprice(p.micro_levels)
     if micro is None:
         return
-    st.est.flow.decay_to(now)
-    fv = compute_fair_value(micro, st.est.flow.z, meta.tick_size)
-    prev_fv = st.est.last_fv
-    st.est.on_fair_value(fv, now)
+    # Shared pipeline owns FV + regime + intel + construct_quotes.
+    # est.last_fv is still the *previous* FV for jump detection until we update.
+    n_trades = len(st.trade_ts)
+    last_trade = max(st.trade_ts) if st.trade_ts else 0.0
+    secs_stale = (now - last_trade) if last_trade > 0 else 0.0
 
-    q_max = p.q_max_usdc
-    inv_util = (
-        abs(st.pos_yes.size - st.pos_no.size) * fv / q_max if q_max > 0 else 0.0
+    result = build_targets(
+        meta=meta,
+        profile=p,
+        yes_view=yes_view,
+        no_view=nb.view() if not nb.is_empty else _empty_view(),
+        pos_yes=st.pos_yes,
+        pos_no=st.pos_no,
+        est=st.est,
+        regime_machine=st.regime,
+        now=now,
+        micro=micro,
+        intel=st.intel if p.use_intelligence else None,
+        n_trades_last_hour=n_trades,
+        seconds_since_last_trade=secs_stale,
     )
-    regime = st.regime.decide(
-        RegimeInputs(
-            now=now,
-            tick=meta.tick_size,
-            fv=fv,
-            prev_fv=prev_fv,
-            vol_ratio=st.est.vol.ratio,
-            flow_z=st.est.flow.z,
-            inventory_util=inv_util,
-            hours_to_end=None,
-        ),
-        p,
-    )
-    tq: Any
-    if p.use_advanced_quoting and regime is not Regime.REDUCE_ONLY:
-        bankroll = p.bankroll_usdc if p.bankroll_usdc > 0 else p.q_max_usdc
-        tox = float(getattr(st.est.markout, "toxicity", 0.0) or 0.0)
-        adv = compute_advanced_quotes(AdvancedQuoteInputs(
-            meta=meta, fv=fv, sigma=st.est.vol.short,
-            yes_view=yes_view,
-            no_view=nb.view() if not nb.is_empty else _empty_view(),
-            pos_yes=st.pos_yes, pos_no=st.pos_no, profile=p,
-            bankroll_usdc=bankroll, now=now,
-            regime=regime, toxicity=tox, risk_size_scale=1.0,
-        ))
-        adv_quotes: list[Any] = []
-        yes_price = adv.bid
-        no_price = 1.0 - adv.ask
-        if adv.size_yes_shares > 0 and 0 < yes_price < 1:
-            adv_quotes.append(Quote(
-                token_id=meta.yes.token_id, side=Side.BUY,
-                price=yes_price, size=adv.size_yes_shares,
-            ))
-        if adv.size_no_shares > 0 and 0 < no_price < 1:
-            adv_quotes.append(Quote(
-                token_id=meta.no.token_id, side=Side.BUY,
-                price=no_price, size=adv.size_no_shares,
-            ))
-        tq = TargetQuotes(meta.condition_id, regime, tuple(adv_quotes))
-    else:
-        tq = construct_quotes(
-            QuoteInputs(
-                meta=meta,
-                regime=regime,
-                fv=fv,
-                vol_short=st.est.vol.short,
-                toxicity=st.est.markout.toxicity,
-                yes_view=yes_view,
-                no_view=nb.view() if not nb.is_empty else _empty_view(),
-                pos_yes=st.pos_yes,
-                pos_no=st.pos_no,
-                profile=p,
-                now=now,
-            )
-        )
+    if result is None:
+        return
+    st.est.on_fair_value(result.fv, now)
+
+    tq = result.targets
+    fv = result.fv
+    regime = result.regime
+    attr = result.attribution
+
     live = list(st.live.values())
     plan = reconcile(
-        tq, live, tick=meta.tick_size, reprice_ticks=p.reprice_ticks, resize_frac=p.resize_frac
+        tq,
+        live,
+        tick=meta.tick_size,
+        reprice_ticks=p.reprice_ticks,
+        resize_frac=p.resize_frac,
     )
     inv = inventory_fields(st.pos_yes.size, st.pos_no.size)
+    st.ledger.update_mark(meta.yes.token_id, fv)
+    st.ledger.update_mark(meta.no.token_id, 1.0 - fv)
     st.metrics.emit(
-        "mark", ts=now, condition_id=meta.condition_id, fv=fv, regime=regime.value, **inv
+        "mark",
+        ts=now,
+        condition_id=meta.condition_id,
+        fv=fv,
+        regime=regime.value,
+        intel_decision=attr.intelligence_decision,
+        intel_size=attr.size_multiplier,
+        intel_band_frac=attr.buy_band_frac if attr.buy_band_frac is not None else -1.0,
+        intel_reason=attr.intel_reason[:120] if attr.intel_reason else "",
+        equity=st.ledger.equity(),
+        **inv,
     )
     st.n_mark += 1
     st.recomputes += 1
 
     if plan.is_noop:
+        check_and_record_sync(st)
         return
 
     for oid in plan.to_cancel:
         o = st.live.pop(oid, None)
+        st.fill_sim.cancel(oid)  # authoritative: cancelled can never fill
+        st.cancelled_ids.add(oid)
         if o is None:
             continue
         st.metrics.emit(
@@ -320,6 +379,9 @@ def _recompute(st: ReplayState, now: float) -> None:
     reward_band = meta.rewards_max_spread / 100.0
     for i, q in enumerate(plan.to_place):
         oid = f"replay-{st.recomputes}-{i}"
+        if oid in st.live or oid in st.fill_sim.order_ids():
+            # Uniqueness: recompute index + place index should be unique
+            oid = f"replay-{st.recomputes}-{i}-{len(st.live)}"
         o = OpenOrder(oid, q.token_id, q.side, q.price, q.size)
         st.live[oid] = o
         st.fill_sim.place(o)
@@ -337,16 +399,25 @@ def _recompute(st: ReplayState, now: float) -> None:
             mid=mid_tok,
             fv_yes=fv,
             in_reward_band=in_band,
+            intel_decision=attr.intelligence_decision,
+            buy_offset_ticks=attr.buy_offset_ticks,
+            size_multiplier=attr.size_multiplier,
+            reason_codes=",".join(attr.reason_codes),
             **inv,
         )
         st.n_quote += 1
 
+    check_and_record_sync(st)
+
 
 def _apply_replay_fill(st: ReplayState, fill: Fill, *, fv_for_markout: float | None) -> None:
-    """Apply a simulated fill to replay positions, estimators, and metrics."""
-    assert st.est is not None and st.metrics is not None
+    """Apply a simulated fill to replay positions, ledger, estimators, metrics."""
+    assert st.est is not None
     meta = st.meta
-    # update position
+    if fill.order_id and fill.order_id in st.cancelled_ids:
+        st.fills_after_cancel += 1
+        return
+
     pos = st.pos_yes if fill.token_id == meta.yes.token_id else st.pos_no
     signed = fill.size if fill.side is Side.BUY else -fill.size
     new_size = pos.size + signed
@@ -354,35 +425,54 @@ def _apply_replay_fill(st: ReplayState, fill: Fill, *, fv_for_markout: float | N
         if pos.size <= 0:
             pos.avg_price = fill.price
         else:
-            pos.avg_price = (pos.avg_price * pos.size + fill.price * fill.size) / (pos.size + fill.size)
+            pos.avg_price = (
+                pos.avg_price * pos.size + fill.price * fill.size
+            ) / (pos.size + fill.size)
     pos.size = max(0.0, new_size)
     if pos.size <= 0:
         pos.avg_price = 0.0
-    # update markout estimator and compute token_fv for metrics
+
+    st.ledger.apply_fill(fill)
+    _sync_live_after_fill(st, fill)
+
     if fv_for_markout is not None:
-        token_fv = fv_for_markout if fill.token_id == meta.yes.token_id else (1.0 - fv_for_markout)
+        token_fv = (
+            fv_for_markout
+            if fill.token_id == meta.yes.token_id
+            else (1.0 - fv_for_markout)
+        )
         st.est.markout.record_fill(fill.side, token_fv, fill.ts)
+        if getattr(st.profile, "use_intelligence", False):
+            tick = max(meta.tick_size, 1e-9)
+            offset = int(round((fill.price - token_fv) / tick))
+            edge = (
+                (token_fv - fill.price)
+                if fill.side is Side.BUY
+                else (fill.price - token_fv)
+            )
+            markout = -float(getattr(st.est.markout, "toxicity", 0.0) or 0.0)
+            st.intel.record_fill(meta.condition_id, offset, edge, markout)
     else:
         token_fv = fill.price
-    # emit fill metric
-    pos_yes = st.pos_yes
-    pos_no = st.pos_no
-    inv = inventory_fields(pos_yes.size, pos_no.size)
-    mid_tok = token_fv
-    st.metrics.emit(
-        "fill",
-        ts=fill.ts,
-        condition_id=meta.condition_id,
-        token_id=fill.token_id,
-        side=fill.side.value,
-        price=fill.price,
-        size=fill.size,
-        trade_id=fill.trade_id,
-        mid=mid_tok,
-        fv=fv_for_markout or fill.price,
-        paper=True,
-        **inv,
-    )
+
+    inv = inventory_fields(st.pos_yes.size, st.pos_no.size)
+    if st.metrics is not None:
+        st.metrics.emit(
+            "fill",
+            ts=fill.ts,
+            condition_id=meta.condition_id,
+            token_id=fill.token_id,
+            side=fill.side.value,
+            price=fill.price,
+            size=fill.size,
+            trade_id=fill.trade_id,
+            order_id=fill.order_id,
+            mid=token_fv,
+            fv=fv_for_markout or fill.price,
+            paper=True,
+            equity=st.ledger.equity(),
+            **inv,
+        )
     st.n_fill += 1
 
 
@@ -401,7 +491,6 @@ def apply_journal_event(st: ReplayState, row: dict[str, Any]) -> bool:
     data = row.get("data")
     ts = float(row.get("ts") or 0.0)
     if not isinstance(data, dict) and kind != "orders_out":
-        # orders_out is a list; ignore for market replay
         if kind == "orders_out":
             return False
         return False
@@ -434,11 +523,35 @@ def apply_journal_event(st: ReplayState, row: dict[str, Any]) -> bool:
             return False
         if tp.asset_id not in (st.meta.yes.token_id, st.meta.no.token_id):
             return False
+        # Dedupe identical trade prints
+        tkey = (
+            f"{tp.asset_id}|{tp.ts or ts}|{tp.price}|{tp.size}|{tp.aggressor.value}"
+        )
+        if tkey in st._seen_trades:
+            return False
+        st._seen_trades.add(tkey)
+
         st.est.flow.update(tp.aggressor, tp.size, tp.ts or ts)
-        # Simulate fills: match the trade print against resting orders.
-        fills = st.fill_sim.match(tp.asset_id, tp.aggressor, tp.price, tp.size, tp.ts or ts)
+        tts = float(tp.ts or ts)
+        st.trade_ts.append(tts)
+        cutoff = tts - 3600.0
+        st.trade_ts = [t for t in st.trade_ts if t >= cutoff]
+        if st.profile.use_intelligence:
+            side = "BUY" if tp.aggressor is Side.BUY else "SELL"
+            st.intel.update_trade(
+                st.meta.condition_id, side, tp.price, tp.size, tts
+            )
+
+        # Match fills; never consume more than aggressor size (enforced in sim)
+        fills = st.fill_sim.match(
+            tp.asset_id, tp.aggressor, tp.price, tp.size, tts
+        )
+        filled_vol = sum(f.size for f in fills)
+        if filled_vol > tp.size + 1e-9:
+            st.overfills += 1
         for fill in fills:
             _apply_replay_fill(st, fill, fv_for_markout=st.est.last_fv)
+        check_and_record_sync(st)
         return True
 
     if kind == "tick_size_change" and isinstance(data, dict):
@@ -458,13 +571,13 @@ def run_replay(
     meta: MarketMeta,
     profile: StrategyProfile,
     metrics_path: Path,
+    *,
+    strict_sync: bool = True,
 ) -> ReplayResult:
     rows = load_journal(journal_path)
     st = ReplayState(meta=meta, profile=profile)
+    st.strict_sync = strict_sync
     st.metrics = MetricsLogger(metrics_path, enabled=True)
-    # Use journal timeline, not wall-clock: MetricsLogger defaults ts to
-    # time.time() which inflates max−min runtime (and daily_return_pct) by
-    # hours/days when replaying historical tapes.
     first_ts = float(rows[0].get("ts") or 0.0) if rows else 0.0
     st.metrics.emit(
         "market_meta",
@@ -477,6 +590,7 @@ def run_replay(
         rebate_rate=meta.rebate_rate,
         tick_size=meta.tick_size,
     )
+    st.ledger.reset_day()
 
     applied = 0
     for row in rows:
@@ -484,6 +598,8 @@ def run_replay(
             applied += 1
             _recompute(st, float(row.get("ts") or 0.0))
 
+    # Final sync check
+    check_and_record_sync(st)
     assert st.metrics is not None
     st.metrics.close()
     return ReplayResult(
@@ -495,16 +611,24 @@ def run_replay(
         n_cancel=st.n_cancel,
         n_mark=st.n_mark,
         n_fill=st.n_fill,
+        state_divergence_events=st.state_divergence_events,
+        fills_after_cancel=st.fills_after_cancel,
+        overfills=st.overfills,
+        final_equity=st.ledger.equity(),
+        final_cash=st.ledger.cash,
     )
 
 
-# silence unused TradePrint/Side import warning via re-export for tests
 __all__ = [
     "run_replay",
     "load_journal",
     "ReplayResult",
+    "ReplayState",
     "TradePrint",
     "Side",
     "infer_yes_no_tokens",
     "discover_condition_ids",
+    "assert_order_sync",
+    "apply_journal_event",
+    "filter_rows_for_tokens",
 ]

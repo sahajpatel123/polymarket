@@ -4,8 +4,6 @@ information theory, portfolio, risk, self-evaluation, execution.
 
 from __future__ import annotations
 
-import math
-
 from polymaker.intelligence.execution import (
     AntiGamingDetector,
     IcebergSizer,
@@ -15,13 +13,11 @@ from polymaker.intelligence.execution import (
 from polymaker.intelligence.info_theory import (
     AutocorrelationTracker,
     EntropyTracker,
-    InformationFeatures,
     InformationProcessor,
     KLDivergenceTracker,
     TransferEntropyTracker,
 )
 from polymaker.intelligence.portfolio import (
-    MarketAllocationState,
     PortfolioState,
 )
 from polymaker.intelligence.risk import (
@@ -40,9 +36,7 @@ from polymaker.intelligence.signal_processing import (
     KalmanMidPrice,
     SignalProcessor,
     VolatilityRegimeHMM,
-    WaveletDenoiser,
 )
-
 
 # ── Signal Processing tests ───────────────────────────────────────────
 

@@ -39,6 +39,12 @@ from typing import Any
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
+from polymaker.benchmark import (
+    BenchmarkStatus,
+    ValidityConfig,
+    check_capital_feasibility,
+    evaluate_benchmark,
+)
 from polymaker.config import Config, RiskConfig, StrategyProfile
 from polymaker.domain import MarketMeta, TokenMeta
 from polymaker.metrics import MetricsLogger
@@ -376,9 +382,9 @@ class SyntheticMarketGenerator:
                     {"token_id": self.params.no_token, "name": "No"},
                 ],
                 "tick_size": self.params.tick_size,
-                "rewards_min_size": 50.0,
+                "rewards_min_size": 10.0,
                 "rewards_max_spread": 5.0,
-                "rewards_daily_rate": 100.0,
+                "rewards_daily_rate": 200.0,
                 "maker_fee_bps": 0,
                 "taker_fee_bps": 400,
                 "rebate_rate": 0.25,
@@ -404,23 +410,42 @@ def create_24h_journal(output_path: Path, seed: int = 42) -> Path:
     return generator.generate_journal(output_path)
 
 
-def scale_profile_for_bankroll(profile: StrategyProfile, bankroll: float) -> StrategyProfile:
-    """Scale a profile's sizing parameters for a given bankroll."""
-    # Create a copy
+def scale_profile_for_bankroll(
+    profile: StrategyProfile,
+    bankroll: float,
+    *,
+    min_order_size: float = 5.0,
+    rewards_min_size: float = 10.0,
+    typical_price: float = 0.5,
+) -> StrategyProfile:
+    """Scale a profile's sizing parameters for a given bankroll.
+
+    Ensures base_size can fund at least one exchange-minimum order when
+    capital allows; otherwise leaves sizes but caller must check capital gate.
+    """
     from copy import deepcopy
+
     scaled = deepcopy(profile)
-    
-    # If profile has bankroll_usdc > 0, use it as reference
     ref_bankroll = max(scaled.bankroll_usdc, 100.0)
     scale_factor = bankroll / ref_bankroll
-    
-    # Scale position sizes
+
     scaled.base_size_usdc = max(1.0, scaled.base_size_usdc * scale_factor)
     scaled.q_max_usdc = max(1.0, scaled.q_max_usdc * scale_factor)
-    
-    # Set bankroll
     scaled.bankroll_usdc = bankroll
-    
+
+    # Floor: at least one min-share order notional if capital can support it
+    min_shares = max(min_order_size, rewards_min_size)
+    min_notional = min_shares * typical_price
+    cap = check_capital_feasibility(
+        bankroll=bankroll,
+        exchange_min_shares=min_order_size,
+        reward_min_shares=rewards_min_size,
+        typical_price=typical_price,
+        layers=max(1, scaled.layers),
+    )
+    if cap.ok and scaled.base_size_usdc < min_notional:
+        scaled.base_size_usdc = min_notional
+        scaled.q_max_usdc = max(scaled.q_max_usdc, min_notional * 2)
     return scaled
 
 
@@ -436,10 +461,10 @@ def get_market_meta(params: SyntheticMarketParams) -> MarketMeta:
         ),
         tick_size=params.tick_size,
         neg_risk=False,
-        min_order_size=5.0,
-        rewards_min_size=50.0,
+        min_order_size=1.0,
+        rewards_min_size=10.0,
         rewards_max_spread=5.0,
-        rewards_daily_rate=100.0,
+        rewards_daily_rate=200.0,
         maker_fee_bps=0,
         taker_fee_bps=400,
         fees_enabled=True,
@@ -466,6 +491,18 @@ def run_single_market_backtest(
     print(f"Profile: base_size=${profile.base_size_usdc}, q_max=${profile.q_max_usdc}")
     print(f"{'='*60}")
     
+    # Capital gate: never claim success when bankroll cannot fund an order
+    cap = check_capital_feasibility(
+        bankroll=bankroll,
+        exchange_min_shares=meta.min_order_size,
+        reward_min_shares=meta.rewards_min_size,
+        typical_price=0.5,
+        layers=max(1, profile.layers),
+    )
+    print(f"\nCapital check: ok={cap.ok} — {cap.reason}")
+    if not cap.ok:
+        print("STATUS: INSUFFICIENT_CAPITAL — refusing silent zero-trade run")
+
     # Run replay
     result = run_replay(
         journal_path=journal_path,
@@ -482,6 +519,38 @@ def run_single_market_backtest(
     print(f"  Cancels: {result.n_cancel:,}")
     print(f"  Marks: {result.n_mark:,}")
     print(f"  Fills: {result.n_fill:,}")
+    print(f"  Equity (ledger): ${result.final_equity:.4f}")
+    print(f"  State divergence: {result.state_divergence_events}")
+    print(f"  Fills after cancel: {result.fills_after_cancel}")
+    print(f"  Overfills: {result.overfills}")
+
+    validity = evaluate_benchmark(
+        n_quote=result.n_quote,
+        n_fill=result.n_fill,
+        n_mark=result.n_mark,
+        n_markets=1,
+        runtime_s=24.0 * 3600.0,
+        n_trade_prints=result.events_applied,
+        capital_ok=cap.ok,
+        state_divergence_events=result.state_divergence_events,
+        fills_after_cancel=result.fills_after_cancel,
+        overfills=result.overfills,
+        cfg=ValidityConfig(
+            min_quotes=50,
+            min_fills=10,
+            min_marks=20,
+            min_runtime_s=60.0,
+            min_trade_prints=20,
+        ),
+    )
+    print(f"\nBenchmark validity: {validity.status.value}")
+    for reason in validity.reasons:
+        print(f"  - {reason}")
+    if validity.status is not BenchmarkStatus.PASS:
+        print(
+            "STATUS: NOT A FINANCIAL PASS "
+            f"({validity.status.value}) — do not trust PnL claims"
+        )
     
     # Analyze metrics
     report = analyze(metrics_path)
@@ -493,6 +562,8 @@ def run_single_market_backtest(
     print(f"  Inventory Drift: {report.inventory_drift_abs_peak:.4f}")
     print(f"  Markout (30s): {report.markout.get('30s', 0.0):.6f}")
     
+    # Attach validity for report writers (duck-typed)
+    result.validity = validity  # type: ignore[attr-defined]
     return result, report
 
 

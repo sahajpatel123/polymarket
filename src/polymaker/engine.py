@@ -30,9 +30,10 @@ from polymaker.catalog.gamma import GammaClient, fetch_reward_rates, parse_marke
 from polymaker.catalog.scoring import score_market
 from polymaker.catalog.store import CatalogStore
 from polymaker.config import Config, StrategyProfile
-from polymaker.domain import Fill, MarketMeta, Quote, Regime, Side, TargetQuotes
+from polymaker.domain import Fill, MarketMeta, Quote, Regime, Side
 from polymaker.execution.gateway import ExecutionGateway
 from polymaker.execution.reconciler import reconcile
+from polymaker.intelligence import DecisionFramework
 from polymaker.journal import Journal
 from polymaker.logging import get_logger
 from polymaker.marketdata.orderbook import BookView
@@ -44,20 +45,16 @@ from polymaker.paper.fill_sim import FillSimulator
 from polymaker.risk.manager import RiskManager
 from polymaker.state.store import StateStore
 from polymaker.state.tracker import UserEventProcessor
-from polymaker.strategy.advanced_quoting import (
-    AdvancedQuoteInputs,
-    compute_advanced_quotes,
-)
 from polymaker.strategy.estimators import (
     FlowEstimator,
     MarketEstimators,
     MultiHorizonMarkout,
     VolEstimator,
 )
-from polymaker.strategy.quoting import QuoteInputs, compute_fair_value, construct_quotes
-from polymaker.strategy.regime import RegimeInputs, RegimeMachine
+from polymaker.strategy.decision_pipeline import build_targets
+from polymaker.strategy.quoting import compute_fair_value
+from polymaker.strategy.regime import RegimeMachine
 from polymaker.userstream.client import UserStream
-from polymaker.intelligence import DecisionFramework, MarketFeatures
 
 log = get_logger("engine")
 
@@ -769,9 +766,21 @@ class Engine:
         for fill in fills:
             if not self.state.apply_fill(fill):
                 continue  # duplicate (shouldn't happen in paper, but be safe)
+            # Keep StateStore.orders remaining in sync with FillSimulator
+            # (cancelled orders must not remain fillable; partials reduce size).
+            if fill.order_id:
+                o = self.state.orders.get(fill.order_id)
+                if o is not None:
+                    new_sz = o.size - fill.size
+                    if new_sz <= 1e-12:
+                        self.state.remove_order(fill.order_id)
+                    else:
+                        from polymaker.domain import OpenOrder, OrderState
+                        self.state.upsert_order(OpenOrder(
+                            o.order_id, o.token_id, o.side, o.price, new_sz,
+                            OrderState.LIVE, o.created_ts,
+                        ))
             self._on_fill(fill)
-            # remove fully-filled orders from the simulator's tracking
-            # (partial fills already reduced size; apply_fill updates state store)
             self._wake_cid(cid)
 
     def _on_fill(self, fill: Fill) -> None:
@@ -887,9 +896,9 @@ class Engine:
             return
         est = self.est[cid]
         est.flow.decay_to(now)
+        # FV preview for risk marks only — last_fv stays previous until after
+        # build_targets so regime jump detection matches the shared pipeline.
         fv = compute_fair_value(micro, est.flow.z, tick)
-        prev_fv = est.last_fv
-        est.on_fair_value(fv, now)
 
         self.risk.update_mark(yes_token, fv)
         self.risk.update_mark(no_token, 1.0 - fv)
@@ -897,8 +906,6 @@ class Engine:
         no_book = self.md.book(no_token)
         pos_yes = self.state.position(yes_token)
         pos_no = self.state.position(no_token)
-        q_max = p.q_max_usdc
-        inv_util = abs(pos_yes.size - pos_no.size) * fv / q_max if q_max > 0 else 0.0
         hours_to_end = _hours_to_end(meta.end_date_iso, now)
 
         # ── blind/stale conditions ──────────────────────────────────────────
@@ -953,118 +960,57 @@ class Engine:
                 critical=any(k in rd.reason for k in ("daily_loss", "kill", "error_rate")),
             )
         ws_stale = blind
-        regime = self.regime_m[cid].decide(
-            RegimeInputs(
-                now=now, tick=meta.tick_size, fv=fv, prev_fv=prev_fv,
-                vol_ratio=est.vol.ratio, flow_z=est.flow.z, inventory_util=inv_util,
-                hours_to_end=hours_to_end, sweep_flagged=self._sweep.pop(cid, False),
-                ws_stale=ws_stale, risk_halt=rd.halt, risk_reduce_only=rd.reduce_only,
-                market_resolved=cid in self._halted,
-            ),
-            p,
-        )
-
-        tq: Any
         # Scale sizes to risk bankroll when set (capital-adaptive profiles).
         p = self.risk.cfg.scale_profile_sizes(p)
 
-        # ── Intelligence: judge whether this quote is worth placing ─────
-        intel_skip = False
-        intel_size = 1.0
-        intel_band_frac: float | None = None  # None = economic target (flag off)
-        intel_spread_mult = 1.0
-        intel_buy_offset: int | None = None
-        intel_reason = ""
-        if p.use_intelligence and regime not in (Regime.HALTED, Regime.EVENT):
-            self._last_book_ts[cid] = now
-            n_trades_1h = len(self._trade_ts.get(cid, []))
-            last_trade = max(self._trade_ts[cid]) if n_trades_1h else 0.0
-            secs_stale = (now - last_trade) if last_trade > 0 else (
-                0.0 if n_trades_1h == 0 and meta.rewards_daily_rate > 0 else 120.0
-            )
-            # If we have book updates but no trades, use book recency for stale
-            if n_trades_1h == 0 and meta.rewards_daily_rate > 0:
-                secs_stale = 0.0  # reward market with no trades yet still worth farming
-            tox = float(getattr(est.markout, "toxicity", 0.0) or 0.0)
-            feats = MarketFeatures(
-                best_bid=float(yes_view.best_bid or 0.0),
-                best_ask=float(yes_view.best_ask or 0.0),
-                mid_price=fv,
-                bid_depth=float(yes_view.best_bid_size or 0.0),
-                ask_depth=float(yes_view.best_ask_size or 0.0),
-                flow_z=float(est.flow.z),
-                vol_short=float(est.vol.short),
-                vol_long=float(getattr(est.vol, "long", est.vol.short) or est.vol.short),
-                vol_ratio=float(est.vol.ratio),
-                toxicity=tox,
-                markout_short=-tox,
-                seconds_since_last_update=secs_stale,
-                n_trades_last_hour=n_trades_1h,
-                rewards_daily_rate=float(meta.rewards_daily_rate or 0.0),
-                reward_band_cents=float(meta.rewards_max_spread or 0.0),
-            )
-            self.intel.update_features(cid, feats)
-            self.intel.update_microstructure(
-                cid,
-                float(yes_view.best_bid or 0.0),
-                float(yes_view.best_ask or 0.0),
-                float(yes_view.best_bid_size or 0.0),
-                float(yes_view.best_ask_size or 0.0),
-                now,
-            )
-            decision = self.intel.decide(cid)
-            intel_skip = not decision.should_quote
-            intel_size = float(decision.size_multiplier)
-            intel_band_frac = float(decision.buy_band_frac)
-            intel_spread_mult = max(1.0, float(decision.spread_multiplier))
-            intel_buy_offset = int(decision.buy_offset_ticks)
-            intel_reason = decision.reason
-            if not intel_skip:
-                # record placement preference for learning
-                self.intel.record_quote(cid, decision.buy_offset_ticks)
+        # Shared decision pipeline (same as replay): regime + intel + quotes.
+        n_trades_1h = len(self._trade_ts.get(cid, []))
+        last_trade = max(self._trade_ts[cid]) if n_trades_1h else 0.0
+        secs_stale = (now - last_trade) if last_trade > 0 else (
+            0.0 if n_trades_1h == 0 and meta.rewards_daily_rate > 0 else 120.0
+        )
+        if n_trades_1h == 0 and meta.rewards_daily_rate > 0:
+            secs_stale = 0.0
+        self._last_book_ts[cid] = now
 
-        # Advanced path for entries; REDUCE_ONLY needs exit legs from construct_quotes.
-        use_adv = p.use_advanced_quoting and regime is not Regime.REDUCE_ONLY and not intel_skip
+        pipe = build_targets(
+            meta=meta,
+            profile=p,
+            yes_view=yes_view,
+            no_view=(no_book.view() if no_book else BookView(None, 0.0, None, 0.0, None, None, 0.0, 0.0)),
+            pos_yes=pos_yes,
+            pos_no=pos_no,
+            est=est,
+            regime_machine=self.regime_m[cid],
+            now=now,
+            micro=micro,
+            risk_size_scale=rd.size_scale,
+            risk_halt=rd.halt,
+            risk_reduce_only=rd.reduce_only,
+            hours_to_end=hours_to_end,
+            sweep_flagged=self._sweep.pop(cid, False),
+            ws_stale=ws_stale,
+            market_resolved=cid in self._halted,
+            intel=self.intel if p.use_intelligence else None,
+            n_trades_last_hour=n_trades_1h,
+            seconds_since_last_trade=secs_stale,
+        )
+        if pipe is None:
+            return
+        tq = pipe.targets
+        fv = pipe.fv
+        regime = pipe.regime
+        attr = pipe.attribution
+        est.on_fair_value(fv, now)
+        self.risk.update_mark(yes_token, fv)
+        self.risk.update_mark(no_token, 1.0 - fv)
 
-        if use_adv:
-            bankroll = self.risk.cfg.bankroll_usdc or p.bankroll_usdc or p.q_max_usdc
-            tox = float(getattr(est.markout, "toxicity", 0.0) or 0.0)
-            adv = compute_advanced_quotes(AdvancedQuoteInputs(
-                meta=meta, fv=fv, sigma=est.vol.short,
-                yes_view=yes_view,
-                no_view=(no_book.view() if no_book else BookView(None, 0.0, None, 0.0, None, None, 0.0, 0.0)),
-                pos_yes=pos_yes, pos_no=pos_no, profile=p,
-                bankroll_usdc=float(bankroll), now=now,
-                regime=regime, toxicity=tox,
-                risk_size_scale=rd.size_scale * intel_size,
-            ))
-            yes_price = adv.bid
-            no_price = 1.0 - adv.ask
-            adv_quotes: list[Any] = []
-            if adv.size_yes_shares > 0 and 0 < yes_price < 1:
-                adv_quotes.append(Quote(
-                    token_id=meta.yes.token_id, side=Side.BUY,
-                    price=yes_price, size=adv.size_yes_shares,
-                ))
-            if adv.size_no_shares > 0 and 0 < no_price < 1:
-                adv_quotes.append(Quote(
-                    token_id=meta.no.token_id, side=Side.BUY,
-                    price=no_price, size=adv.size_no_shares,
-                ))
-            tq = TargetQuotes(cid, regime, tuple(adv_quotes))
-        else:
-            tq = construct_quotes(QuoteInputs(
-                meta=meta, regime=regime, fv=fv, vol_short=est.vol.short,
-                toxicity=est.markout.toxicity, yes_view=yes_view,
-                no_view=(no_book.view() if no_book else BookView(None, 0.0, None, 0.0, None, None, 0.0, 0.0)),
-                pos_yes=pos_yes, pos_no=pos_no, profile=p, now=now,
-                risk_size_scale=rd.size_scale,
-                intel_size_scale=intel_size,
-                intel_buy_band_frac=intel_band_frac,
-                intel_spread_mult=intel_spread_mult,
-                intel_buy_offset_ticks=intel_buy_offset,
-                intel_skip=intel_skip,
-            ))
+        intel_skip = attr.intelligence_decision == "SKIP"
+        intel_size = attr.size_multiplier
+        intel_band_frac = attr.buy_band_frac
+        intel_spread_mult = attr.spread_multiplier
+        intel_buy_offset = attr.buy_offset_ticks
+        intel_reason = attr.intel_reason
 
         live = self.state.orders_for(meta.yes.token_id) + self.state.orders_for(meta.no.token_id)
         plan = reconcile(tq, live, tick=meta.tick_size,
@@ -1080,8 +1026,12 @@ class Engine:
             paper=self.paper,
             intel_skip=intel_skip,
             intel_size=intel_size,
-            intel_band_frac=intel_band_frac,
+            intel_band_frac=intel_band_frac if intel_band_frac is not None else -1.0,
+            intel_buy_offset=intel_buy_offset if intel_buy_offset is not None else 0,
+            intel_spread_mult=intel_spread_mult,
             intel_reason=intel_reason[:120] if intel_reason else "",
+            intel_decision=attr.intelligence_decision,
+            reason_codes=",".join(attr.reason_codes),
             **inv,
         )
 
