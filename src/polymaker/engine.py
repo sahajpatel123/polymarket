@@ -42,6 +42,7 @@ from polymaker.marketdata.service import MarketDataService
 from polymaker.merge import Merger
 from polymaker.metrics import MetricsLogger, inventory_fields
 from polymaker.paper.fill_sim import FillSimulator
+from polymaker.risk.degradation import DegradationDetector
 from polymaker.risk.manager import RiskManager
 from polymaker.state.store import StateStore
 from polymaker.state.tracker import UserEventProcessor
@@ -110,9 +111,15 @@ class Engine:
         self._discovery_capital: dict[str, float] = {}
         # Intelligence / trade-judgment brain (pure; fed from book/trade/fills)
         self.intel = DecisionFramework(max_active_markets=0)
+        # Degradation: auto retreat when markout/drawdown collapses
+        self.degradation = DegradationDetector()
+        # Quarantined markets: REDUCE_ONLY (exits allowed), never HALTED
+        self._quarantined: set[str] = set()
         # Per-market trade timestamps for dead/stale detection (last hour)
         self._trade_ts: dict[str, list[float]] = {}
         self._last_book_ts: dict[str, float] = {}
+        # Inventory entry timestamps for exit urgency (token_id -> first open ts)
+        self._pos_entry_ts: dict[str, float] = {}
 
     # ── lifecycle ───────────────────────────────────────────────────────
     async def start(self) -> None:
@@ -794,19 +801,31 @@ class Engine:
         p = self.profiles.get(cid)
         token_fv = fv if fill.token_id == meta.yes.token_id else (1.0 - fv)
         est.markout.record_fill(fill.side, token_fv, fill.ts)
+        # Signed markout proxy: negative = adverse (toxicity)
+        markout = -float(getattr(est.markout, "toxicity", 0.0) or 0.0)
+        if hasattr(est.markout, "short_term_toxicity"):
+            markout = -float(est.markout.short_term_toxicity or 0.0)
         # Judgment: learn from fill edge + markout proxy (toxicity)
         if p is not None and p.use_intelligence:
             tick = max(meta.tick_size, 1e-9)
             # Offset of fill vs FV in ticks (BUY below FV → negative)
             offset = int(round((fill.price - token_fv) / tick))
             edge = (token_fv - fill.price) if fill.side is Side.BUY else (fill.price - token_fv)
-            markout = -float(getattr(est.markout, "toxicity", 0.0) or 0.0)
-            # Prefer short-horizon markout when available
-            if hasattr(est.markout, "short_term_toxicity"):
-                markout = -float(est.markout.short_term_toxicity or 0.0)
             self.intel.record_fill(cid, offset, edge, markout)
+        # Feed degradation detector (markout signed: + good for us)
+        self.degradation.state_for(cid).record_fill(markout)
+        self.degradation.global_state.record_fill(markout)
         pos_yes = self.state.position(meta.yes.token_id)
         pos_no = self.state.position(meta.no.token_id)
+        # Track entry time for exit urgency (first BUY that opens inventory)
+        if fill.side is Side.BUY:
+            pos = pos_yes if fill.token_id == meta.yes.token_id else pos_no
+            if pos.size > 0:
+                self._pos_entry_ts.setdefault(fill.token_id, fill.ts)
+        else:
+            pos = pos_yes if fill.token_id == meta.yes.token_id else pos_no
+            if pos.size <= 0:
+                self._pos_entry_ts.pop(fill.token_id, None)
         self.metrics.emit(
             "fill",
             ts=fill.ts,
@@ -963,6 +982,35 @@ class Engine:
         # Scale sizes to risk bankroll when set (capital-adaptive profiles).
         p = self.risk.cfg.scale_profile_sizes(p)
 
+        # Degradation detector: cut size / quarantine / baseline fallback.
+        # Quarantine = REDUCE_ONLY (exits still place). Never HALT for quarantine
+        # or inventory is trapped with empty targets.
+        gs = self.degradation.global_state
+        gs.equity = self.risk.equity
+        gs.day_start_equity = self.risk.day_start_equity
+        # Intel confidence from last decision if present, else 1.0 when off
+        intel_conf = 1.0
+        if p.use_intelligence:
+            st_intel = self.intel.get_state(cid)
+            if st_intel.last_decision is not None:
+                # Map AS risk + opportunity into [0,1] confidence proxy
+                as_r = float(st_intel.last_decision.adverse_selection_risk or 0.0)
+                intel_conf = max(0.0, min(1.0, 1.0 - as_r))
+            else:
+                # Cold start: low sample → moderate confidence
+                n_dec = int(st_intel.n_decisions or 0)
+                intel_conf = 0.5 if n_dec < 5 else 0.8
+        deg = self.degradation.evaluate(cid, intelligence_confidence=intel_conf)
+        if deg.halt:
+            rd = type(rd)(halt=True, reduce_only=True, size_scale=0.0, reason=deg.reason)
+        if deg.quarantine:
+            self._quarantined.add(cid)
+        quarantined = cid in self._quarantined
+        # Quarantine → reduce_only (entries off, exits on). Size scale stays
+        # 1.0 so exit legs are not zeroed; non-quarantine applies deg cut.
+        size_scale = rd.size_scale * (1.0 if quarantined else float(deg.size_multiplier))
+        use_intel = p.use_intelligence and not deg.use_baseline_profile and not quarantined
+
         # Shared decision pipeline (same as replay): regime + intel + quotes.
         n_trades_1h = len(self._trade_ts.get(cid, []))
         last_trade = max(self._trade_ts[cid]) if n_trades_1h else 0.0
@@ -972,6 +1020,18 @@ class Engine:
         if n_trades_1h == 0 and meta.rewards_daily_rate > 0:
             secs_stale = 0.0
         self._last_book_ts[cid] = now
+
+        # Exit urgency: same formula as replay (hold time + toxicity bump)
+        def _urgency(token_id: str, size: float) -> float:
+            if size <= 0:
+                return 0.0
+            t0 = self._pos_entry_ts.get(token_id, now)
+            hold = max(0.0, now - t0)
+            base = min(1.0, hold / max(p.exit_urgency_s, 1.0))
+            tox = float(getattr(est.markout, "toxicity", 0.0) or 0.0)
+            if tox > 0.02:
+                base = min(1.0, base + 0.35)
+            return base
 
         pipe = build_targets(
             meta=meta,
@@ -984,16 +1044,19 @@ class Engine:
             regime_machine=self.regime_m[cid],
             now=now,
             micro=micro,
-            risk_size_scale=rd.size_scale,
+            risk_size_scale=size_scale,
+            # Quarantine must NOT set risk_halt — that empties exits.
             risk_halt=rd.halt,
-            risk_reduce_only=rd.reduce_only,
+            risk_reduce_only=rd.reduce_only or quarantined or deg.quarantine,
             hours_to_end=hours_to_end,
             sweep_flagged=self._sweep.pop(cid, False),
             ws_stale=ws_stale,
             market_resolved=cid in self._halted,
-            intel=self.intel if p.use_intelligence else None,
+            intel=self.intel if use_intel else None,
             n_trades_last_hour=n_trades_1h,
             seconds_since_last_trade=secs_stale,
+            yes_exit_urgency=_urgency(yes_token, pos_yes.size),
+            no_exit_urgency=_urgency(no_token, pos_no.size),
         )
         if pipe is None:
             return
@@ -1083,12 +1146,18 @@ class Engine:
             else:
                 placed = await self.gateway.place(plan.to_place, meta)
                 placed_n = len(placed)
-                self.risk.note_order_result(len(placed) == len(plan.to_place))
+                ok_place = len(placed) == len(plan.to_place)
+                self.risk.note_order_result(ok_place)
+                # Degradation paths: fill-rate + order-error rate
+                self.degradation.global_state.record_order_result(ok_place)
+                self.degradation.state_for(cid).record_order_result(ok_place)
                 reward_band = meta.rewards_max_spread / 100.0
                 for o in placed:
                     self.state.upsert_order(o)
                     if self.paper:
                         self._fill_sim.place(o)
+                    self.degradation.state_for(cid).record_quote()
+                    self.degradation.global_state.record_quote()
                     mid_tok = fv if o.token_id == meta.yes.token_id else (1.0 - fv)
                     in_band = reward_band > 0 and abs(o.price - mid_tok) <= reward_band
                     self.metrics.emit(

@@ -6,6 +6,7 @@ from polymaker.benchmark.validity import (
     ValidityConfig,
     ValidityResult,
     evaluate_benchmark,
+    evaluate_financial_claim,
 )
 
 __all__ = [
@@ -15,4 +16,5 @@ __all__ = [
     "ValidityResult",
     "check_capital_feasibility",
     "evaluate_benchmark",
+    "evaluate_financial_claim",
 ]

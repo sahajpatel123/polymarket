@@ -52,8 +52,12 @@ class FillSimulator:
         self._orders: dict[str, _Resting] = {}  # order_id -> resting
         self._fill_seq: int = 0
 
-    def place(self, order: OpenOrder) -> None:
-        """Register a newly placed order for matching."""
+    def place(self, order: OpenOrder, **_kwargs: object) -> None:
+        """Register a newly placed order for matching.
+
+        Extra kwargs (e.g. ts=, queue_ahead=) are ignored — accepted so
+        callers can use the same place() signature as queue-aware sims.
+        """
         self._orders[order.order_id] = _Resting(
             token_id=order.token_id,
             side=order.side,

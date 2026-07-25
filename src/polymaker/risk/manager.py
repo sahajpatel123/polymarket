@@ -74,6 +74,11 @@ class RiskManager:
     def daily_pnl(self) -> float:
         return self.equity - self._day_start_equity
 
+    @property
+    def day_start_equity(self) -> float:
+        """Equity snapshot at last reset_day() — used by degradation detector."""
+        return self._day_start_equity
+
     def reset_day(self) -> None:
         self._day_start_equity = self.equity
 

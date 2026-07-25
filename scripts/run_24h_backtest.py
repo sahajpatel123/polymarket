@@ -44,6 +44,7 @@ from polymaker.benchmark import (
     ValidityConfig,
     check_capital_feasibility,
     evaluate_benchmark,
+    evaluate_financial_claim,
 )
 from polymaker.config import Config, RiskConfig, StrategyProfile
 from polymaker.domain import MarketMeta, TokenMeta
@@ -432,20 +433,7 @@ def scale_profile_for_bankroll(
     scaled.base_size_usdc = max(1.0, scaled.base_size_usdc * scale_factor)
     scaled.q_max_usdc = max(1.0, scaled.q_max_usdc * scale_factor)
     scaled.bankroll_usdc = bankroll
-
-    # Floor: at least one min-share order notional if capital can support it
-    min_shares = max(min_order_size, rewards_min_size)
-    min_notional = min_shares * typical_price
-    cap = check_capital_feasibility(
-        bankroll=bankroll,
-        exchange_min_shares=min_order_size,
-        reward_min_shares=rewards_min_size,
-        typical_price=typical_price,
-        layers=max(1, scaled.layers),
-    )
-    if cap.ok and scaled.base_size_usdc < min_notional:
-        scaled.base_size_usdc = min_notional
-        scaled.q_max_usdc = max(scaled.q_max_usdc, min_notional * 2)
+    
     return scaled
 
 
@@ -503,12 +491,14 @@ def run_single_market_backtest(
     if not cap.ok:
         print("STATUS: INSUFFICIENT_CAPITAL — refusing silent zero-trade run")
 
-    # Run replay
+    # Run replay — conservative fills for financial claims (not optimistic lottery)
+    fill_mode = "conservative"
     result = run_replay(
         journal_path=journal_path,
         meta=meta,
         profile=profile,
         metrics_path=metrics_path,
+        fill_mode=fill_mode,
     )
     
     print(f"\nReplay Statistics:")
@@ -554,16 +544,36 @@ def run_single_market_backtest(
     
     # Analyze metrics
     report = analyze(metrics_path)
+    honest = report.honest_pnl or {}
+    financial = evaluate_financial_claim(
+        validity=validity,
+        honest_pnl=honest,
+        fill_mode=fill_mode,
+    )
     
     print(f"\nMetrics Analysis:")
     print(f"  Fills: {report.n_fill}")
-    print(f"  Realized Spread: ${report.realized_spread_usdc:.4f}")
-    print(f"  Reward Accrual: ${sum(report.reward_accrual_usdc.values()):.4f}")
+    print(f"  Instant spread (mid-edge): ${report.realized_spread_usdc:.4f}")
+    print(f"  Monopoly reward (diagnostic): ${sum(report.reward_accrual_usdc.values()):.4f}")
     print(f"  Inventory Drift: {report.inventory_drift_abs_peak:.4f}")
     print(f"  Markout (30s): {report.markout.get('30s', 0.0):.6f}")
+    print(f"\nHonest PnL (do not promote on monopoly alone):")
+    print(f"  Without rewards (AS-adj): ${float(honest.get('pnl_without_rewards_usdc') or 0):.4f}")
+    print(f"  + conservative rewards:   ${float(honest.get('pnl_conservative_usdc') or 0):.4f}")
+    print(f"  + base rewards:           ${float(honest.get('pnl_base_usdc') or 0):.4f}")
+    print(f"  + optimistic rewards:     ${float(honest.get('pnl_optimistic_usdc') or 0):.4f}")
+    print(f"  monopoly diagnostic:      ${float(honest.get('pnl_monopoly_diagnostic_usdc') or 0):.4f}")
+    print(f"  financial_claim_ok:       {honest.get('financial_claim_ok')}")
+    print(f"  blockers:                 {honest.get('claim_blockers')}")
+    print(f"\nFinancial validity: {financial.status.value}")
+    for reason in financial.reasons:
+        print(f"  - {reason}")
+    if financial.status is not BenchmarkStatus.PASS:
+        print("STATUS: NOT A FINANCIAL PASS — synthetic monopoly jackpots rejected")
     
     # Attach validity for report writers (duck-typed)
     result.validity = validity  # type: ignore[attr-defined]
+    result.financial_validity = financial  # type: ignore[attr-defined]
     return result, report
 
 
@@ -572,10 +582,17 @@ def estimate_daily_return(
     bankroll: float,
     runtime_hours: float,
 ) -> dict[str, float]:
-    """Estimate daily return metrics."""
-    total_reward = sum(report.reward_accrual_usdc.values())
+    """Estimate daily return metrics using *honest* conservative path by default.
+
+    Monopoly total_pnl is retained only as diagnostic; daily_return_pct uses
+    conservative (AS-adjusted + 1% reward share).
+    """
+    honest = report.honest_pnl or {}
+    total_reward_mono = sum(report.reward_accrual_usdc.values())
     total_spread = report.realized_spread_usdc
-    total_pnl = total_spread + total_reward
+    total_pnl_mono = total_spread + total_reward_mono
+    total_pnl_cons = float(honest.get("pnl_conservative_usdc") or report.realized_spread_usdc)
+    without = float(honest.get("pnl_without_rewards_usdc") or report.realized_spread_usdc)
     
     # Normalize to 24 hours
     if runtime_hours > 0:
@@ -583,16 +600,20 @@ def estimate_daily_return(
     else:
         daily_factor = 1.0
     
-    daily_pnl = total_pnl * daily_factor
+    daily_pnl = total_pnl_cons * daily_factor
     daily_return_pct = (daily_pnl / bankroll) * 100 if bankroll > 0 else 0.0
     
     return {
-        "total_pnl_usdc": total_pnl,
+        "total_pnl_usdc": total_pnl_cons,
+        "total_pnl_monopoly_diagnostic_usdc": total_pnl_mono,
         "total_spread_usdc": total_spread,
-        "total_rewards_usdc": total_reward,
+        "total_rewards_usdc": float(honest.get("reward_conservative_usdc") or 0.0),
+        "total_rewards_monopoly_diagnostic_usdc": total_reward_mono,
+        "pnl_without_rewards_usdc": without,
         "daily_pnl_usdc": daily_pnl,
         "daily_return_pct": daily_return_pct,
         "runtime_hours": runtime_hours,
+        "honest_pnl": honest,
     }
 
 

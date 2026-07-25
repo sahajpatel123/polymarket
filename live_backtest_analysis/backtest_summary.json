@@ -1,0 +1,168 @@
+{
+  "profile": "live_scaled",
+  "bankroll_usdc": 30.0,
+  "runtime_hours": 3.550531,
+  "spread_usdc": 0.0,
+  "reward_pool_usdc": 4.514565,
+  "reward_our_usdc": 0.046016,
+  "rebate_est_usdc": 0.0,
+  "total_est_usdc": 0.046016,
+  "period_return_pct": 0.00153387,
+  "daily_return_pct": 0.01036825,
+  "gap_to_15pct": 0.13963175,
+  "target_band_hit": false,
+  "n_fill": 0,
+  "estimate_is_reward_only": true,
+  "oob_check": {
+    "quotes": 99,
+    "dust_le_0.001": 0,
+    "oob": 0,
+    "ok": true
+  },
+  "results": [
+    {
+      "condition_id": "0x0f49db97f71c68b1e42a6d16e3de93d85dbf7d4148e3f018eb79e88554be9f75",
+      "profile": "live_scaled",
+      "bankroll_usdc": 30.0,
+      "replay": {
+        "events_read": 28696,
+        "events_applied": 11765,
+        "recomputes": 11765,
+        "n_quote": 37,
+        "n_cancel": 37,
+        "n_fill": 0,
+        "n_mark": 11765
+      },
+      "metrics": {
+        "path": "live_backtest_analysis/metrics_0x0f49db97f7.jsonl",
+        "n_lines": 11840,
+        "n_bad": 0,
+        "n_quote": 37,
+        "n_cancel": 37,
+        "n_fill": 0,
+        "n_mark": 11765,
+        "markets": [
+          "0x0f49db97f71c68b1e42a6d16e3de93d85dbf7d4148e3f018eb79e88554be9f75"
+        ],
+        "realized_spread_usdc": 0.0,
+        "markout_mean": {
+          "30s": 0.0,
+          "120s": 0.0,
+          "300s": 0.0
+        },
+        "markout_n": {
+          "30s": 0,
+          "120s": 0,
+          "300s": 0
+        },
+        "inventory_drift_abs_peak": 0.0,
+        "inventory_net_end": {
+          "0x0f49db97f71c68b1e42a6d16e3de93d85dbf7d4148e3f018eb79e88554be9f75": 0.0
+        },
+        "reward_accrual_usdc": {
+          "0x0f49db97f71c68b1e42a6d16e3de93d85dbf7d4148e3f018eb79e88554be9f75": 2.210011
+        },
+        "rebate_pool_daily_usdc": {},
+        "mean_resting_notional_usdc": {
+          "0x0f49db97f71c68b1e42a6d16e3de93d85dbf7d4148e3f018eb79e88554be9f75": 13.352428
+        },
+        "in_band_seconds": {
+          "0x0f49db97f71c68b1e42a6d16e3de93d85dbf7d4148e3f018eb79e88554be9f75": 892.266
+        },
+        "n_dust_quotes": 0,
+        "n_oob_quotes": 0,
+        "n_in_band_quotes": 37,
+        "brier_score": 0.541898,
+        "log_loss": 1.385747,
+        "expected_calibration_error": 0.633385,
+        "ev_per_quote_usdc": 0.05973
+      },
+      "pnl_estimate": {
+        "spread_usdc": 0.0,
+        "reward_pool_usdc": 2.210011,
+        "in_band_seconds": 892.266,
+        "mean_resting_notional_usdc": 13.3524,
+        "reward_our_usdc": 0.024305,
+        "our_reward_share": 0.010998,
+        "rebate_est_usdc": 0.0,
+        "total_est_usdc": 0.024305,
+        "runtime_hours": 3.550531,
+        "daily_return_pct": 0.01216957,
+        "gap_to_15pct": 0.13783043,
+        "target_band_hit": false
+      }
+    },
+    {
+      "condition_id": "0x18b1c135d0a40c5894da9412e77311827d9caf16cf4cd6591b247a34730af919",
+      "profile": "live_scaled",
+      "bankroll_usdc": 30.0,
+      "replay": {
+        "events_read": 28696,
+        "events_applied": 15709,
+        "recomputes": 15708,
+        "n_quote": 62,
+        "n_cancel": 60,
+        "n_fill": 0,
+        "n_mark": 15708
+      },
+      "metrics": {
+        "path": "live_backtest_analysis/metrics_0x18b1c135d0.jsonl",
+        "n_lines": 15831,
+        "n_bad": 0,
+        "n_quote": 62,
+        "n_cancel": 60,
+        "n_fill": 0,
+        "n_mark": 15708,
+        "markets": [
+          "0x18b1c135d0a40c5894da9412e77311827d9caf16cf4cd6591b247a34730af919"
+        ],
+        "realized_spread_usdc": 0.0,
+        "markout_mean": {
+          "30s": 0.0,
+          "120s": 0.0,
+          "300s": 0.0
+        },
+        "markout_n": {
+          "30s": 0,
+          "120s": 0,
+          "300s": 0
+        },
+        "inventory_drift_abs_peak": 0.0,
+        "inventory_net_end": {
+          "0x18b1c135d0a40c5894da9412e77311827d9caf16cf4cd6591b247a34730af919": 0.0
+        },
+        "reward_accrual_usdc": {
+          "0x18b1c135d0a40c5894da9412e77311827d9caf16cf4cd6591b247a34730af919": 2.304554
+        },
+        "rebate_pool_daily_usdc": {},
+        "mean_resting_notional_usdc": {
+          "0x18b1c135d0a40c5894da9412e77311827d9caf16cf4cd6591b247a34730af919": 19.548237
+        },
+        "in_band_seconds": {
+          "0x18b1c135d0a40c5894da9412e77311827d9caf16cf4cd6591b247a34730af919": 1618.809
+        },
+        "n_dust_quotes": 0,
+        "n_oob_quotes": 0,
+        "n_in_band_quotes": 62,
+        "brier_score": 0.290054,
+        "log_loss": 0.773787,
+        "expected_calibration_error": 0.327679,
+        "ev_per_quote_usdc": 0.03717
+      },
+      "pnl_estimate": {
+        "spread_usdc": 0.0,
+        "reward_pool_usdc": 2.304554,
+        "in_band_seconds": 1618.809,
+        "mean_resting_notional_usdc": 13.5,
+        "reward_our_usdc": 0.021711,
+        "our_reward_share": 0.009421,
+        "rebate_est_usdc": 0.0,
+        "total_est_usdc": 0.021711,
+        "runtime_hours": 3.549765,
+        "daily_return_pct": 0.01087334,
+        "gap_to_15pct": 0.13912666,
+        "target_band_hit": false
+      }
+    }
+  ]
+}

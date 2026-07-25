@@ -42,6 +42,7 @@ from polymaker.marketdata.parse import (
 )
 from polymaker.metrics import MetricsLogger, inventory_fields
 from polymaker.paper.fill_sim import FillSimulator
+from polymaker.paper.queue_fill_sim import FillMode, make_fill_simulator
 from polymaker.strategy.decision_pipeline import build_targets
 from polymaker.strategy.estimators import (
     FlowEstimator,
@@ -67,6 +68,7 @@ class ReplayResult:
     overfills: int = 0
     final_equity: float = 0.0
     final_cash: float = 0.0
+    fill_mode: str = "conservative"
 
 
 @dataclass
@@ -85,7 +87,9 @@ class ReplayState:
     n_cancel: int = 0
     n_mark: int = 0
     recomputes: int = 0
-    fill_sim: FillSimulator = field(default_factory=FillSimulator)
+    # Promotion default is conservative; pass fill_mode to run_replay to override.
+    fill_sim: Any = field(default=None)
+    fill_mode: str = "conservative"
     n_fill: int = 0
     intel: DecisionFramework = field(default_factory=DecisionFramework)
     trade_ts: list[float] = field(default_factory=list)
@@ -98,6 +102,8 @@ class ReplayState:
     # Seen trade print ids for dedupe (asset, ts, price, size, side)
     _seen_trades: set[str] = field(default_factory=set)
     strict_sync: bool = True
+    # Inventory entry times for exit urgency (token_id -> first fill ts)
+    pos_entry_ts: dict[str, float] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.pos_yes = Position(self.meta.yes.token_id)
@@ -110,6 +116,8 @@ class ReplayState:
             flow=FlowEstimator(p.flow_ewma_halflife_s),
             markout=MarkoutTracker(),
         )
+        if self.fill_sim is None:
+            self.fill_sim = make_fill_simulator(self.fill_mode)
 
 
 def assert_order_sync(st: ReplayState) -> list[str]:
@@ -302,6 +310,18 @@ def _recompute(st: ReplayState, now: float) -> None:
     last_trade = max(st.trade_ts) if st.trade_ts else 0.0
     secs_stale = (now - last_trade) if last_trade > 0 else 0.0
 
+    # Exit urgency: grow with hold time / exit_urgency_s; toxic markout bumps more.
+    def _urgency(token_id: str, size: float) -> float:
+        if size <= 0:
+            return 0.0
+        t0 = st.pos_entry_ts.get(token_id, now)
+        hold = max(0.0, now - t0)
+        base = min(1.0, hold / max(p.exit_urgency_s, 1.0))
+        tox = float(getattr(st.est.markout, "toxicity", 0.0) or 0.0)
+        if tox > 0.02:
+            base = min(1.0, base + 0.35)
+        return base
+
     result = build_targets(
         meta=meta,
         profile=p,
@@ -316,6 +336,8 @@ def _recompute(st: ReplayState, now: float) -> None:
         intel=st.intel if p.use_intelligence else None,
         n_trades_last_hour=n_trades,
         seconds_since_last_trade=secs_stale,
+        yes_exit_urgency=_urgency(meta.yes.token_id, st.pos_yes.size),
+        no_exit_urgency=_urgency(meta.no.token_id, st.pos_no.size),
     )
     if result is None:
         return
@@ -382,9 +404,9 @@ def _recompute(st: ReplayState, now: float) -> None:
         if oid in st.live or oid in st.fill_sim.order_ids():
             # Uniqueness: recompute index + place index should be unique
             oid = f"replay-{st.recomputes}-{i}-{len(st.live)}"
-        o = OpenOrder(oid, q.token_id, q.side, q.price, q.size)
+        o = OpenOrder(oid, q.token_id, q.side, q.price, q.size, created_ts=now)
         st.live[oid] = o
-        st.fill_sim.place(o)
+        st.fill_sim.place(o, ts=now)
         mid_tok = fv if q.token_id == meta.yes.token_id else (1.0 - fv)
         in_band = reward_band > 0 and abs(q.price - mid_tok) <= reward_band
         st.metrics.emit(
@@ -434,6 +456,11 @@ def _apply_replay_fill(st: ReplayState, fill: Fill, *, fv_for_markout: float | N
 
     st.ledger.apply_fill(fill)
     _sync_live_after_fill(st, fill)
+    # Track entry time for exit urgency (first fill that opens inventory)
+    if fill.side is Side.BUY and pos.size > 0:
+        st.pos_entry_ts.setdefault(fill.token_id, fill.ts)
+    if pos.size <= 0:
+        st.pos_entry_ts.pop(fill.token_id, None)
 
     if fv_for_markout is not None:
         token_fv = (
@@ -573,9 +600,14 @@ def run_replay(
     metrics_path: Path,
     *,
     strict_sync: bool = True,
+    fill_mode: str = "conservative",
 ) -> ReplayResult:
+    """Replay journal. Default fill_mode=conservative for financial claims.
+
+    Use fill_mode='optimistic' only as an upper-bound diagnostic.
+    """
     rows = load_journal(journal_path)
-    st = ReplayState(meta=meta, profile=profile)
+    st = ReplayState(meta=meta, profile=profile, fill_mode=fill_mode)
     st.strict_sync = strict_sync
     st.metrics = MetricsLogger(metrics_path, enabled=True)
     first_ts = float(rows[0].get("ts") or 0.0) if rows else 0.0
@@ -589,6 +621,7 @@ def run_replay(
         rewards_min_size=meta.rewards_min_size,
         rebate_rate=meta.rebate_rate,
         tick_size=meta.tick_size,
+        fill_mode=fill_mode,
     )
     st.ledger.reset_day()
 
@@ -616,6 +649,7 @@ def run_replay(
         overfills=st.overfills,
         final_equity=st.ledger.equity(),
         final_cash=st.ledger.cash,
+        fill_mode=fill_mode,
     )
 
 

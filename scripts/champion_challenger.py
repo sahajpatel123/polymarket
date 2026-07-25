@@ -82,7 +82,10 @@ def main() -> int:
         if name in cfg.profiles:
             profile = cfg.profiles[name]
         mpath = args.out.parent / f"cc_{name}_metrics.jsonl"
-        rr = run_replay(args.journal, meta, profile, mpath, strict_sync=True)
+        rr = run_replay(
+            args.journal, meta, profile, mpath,
+            strict_sync=True, fill_mode="conservative",
+        )
         validity = evaluate_benchmark(
             n_quote=rr.n_quote,
             n_fill=rr.n_fill,

@@ -132,3 +132,50 @@ def evaluate_benchmark(
         )
 
     return ValidityResult(BenchmarkStatus.PASS, ["all gates met"], metrics)
+
+
+def evaluate_financial_claim(
+    *,
+    validity: ValidityResult,
+    honest_pnl: dict | None,
+    fill_mode: str = "optimistic",
+) -> ValidityResult:
+    """Stricter gate for *financial* PASS (promotion language).
+
+    Requires validity PASS + conservative/base fill mode + honest PnL that
+    is not monopoly-only positive.
+    """
+    metrics = dict(validity.metrics)
+    metrics["fill_mode"] = fill_mode
+    metrics["honest_pnl"] = honest_pnl or {}
+
+    if validity.status is BenchmarkStatus.FAIL:
+        return ValidityResult(BenchmarkStatus.FAIL, validity.reasons, metrics)
+
+    blockers: list[str] = []
+    if fill_mode == "optimistic":
+        blockers.append("fill_mode=optimistic_not_promotion_grade")
+    if honest_pnl:
+        if honest_pnl.get("financial_claim_ok") is False:
+            blockers.extend(honest_pnl.get("claim_blockers") or ["honest_pnl_not_ok"])
+        # Monopoly jackpot without without-rewards edge
+        mono = float(honest_pnl.get("pnl_monopoly_diagnostic_usdc") or 0)
+        without = float(honest_pnl.get("pnl_without_rewards_usdc") or 0)
+        if mono > 0 and without <= 0:
+            blockers.append("monopoly_only_positive_pnl")
+    else:
+        blockers.append("missing_honest_pnl")
+
+    if blockers:
+        return ValidityResult(
+            BenchmarkStatus.INSUFFICIENT_DATA,
+            blockers,
+            metrics,
+        )
+    if validity.status is not BenchmarkStatus.PASS:
+        return ValidityResult(validity.status, validity.reasons, metrics)
+    return ValidityResult(
+        BenchmarkStatus.PASS,
+        ["financial gates met (conservative fills + honest pnl)"],
+        metrics,
+    )

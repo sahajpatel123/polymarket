@@ -48,6 +48,9 @@ class MetricsReport:
     log_loss: float = 0.693147
     expected_calibration_error: float = 0.0
     ev_per_quote_usdc: float = 0.0
+    # Honest PnL decomposition (never promote on monopoly alone)
+    honest_pnl: dict[str, Any] = field(default_factory=dict)
+    total_fill_shares: float = 0.0
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -79,6 +82,8 @@ class MetricsReport:
             "log_loss": round(self.log_loss, 6),
             "expected_calibration_error": round(self.expected_calibration_error, 6),
             "ev_per_quote_usdc": round(self.ev_per_quote_usdc, 6),
+            "total_fill_shares": round(self.total_fill_shares, 4),
+            "honest_pnl": dict(self.honest_pnl),
         }
 
 
@@ -108,7 +113,8 @@ def load_events(path: Path) -> tuple[list[dict[str, Any]], int, int]:
 
 
 def analyze(path: Path) -> MetricsReport:
-    events, n_lines, n_bad = load_events(path)
+    raw_events, n_lines, n_bad = load_events(path)
+    events = raw_events  # preserved for honest_pnl (must not rebind)
     rep = MetricsReport(path=str(path), n_lines=n_lines, n_bad=n_bad)
 
     marks_by_cid: dict[str, list[tuple[float, float]]] = {}
@@ -223,12 +229,15 @@ def analyze(path: Path) -> MetricsReport:
             price = float(e.get("price") or 0.0)
             size = float(e.get("size") or 0.0)
             side = str(e.get("side") or "")
+            if size > 0:
+                rep.total_fill_shares += size
             mid = e.get("mid")
             if mid is None:
                 mid = e.get("fv")
             if mid is not None and size > 0:
                 m = float(mid)
                 # maker BUY below mid earns (mid - price); SELL above mid earns (price - mid)
+                # NOTE: this is *instant* mid-edge, not closed PnL — see honest_pnl.
                 if side == "BUY":
                     rep.realized_spread_usdc += (m - price) * size
                 elif side == "SELL":
@@ -290,14 +299,16 @@ def analyze(path: Path) -> MetricsReport:
             rep.reward_accrual_usdc[cid] = 0.0
             rep.in_band_seconds[cid] = 0.0
             continue
-        events: list[tuple[float, bool | None]] = [(t, b) for t, b in samples]
+        # Monopoly diagnostic accrual (100% of pool while in-band).
+        # Honest views in honest_pnl apply competition shares + size eligibility.
+        timeline: list[tuple[float, bool | None]] = [(t, b) for t, b in samples]
         for t, _ in marks_by_cid.get(cid, []):
-            events.append((t, None))
-        events.sort(key=lambda x: x[0])
+            timeline.append((t, None))
+        timeline.sort(key=lambda x: x[0])
         in_band_s = 0.0
         last_t: float | None = None
         last_in_band = False
-        for t, flag in events:
+        for t, flag in timeline:
             if last_t is not None and last_in_band:
                 in_band_s += max(0.0, t - last_t)
             if flag is not None:
@@ -343,12 +354,17 @@ def analyze(path: Path) -> MetricsReport:
     total_rewards = sum(rep.reward_accrual_usdc.values())
     total_rebates = sum(rep.rebate_pool_daily_usdc.values())
     m30 = rep.markout.get("30s", 0.0)
-    as_cost = max(0.0, -m30) * rep.n_fill
+    as_cost = max(0.0, -m30) * rep.total_fill_shares
+    # EV per quote uses *base* competition share rewards (5%), not monopoly
+    from polymaker.metrics.honest_pnl import honest_pnl_from_report, REWARD_SHARE_BASE
+
+    honest = honest_pnl_from_report(rep, events=raw_events)
+    rep.honest_pnl = honest.as_dict()
     rep.ev_per_quote_usdc = expected_value_per_quote(
-        spread_capture_usdc=rep.realized_spread_usdc,
-        reward_accrual_usdc=total_rewards,
-        rebate_usdc=total_rebates,
-        adverse_selection_cost_usdc=as_cost,
+        spread_capture_usdc=honest.as_adjusted_spread_usdc,
+        reward_accrual_usdc=honest.reward_base_usdc,
+        rebate_usdc=total_rebates * REWARD_SHARE_BASE,
+        adverse_selection_cost_usdc=max(0.0, -honest.as_adjusted_spread_usdc + honest.instant_spread_usdc),
         n_quotes=rep.n_quote,
     )
 
