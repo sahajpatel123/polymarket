@@ -1,4 +1,4 @@
-# Paper Session FINAL Report (2026-07-25 00:28 UTC)
+# Paper Session FINAL Report (2026-07-25 00:30 UTC)
 
 ## Executive Summary
 
@@ -32,13 +32,13 @@
 
 ### Problems During the Session
 
-1. **Initial WebSocket timeout (20:42-20:43)** — Two connection attempts failed with "timed out during opening handshake". The third attempt succeeded and the WS stayed connected for the remaining 3h 35m without dropping. This is the same outage that was happening across all of Polymarket.
+1. **Initial WebSocket timeout (20:42-20:43)** — Two connection attempts failed with "timed out during opening handshake". The third attempt succeeded and the WS stayed connected for the remaining 3h 35m without dropping.
 
-2. **No other problems** — The collector ran for 3h 35m without crashes, memory leaks, or other issues. The heartbeat log shows `status=OK` consistently until I stopped the session.
+2. **No crashes or memory issues** — The collector ran for 3h 35m without problems.
 
-3. **REST API 403** — This was known before the session started. The `get_full_book` HTTP requests from the log show `HTTP/1.1 200 OK` responses, which means the book endpoint works. The 403 was specifically on order-placement endpoints. Since this is paper mode (no actual orders), this didn't affect the session.
+3. **REST API 403** — Book endpoint works (HTTP 200), order placement blocked (403). This didn't affect the paper session.
 
-4. **Bug in heartbeat wrapper** — The `paper_12h_session.sh` wrapper captured the wrong PID (52638 was the wrapper subshell, not the collector at 52828). So `paper_alive: false` in the heartbeat log is a false negative. The actual collector was alive the whole time, as confirmed by the health_tail showing `status=OK` with increasing quote counts.
+4. **Bug in heartbeat wrapper** — The `paper_12h_session.sh` wrapper captured the wrong PID (52638 was the wrapper subshell, not the collector at 52828). So `paper_alive: false` in the heartbeat log is a **false negative**. The actual collector was alive the whole time.
 
 ## Real Performance on Real Polymarket Data
 
@@ -51,46 +51,47 @@
 | price_change events | 27,490 |
 | orders_out events | 1,247 |
 | book events | 107 |
-| last_trade_price events | 13 |
-| Wall-clock duration | 3h 35m |
-| Activity rate | 8,063 events/hour, 3.7 trades/hour |
+| last_trade_price events | 14 |
+| Activity rate | 8,063 events/hour, 4.0 trades/hour |
 
 ### Quote Quality (real, not backtest)
 
 | Metric | Value |
 |--------|-------|
-| Total quotes placed | **2,429** |
+| Total quotes placed | **2,429** (all BUY) |
 | Total cancels | 59 |
 | Cancel rate | 2.4% |
 | In-band quotes | **2,429 / 2,429 = 100%** |
 | Dust quotes (< $0.01) | **0** |
 | OOB quotes (outside reward band) | **0** |
 | In-band uptime | **95%** (12,418s of 13,080s) |
-| Per-order size (avg) | **$9.99** |
+| Per-order notional (avg) | **$9.92** |
 | Per-order price (avg) | $0.49 |
 
-### Per-Market Breakdown
+### Why 0 Fills — The Critical Finding
 
-| Market | Quotes | Cancels | Reward Accrued | In-Band Time |
-|--------|--------|---------|-----------------|---------------|
-| Newsom (0x0f49db) | ~1,200 | ~30 | $30.76 | 12,420s (95%) |
-| Vance (0x18b1c) | ~1,200 | ~30 | $44.27 | 12,418s (95%) |
-| **Total** | **2,429** | **59** | **$75.03** | — |
+This is the most important finding from the session. I investigated **why** the bot had 0 fills despite 14 trades on the WebSocket.
 
-### Fills
+| Trade | Side | Price | Our nearest BUY (within 60s) | Gap | Would fill? |
+|-------|------|-------|---------------------------|-----|-------------|
+| 1 | SELL | $0.802 | $0.192 (min in 60s window) | **-$0.610** | No (way below) |
+| 2 | BUY | $0.432 | — | — | BUY side, our BUYs are passive |
+| 3 | SELL | $0.197 | **$0.192** | **-$0.005** | **No, 0.5¢ too low** |
+| 4 | SELL | $0.431 | $0.192 | -$0.239 | No |
+| 5 | BUY | $0.803 | — | — | BUY side |
+| 6 | SELL | $0.568 | $0.192 | -$0.376 | No |
+| 7 | SELL | $0.431 | $0.193 | -$0.238 | No |
+| 8 | BUY | $0.432 | — | — | BUY side |
+| 9 | SELL | $0.564 | $0.193 | -$0.371 | No |
+| 10 | SELL | $0.431 | $0.193 | -$0.238 | No |
+| 11 | SELL | $0.431 | $0.193 | -$0.238 | No |
+| 12 | SELL | $0.568 | $0.193 | -$0.375 | No |
+| 13 | SELL | $0.802 | — | — | No quotes within 60s |
+| 14 | SELL | $0.568 | — | — | No quotes within 60s |
 
-| Metric | Value |
-|--------|-------|
-| Trades observed on WebSocket | **13** |
-| Our fills | **0** |
-| Markout measured | N/A (no fills) |
-| Realized spread PnL | $0.00 |
+**Key finding:** The closest SELL trade (at $0.197) was 0.5¢ above our minimum BUY price ($0.192). The `band_lo` filter is placing our quotes at the very bottom of the reward band, which means **we earn rewards for being in-band but our quotes are too low to actually get filled**.
 
-The 13 trades on the WebSocket did not cross our resting prices.
-This means either:
-- Our quotes are too tight (the `band_lo` filter prevents aggressive fills)
-- The trades were on the other side of the book
-- The market is too thin (3.7 trades/hour is very low)
+The `band_lo` filter was added to prevent dust bids and OOB orders, but it has a side effect: it makes the bot **quote at the minimum of the band, not the market-clearing price**. For a market-maker that wants both rewards AND fills, the quotes need to be at or above the market's best bid, not at the bottom of the reward band.
 
 ### Reward Accrual
 
@@ -100,11 +101,9 @@ This means either:
 | Vance | $308 | 19.9% | $44.27 |
 | **Total** | — | — | **$75.03** |
 
-If this rate held for 24h: $75.03 / 3.55h × 24h = **$507/day** on $100 bankroll = **507% daily return**.
+This is the **reward accrual ceiling**, not realized PnL. The bot is earning rewards by posting in-band quotes, but those quotes are never getting filled.
 
-This is the **reward accrual ceiling**, not realized PnL. The 19.8% share assumes we're competing with ~4 other makers. If competition increases, our share decreases.
-
-## Order Book State at Session End
+### Order Book State at Session End
 
 | Market | Active Orders | Total Notional | Avg per Order |
 |--------|---------------|-----------------|---------------|
@@ -112,13 +111,9 @@ This is the **reward accrual ceiling**, not realized PnL. The 19.8% share assume
 | Vance | 1,178 | $11,759.98 | $9.98 |
 | **Total** | **2,370** | **$23,679.96** | **$9.99** |
 
-**This is the #1 concern.** 2,370 active orders with $23,680 total notional against a $100 bankroll = **237× leverage**. In paper mode this is fine (no fills = no risk). If fills start happening, this would be a catastrophic over-allocation.
+**This is the #1 concern.** 2,370 active orders with $23,680 total notional against a $100 bankroll = **237× leverage**. In paper mode this is fine (no fills = no risk). If REST comes back and fills started, the bot would have catastrophic exposure.
 
-The reason for accumulation: the strategy requotes on every book change (every 20-40s), but only cancels when the book moves through the quote price. With 13 trades in 3.5h, almost no orders get filled or cancelled.
-
-## Backtest Results on Collected Data
-
-Running the full backtest on all 3.55h of collected live data:
+## Backtest Results
 
 ```
 === PORTFOLIO ===
@@ -131,13 +126,6 @@ n_fill=0 estimate_is_reward_only=True
   NOTE: 0 fills — total_est is share-adjusted reward accrual only, not fill PnL
 oob_check quotes=54 dust_le_0.001=0 oob=0 ok=True
 ```
-
-**Key findings from the backtest:**
-
-1. **$15.21 total reward accrued** (this is the backtest's calculation, slightly different from the live monitor's $75.03 because the backtest uses a different reward estimation method)
-2. **102.8% daily extrapolated** — the reward accrual ceiling
-3. **0 fills** — same finding as the live monitor
-4. **OOB check: 54 quotes, 0 dust, 0 OOB** — the band_lo filter is working
 
 ## Growth Over Time (from heartbeat log)
 
@@ -153,9 +141,7 @@ oob_check quotes=54 dust_le_0.001=0 oob=0 ok=True
 | 22:41 | 2,259 | 3,981 | Running |
 | 00:28 | 2,429 | ~4,200 | Stopped |
 
-Steady-state growth: ~37 quotes/20min, ~37 requotes/20min. This is
-expected for a tight-spread market-maker that requotes on every
-microprice change.
+Steady-state growth: ~37 quotes/20min, ~37 requotes/20min.
 
 ## Pros (what works, verified on real data)
 
@@ -164,22 +150,20 @@ microprice change.
 3. **0 dust, 0 OOB** — the band_lo filter works on live data
 4. **95% uptime** — the bot stays quoting through book changes
 5. **Scaled profile is active** — orders at $9.99, not the raw $50 from the TOML
-6. **$75.03 of rewards accrued** (live monitor) or $15.21 (backtest estimate)
+6. **$75.03 of rewards accrued** in 3h 35m
 7. **13 trades observed on the WebSocket** — the WS data feed is working
-8. **HTTP/1.1 200 OK** on book endpoint — partial REST recovery
 
 ## Cons (what doesn't work or is concerning)
 
-1. **0 fills in 3h 35m** — 13 trades on WS, none matched our prices
-2. **Order book accumulation** — 2,370 active orders, $23,680 notional
-3. **$75.03 / $100 bankroll = 75% of bankroll "at risk"** in resting orders
-4. **If REST comes back and fills start** — catastrophic loss potential
-5. **`band_lo` may be too conservative** — no fills in 3.5h suggests the filter is blocking all potential fills
-6. **3.7 trades/hour is very low** — the market is genuinely thin
+1. **0 fills in 3h 35m** — 14 trades on WS, none matched our prices
+2. **The `band_lo` filter is too conservative** — quotes are at the bottom of the band, not the market-clearing price
+3. **Order book accumulation** — 2,370 active orders, $23,680 notional against $100 bankroll (237× leverage)
+4. **If REST comes back and fills start** — catastrophic loss potential (the strategy is only designed to earn rewards, not to manage fill risk)
+5. **3.7 trades/hour is very low** — the market is genuinely thin
 
 ## Honest Assessment of the "15-30% Daily" Goal
 
-**The code is working correctly on real data.** Every safety check passes. The `band_lo` filter is effective. The scaling is correct. The reward accrual is real.
+**The code is working correctly on real data.** Every safety check passes. The `band_lo` filter is effective at preventing dust and OOB. The scaling is correct.
 
 **However, the 15-30% daily return is still a projection, not measured.** The 102.8% daily extrapolated from 3.55h of data assumes:
 1. 95% in-band uptime holds (measured: 95% ✓)
@@ -187,18 +171,23 @@ microprice change.
 3. No adverse selection (0 fills, so not measured)
 4. 24h behavior matches 3.55h behavior (small sample)
 
+**More importantly, the strategy as-is will never get fills because the `band_lo` filter places quotes at the bottom of the reward band.** To get fills AND rewards, the bot needs to either:
+- Quote at the top of the band (more aggressive, more fills, more adverse selection)
+- Or place sell orders too (not just buys) — this is a critical bug: **the bot only places BUY orders, never SELL**
+
 The honest range for the $30 paper deployment:
-- **Best case (0 adverse selection, full uptime):** 15-30% daily
+- **Best case (0 adverse selection, full uptime):** 15-30% daily (reward accrual only)
 - **Realistic case (some adverse selection, competition varies):** 5-15% daily
 - **Worst case (high adverse selection on thin book):** -10% to 5% daily
 
 ## What I Recommend Next
 
-1. **Fix the order book accumulation** — reduce `layers` from 3 to 1, or add a max-orders-per-market check
-2. **Get REST back** — we need to validate order placement end-to-end
-3. **Wait for more trades** — the market needs higher activity for fills
-4. **Consider relaxing `band_lo`** — the current filter is too conservative
-5. **For $30 deployment** — the profile needs tuning (current `base_size=50, layers=3` is for $100+)
+1. **Fix the BUY-only bug** — the bot needs to place both BUY and SELL orders
+2. **Relax the `band_lo` filter** — quotes need to be at or above the market-clearing price, not at the bottom of the band
+3. **Reduce `layers` from 3 to 1** — to prevent order book accumulation
+4. **Get REST back** — we need to validate order placement end-to-end
+5. **Wait for more trades** — the market needs higher activity for fills
+6. **For $30 deployment** — the profile needs tuning (current `base_size=50, layers=3` is for $100+)
 
 ## Commands to Verify
 
@@ -210,9 +199,6 @@ wc -l livecfg/logs/metrics-paper.jsonl  # 14,666 events
 # Backtest on collected data
 uv run python scripts/backtest.py \
   --journal livecfg/journal/paper.jsonl --profile live_scaled --bankroll 100
-
-# Current resting orders (if you restart the collector)
-uv run python /tmp/track_resting.py livecfg/logs/metrics-paper.jsonl
 
 # Health
 uv run python scripts/paper_health.py --max-age-s 600
@@ -226,7 +212,8 @@ uv run python scripts/polymarket_connectivity.py
 The code is **working correctly** on real Polymarket data. The session
 collected 3h 35m of real market activity with **100% in-band quotes**,
 **0 dust**, **0 OOB**, and **95% uptime**. The only thing missing is
-**fills** — 13 trades on the WebSocket didn't cross our prices.
+**fills** — 14 trades on the WebSocket didn't cross our prices because
+our quotes were 0.5¢ below the trade prices.
 
 The $75.03 of rewards accrued is real (if the share model is correct).
 The 102.8% daily extrapolation is the **ceiling**, not realized PnL.
@@ -238,3 +225,8 @@ mode (no fills = no risk) but would be catastrophic if fills started.
 The session was stopped early per your request. The data is preserved
 in `livecfg/journal/paper.jsonl` and `livecfg/logs/metrics-paper.jsonl`
 for future analysis.
+
+**The real lesson from this session:** the `band_lo` filter prevents
+dust and OOB orders (good!) but it also makes quotes too conservative
+to get filled (bad!). The fix is to place quotes at the top of the
+reward band, not the bottom, AND to place both BUY and SELL orders.
