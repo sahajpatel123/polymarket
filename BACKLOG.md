@@ -1163,6 +1163,13 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: `scripts/base_size_ev_sweep.py`, `tests/test_base_size_ev_sweep.py`,
   `evidence/quant_edge/t1_162_base_size_ev.json`
 
+### T1-163 min_edge_ticks EV + Jul25 AS recheck
+- Status: `done`
+- Done when: `min_edge_ev_sweep` finding=false; Jul25 `paper.jsonl` as_path
+  still ready=false (through=0); keep min_edge_ticks=1; evidence JSON.
+- Evidence: `scripts/min_edge_ev_sweep.py`, `tests/test_min_edge_ev_sweep.py`,
+  `evidence/quant_edge/t1_163_min_edge_as_recheck.json`
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

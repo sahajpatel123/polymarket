@@ -1,0 +1,24 @@
+{
+  "id": "T1-163",
+  "change": "min_edge_ticks EV sweep + Jul25 paper AS recheck; finding=false / ready=false",
+  "note": "min_edge 0–3 vs baseline 1: Newsom+Vance finding=false (tiny noise dn_ev only, no ev_signal). Jul25 livecfg/journal/paper.jsonl still through=0 (Newsom at_touch=3, Vance=8) — AS path remains blocked. Keep min_edge_ticks=1.",
+  "journal": "livecfg/journal/paper.jsonl.pre12h.1784925687.31229",
+  "baseline_min_edge_ticks": 1,
+  "as_path_jul25": {
+    "journal": "livecfg/journal/paper.jsonl",
+    "any_ready": false,
+    "newsom_through": 0,
+    "vance_through": 0,
+    "report": "logs/as_path_status/jul25_paper.json"
+  },
+  "newsom": {
+    "any_nondefault_finding": false,
+    "ev_signal_at": [],
+    "report": "logs/min_edge_ev_sweep/newsom_cons.json"
+  },
+  "vance": {
+    "any_nondefault_finding": false,
+    "ev_signal_at": [],
+    "report": "logs/min_edge_ev_sweep/vance_cons.json"
+  }
+}

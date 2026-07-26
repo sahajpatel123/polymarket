@@ -353,3 +353,4 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-26T08:55:00Z | Tier1 | T1-160 delta_min_ticks EV sweep finding=false (Newsom+Vance fully inert dn_ev=0); keep delta_min=1 | pytest; evidence/quant_edge/t1_160_delta_min_ev.json | merged
 2026-07-26T09:10:00Z | Tier1 | T1-161 layer_step_ticks EV sweep finding=false (Newsom step=3 ev_signal only, zero fills); keep layer_step=2 | pytest; evidence/quant_edge/t1_161_layer_step_ev.json | merged
 2026-07-26T09:25:00Z | Tier1 | T1-162 base_size_usdc EV sweep finding=false (Newsom size=25 ev_signal only, zero fills); keep base_size=50 | pytest; evidence/quant_edge/t1_162_base_size_ev.json | merged
+2026-07-26T09:40:00Z | Tier1 | T1-163 min_edge EV finding=false + Jul25 paper AS still ready=false (through=0); keep min_edge=1 | pytest; evidence/quant_edge/t1_163_min_edge_as_recheck.json | merged
