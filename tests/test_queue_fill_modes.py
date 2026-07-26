@@ -61,3 +61,22 @@ def test_optimistic_ge_base_ge_conservative_fill_volume() -> None:
         modes[mode] = sum(f.size for f in fills)
     assert modes[FillMode.OPTIMISTIC] >= modes[FillMode.BASE]
     assert modes[FillMode.BASE] >= modes[FillMode.CONSERVATIVE]
+
+
+def test_conservative_skips_equal_price_join_touch() -> None:
+    """Join-BB fills are typically equal-price; conservative skips those."""
+    base = QueueAwareFillSimulator(mode=FillMode.BASE, default_queue_ahead=0.0)
+    cons = QueueAwareFillSimulator(mode=FillMode.CONSERVATIVE, default_queue_ahead=0.0)
+    base.place(_o("j", px=0.50, sz=100.0), ts=0.0)
+    cons.place(_o("j", px=0.50, sz=100.0), ts=0.0)
+    # Sell aggressor at our bid (join-touch)
+    f_base = base.match("tok", Side.SELL, 0.50, 40.0, ts=1.0)
+    f_cons = cons.match("tok", Side.SELL, 0.50, 40.0, ts=1.0)
+    assert sum(f.size for f in f_base) == 40.0
+    assert sum(f.size for f in f_cons) == 0.0
+    assert cons.n_queue_blocked >= 1
+    # Through-price still fills under conservative with zero queue
+    cons2 = QueueAwareFillSimulator(mode=FillMode.CONSERVATIVE, default_queue_ahead=0.0)
+    cons2.place(_o("k", px=0.50, sz=100.0), ts=0.0)
+    f_thru = cons2.match("tok", Side.SELL, 0.49, 40.0, ts=1.0)
+    assert sum(f.size for f in f_thru) == 40.0

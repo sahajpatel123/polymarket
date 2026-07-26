@@ -1063,6 +1063,16 @@ done without evidence (script output / tests) from that cycle.
   `tests/test_quantitative_edge.py`,
   `evidence/quant_edge/t1_150_bootstrap_ci_join_multimarket.json`
 
+### T1-151 queue_ahead sweep — equal-price blocks join fills
+- Status: `done`
+- Done when: `queue_ahead_sweep` shows join+min_edge0 optimistic fills are
+  100% equal-price; `base_ahead0` fills but `cons_ahead0` does not; documents
+  that conservative equal-price skip (not only queue=200) prevents promotion;
+  replay exposes `queue_ahead` + `trade_price` on fills; evidence JSON.
+- Evidence: `scripts/queue_ahead_sweep.py`, `replay/__init__.py`,
+  `tests/test_queue_fill_modes.py`, `tests/test_queue_ahead_sweep.py`,
+  `evidence/quant_edge/t1_151_queue_ahead_equal_price.json`
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

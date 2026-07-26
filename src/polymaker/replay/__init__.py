@@ -69,6 +69,9 @@ class ReplayResult:
     final_equity: float = 0.0
     final_cash: float = 0.0
     fill_mode: str = "conservative"
+    queue_ahead: float | None = None
+    n_queue_blocked: int = 0
+    n_latency_blocked: int = 0
 
 
 @dataclass
@@ -90,6 +93,7 @@ class ReplayState:
     # Promotion default is conservative; pass fill_mode to run_replay to override.
     fill_sim: Any = field(default=None)
     fill_mode: str = "conservative"
+    queue_ahead: float | None = None
     n_fill: int = 0
     intel: DecisionFramework = field(default_factory=DecisionFramework)
     trade_ts: list[float] = field(default_factory=list)
@@ -117,7 +121,9 @@ class ReplayState:
             markout=MarkoutTracker(),
         )
         if self.fill_sim is None:
-            self.fill_sim = make_fill_simulator(self.fill_mode)
+            self.fill_sim = make_fill_simulator(
+                self.fill_mode, default_queue_ahead=self.queue_ahead
+            )
 
 
 def assert_order_sync(st: ReplayState) -> list[str]:
@@ -433,7 +439,13 @@ def _recompute(st: ReplayState, now: float) -> None:
     check_and_record_sync(st)
 
 
-def _apply_replay_fill(st: ReplayState, fill: Fill, *, fv_for_markout: float | None) -> None:
+def _apply_replay_fill(
+    st: ReplayState,
+    fill: Fill,
+    *,
+    fv_for_markout: float | None,
+    trade_price: float | None = None,
+) -> None:
     """Apply a simulated fill to replay positions, ledger, estimators, metrics."""
     assert st.est is not None
     meta = st.meta
@@ -495,6 +507,7 @@ def _apply_replay_fill(st: ReplayState, fill: Fill, *, fv_for_markout: float | N
             size=fill.size,
             trade_id=fill.trade_id,
             order_id=fill.order_id,
+            trade_price=trade_price,
             mid=token_fv,
             fv=fv_for_markout or fill.price,
             paper=True,
@@ -584,7 +597,9 @@ def apply_journal_event(st: ReplayState, row: dict[str, Any]) -> bool:
         if filled_vol > tp.size + 1e-9:
             st.overfills += 1
         for fill in fills:
-            _apply_replay_fill(st, fill, fv_for_markout=st.est.last_fv)
+            _apply_replay_fill(
+                st, fill, fv_for_markout=st.est.last_fv, trade_price=tp.price
+            )
         check_and_record_sync(st)
         return True
 
@@ -608,13 +623,17 @@ def run_replay(
     *,
     strict_sync: bool = True,
     fill_mode: str = "conservative",
+    queue_ahead: float | None = None,
 ) -> ReplayResult:
     """Replay journal. Default fill_mode=conservative for financial claims.
 
     Use fill_mode='optimistic' only as an upper-bound diagnostic.
+    queue_ahead overrides the mode default (200 conservative / 50 base) when set.
     """
     rows = load_journal(journal_path)
-    st = ReplayState(meta=meta, profile=profile, fill_mode=fill_mode)
+    st = ReplayState(
+        meta=meta, profile=profile, fill_mode=fill_mode, queue_ahead=queue_ahead
+    )
     st.strict_sync = strict_sync
     st.metrics = MetricsLogger(metrics_path, enabled=True)
     first_ts = float(rows[0].get("ts") or 0.0) if rows else 0.0
@@ -629,6 +648,7 @@ def run_replay(
         rebate_rate=meta.rebate_rate,
         tick_size=meta.tick_size,
         fill_mode=fill_mode,
+        queue_ahead=queue_ahead,
     )
     st.ledger.reset_day()
 
@@ -642,6 +662,8 @@ def run_replay(
     check_and_record_sync(st)
     assert st.metrics is not None
     st.metrics.close()
+    n_q_blocked = int(getattr(st.fill_sim, "n_queue_blocked", 0) or 0)
+    n_lat_blocked = int(getattr(st.fill_sim, "n_latency_blocked", 0) or 0)
     return ReplayResult(
         events_read=len(rows),
         events_applied=applied,
@@ -657,6 +679,9 @@ def run_replay(
         final_equity=st.ledger.equity(),
         final_cash=st.ledger.cash,
         fill_mode=fill_mode,
+        queue_ahead=queue_ahead,
+        n_queue_blocked=n_q_blocked,
+        n_latency_blocked=n_lat_blocked,
     )
 
 

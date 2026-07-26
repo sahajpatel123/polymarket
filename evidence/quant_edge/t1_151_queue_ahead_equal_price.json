@@ -1,0 +1,39 @@
+{
+  "id": "T1-151",
+  "change": "queue_ahead_sweep: join-BB fills are 100% equal-price; conservative equal-price skip (not only queue=200) blocks promotion fills",
+  "note": "On Newsom pre12h join+min_edge0: optimistic=base_ahead0=33 fills; cons_ahead0=0 (equal-price skip); base_default50=1; cons_default200=0. All 33 optimistic fills have trade_price==bid. Vance same pattern (2 fills). Join-touch cannot become promotion_eligible under current conservative fill model without through-price aggressors or a deliberate equal-price policy change (Tier-2 / escalate).",
+  "journal": "livecfg/journal/paper.jsonl.pre12h.1784925687.31229",
+  "overrides": {"join_best_bid": true, "min_edge_ticks": 0},
+  "newsom": {
+    "equal_price_blocks_join": true,
+    "queue_blocks_after_equal_ok": true,
+    "optimistic_fill_price_class": {
+      "n_fill": 33,
+      "n_equal_price": 33,
+      "n_through_price": 0
+    },
+    "rows": [
+      {"label": "optimistic", "n_fill": 33},
+      {"label": "base_ahead0", "n_fill": 33},
+      {"label": "base_default50", "n_fill": 1, "n_queue_blocked": 15},
+      {"label": "cons_ahead0", "n_fill": 0, "n_queue_blocked": 16},
+      {"label": "cons_default200", "n_fill": 0}
+    ],
+    "report": "logs/queue_ahead_sweep/newsom_join.json"
+  },
+  "vance": {
+    "equal_price_blocks_join": true,
+    "optimistic_n_fill": 2,
+    "cons_ahead0_n_fill": 0,
+    "report": "logs/queue_ahead_sweep/vance_join.json"
+  },
+  "harness": {
+    "run_replay_queue_ahead": true,
+    "fill_metrics_trade_price": true,
+    "script": "scripts/queue_ahead_sweep.py",
+    "tests": [
+      "test_conservative_skips_equal_price_join_touch",
+      "tests/test_queue_ahead_sweep.py"
+    ]
+  }
+}

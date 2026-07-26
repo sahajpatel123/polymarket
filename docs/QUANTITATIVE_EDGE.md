@@ -64,6 +64,7 @@ uv run python scripts/touchability_sweep.py --journal … --yes-token …
 uv run python scripts/resolve_market_tokens.py --slug … --db livecfg/state.db
 uv run python scripts/quant_edge_eval.py --journal … --slug … --db livecfg/state.db
 uv run python scripts/band_touch_tradeoff.py --journal … --slug … --db livecfg/state.db
+uv run python scripts/queue_ahead_sweep.py --journal … --slug … --db livecfg/state.db
 uv run python scripts/token_pair_sanity.py --journal … --yes-token … --no-token …
 uv run python scripts/quote_side_coverage.py --journal … --yes-token … --no-token …
 ```
@@ -92,6 +93,7 @@ scoring rule and is no longer used.
 | Covariance sizing | `strategy/covariance_sizing.py` | **no** | no |
 | Markout toxicity | `strategy/estimators.py` | yes (spreads/size) | **no** (correct-token Newsom+Vance Brier finding=false; prior Newsom win contaminated) |
 | Proper scoring + CI | `strategy/calibration.py` | metrics analyze | harness ready |
+| Join best bid | `strategy/quoting.py` (`join_best_bid`) | opt-in default **off** | **no** (optimistic Newsom finding only; conservative equal-price skip → 0 fills; Vance fails) |
 
 ## Why each exists (one line)
 
@@ -148,6 +150,7 @@ and a PR — never auto-merge. See `AUTONOMOUS_LOOP_PROTOCOL.md`.
 | 2026-07-26T05:55Z | band_touch_tradeoff | rewards_max_spread 5.5→0 | **any_crossable=false** | gap shrinks but never joins touch; need join-touch policy not band shrink |
 | 2026-07-26T06:10Z | Newsom pre12h join_best_bid | join / join+min_edge0 | **finding=false** | join alone inert (min_edge blocks BB); join+min_edge0 → n_fill 0→33, OOS EV+, but degenerate bootstrap CI + optimistic fills |
 | 2026-07-26T06:25Z | bootstrap CI fix + join×2 | Newsom/Vance join+min_edge0 | Newsom opt **true** / Vance **false** | LCG CI bug fixed; conservative n_fill=0; promo now needs fills; join still frozen |
+| 2026-07-26T06:40Z | queue_ahead_sweep | join+min_edge0 fill modes | equal_price_blocks=**true** | 33/33 Newsom opt fills equal-price; base_ahead0=33 cons_ahead0=0 — promo blocked by design |
 
 ## Freeze list (do not Tier-2 wire without multi-market EV)
 
@@ -166,3 +169,5 @@ and a PR — never auto-merge. See `AUTONOMOUS_LOOP_PROTOCOL.md`.
 - `join_best_bid=true` + `min_edge_ticks=0` unlocks optimistic fills (n_fill=33) with positive OOS EV on Newsom pre12h but **finding=false** (degenerate CI) → still freeze; need conservative multi-market EV before Tier-2 default
 - Bootstrap CI fixed (T1-150): old LCG collapsed CI when `n_chunks` was a power of 2; Newsom optimistic join now finding=true, Vance finding=false — **still freeze** (no multi-market + conservative fills)
 - `promotion_eligible` now also requires `n_fill_candidate>0` (blocks zero-fill reward-path “findings”)
+- **Join-BB cannot promote under conservative fills** (T1-151): all optimistic join fills are equal-price; `cons_ahead0` still n_fill=0 — equal-price skip is the blocker ahead of queue=200
+- Next AS path needs either through-price aggressors on denser tape, or an explicit Tier-2 decision on equal-price fill policy (do not soften conservative for a metric win)
