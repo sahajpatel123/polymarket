@@ -1,0 +1,11 @@
+{
+  "id": "T1-156",
+  "change": "WEEKLY_REPORT embeds quant-edge scoreboard; overdue weekly refresh",
+  "note": "write_weekly_report now includes TECHNIQUE_INVENTORY summary + AS path blocked note. Regenerated WEEKLY_REPORT 2026-07-26 (was 2026-07-23). evidence_yes=0 partial=2 no=12. ewma_fv_vol inventory comment notes c_vol EV=false.",
+  "weekly": {
+    "ts": "2026-07-26T07:51:41Z",
+    "tier1_changelog": 209,
+    "tier1_backlog_done": 155,
+    "evidence_yes": 0
+  }
+}

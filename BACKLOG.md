@@ -1110,6 +1110,14 @@ done without evidence (script output / tests) from that cycle.
   `tests/test_as_path_status.py`,
   `evidence/quant_edge/t1_155_as_path_c_vol.json`
 
+### T1-156 weekly report quant-edge scoreboard
+- Status: `done`
+- Done when: `write_weekly_report` embeds TECHNIQUE_INVENTORY + AS path note;
+  WEEKLY_REPORT overwritten this cycle; unit test for helper; evidence JSON.
+- Evidence: `scripts/write_weekly_report.py`, `WEEKLY_REPORT.md`,
+  `tests/test_write_weekly_report.py`,
+  `evidence/quant_edge/t1_156_weekly_quant_board.json`
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

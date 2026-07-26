@@ -161,6 +161,7 @@ and a PR — never auto-merge. See `AUTONOMOUS_LOOP_PROTOCOL.md`.
 | 2026-07-26T07:10Z | reward_path + finding gate | join cons Newsom/Vance | **finding=false** | cons reward_delta=0, denominator_artifact; finding now needs fills; prior cons “finding” overturned |
 | 2026-07-26T07:25Z | kyle_ev_sweep | c_kyle 0.5/1/2 vs 0 | **false** | Newsom+Vance cons+opt; dn_ev=0 n_fill=0; keep c_kyle=0 |
 | 2026-07-26T07:40Z | as_path_status + c_vol_ev | Newsom/Vance | ready=**false** / EV **false** | AS board blocked; c_vol 0.5–3.0 dn_ev=0; freeze list cleaned |
+| 2026-07-26T07:55Z | WEEKLY_REPORT refresh | inventory scoreboard | evidence_yes=**0** | weekly embeds quant-edge board; AS still blocked |
 
 ## Freeze list (do not Tier-2 wire without multi-market EV)
 

@@ -178,6 +178,29 @@ def _count_pending_reviews(path: Path) -> int:
     return n
 
 
+def _quant_edge_block() -> str:
+    """Inventory + AS-path one-liners for weekly visibility (T1-156)."""
+    from polymaker.replay.quant_edge import TECHNIQUE_INVENTORY
+
+    counts = {"yes": 0, "mixed": 0, "partial": 0, "no": 0, "other": 0}
+    lines = []
+    for t in TECHNIQUE_INVENTORY:
+        ev = str(t.get("evidence") or "other")
+        counts[ev if ev in counts else "other"] += 1
+        lines.append(
+            f"id={t['id']} wired={t.get('wired')} evidence={t.get('evidence')}"
+        )
+    summary = (
+        f"n={len(TECHNIQUE_INVENTORY)} evidence_yes={counts['yes']} "
+        f"mixed={counts['mixed']} partial={counts['partial']} no={counts['no']}"
+    )
+    as_note = (
+        "AS path blocked on current tape (n_through=0; conservative equal-price "
+        "skip; finding requires fills). Board: scripts/as_path_status.py"
+    )
+    return summary + "\n" + as_note + "\n" + "\n".join(lines)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--out", default="WEEKLY_REPORT.md")
@@ -212,6 +235,7 @@ def main() -> int:
     tier1_changelog = _count_changelog_tier1(Path("CHANGELOG_AGENT.md"))
     tier1_backlog_done = _count_backlog_tier1_done(Path("BACKLOG.md"))
     pending_reviews = _count_pending_reviews(Path("PENDING_REVIEW.md"))
+    quant_edge = _quant_edge_block()
 
     body = f"""# WEEKLY_REPORT
 
@@ -228,7 +252,7 @@ Generated: `{ts}` (via `scripts/write_weekly_report.py`)
 |------|--------|
 | Branch | `git log -1` → `{head}` |
 | Paper trading | `{pid}` |
-| Loop | 10m Agent-1 strategy-pricing cadence; Tier-2 gated on hours |
+| Loop | 15m quant-edge cadence; Tier-2 gated on hours + paper gate |
 | Tier-1 changelog lines | `{tier1_changelog}` (from `CHANGELOG_AGENT.md`) |
 | Tier-1 backlog done | `{tier1_backlog_done}` (from `BACKLOG.md` Status: done) |
 
@@ -239,6 +263,14 @@ Generated: `{ts}` (via `scripts/write_weekly_report.py`)
 | {pending_reviews} | see `PENDING_REVIEW.md` |
 
 Open candidates: `docs/STRATEGY_CANDIDATES.md` (C-01…C-04).
+
+### Quantitative edge scoreboard
+
+`TECHNIQUE_INVENTORY` + AS path (this cycle):
+
+```
+{quant_edge}
+```
 
 ### Outage / gate snapshot
 
@@ -306,6 +338,8 @@ No expiry tracker in-repo. `.env` is gitignored; operator must rotate
   ETA pause, tier2_allowed, and promotion blockers. Do not promote Tier-2
   while health is STALE or holdouts are thin.
 - Live capital / size increases remain human-only (`ESCALATE.md`).
+- Quant-edge AS path: need through-price tape or Tier-2 equal-price policy;
+  do not soften conservative fill matching for a metric.
 """
     path = Path(args.out)
     path.write_text(body)

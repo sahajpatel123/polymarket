@@ -83,3 +83,11 @@ def test_count_pending_reviews_rows(tmp_path) -> None:
         "| 2026-07-23 | pr/2 | C-02 | pack |\n"
     )
     assert wr._count_pending_reviews(path) == 2
+
+
+def test_quant_edge_block_includes_inventory_summary() -> None:
+    block = wr._quant_edge_block()
+    assert "evidence_yes=" in block
+    assert "AS path blocked" in block
+    assert "id=join_best_bid" in block
+    assert "id=ewma_fv_vol" in block
