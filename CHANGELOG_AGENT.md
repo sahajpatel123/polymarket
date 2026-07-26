@@ -348,3 +348,4 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-26T07:55:00Z | Tier1 | T1-156 WEEKLY_REPORT embeds quant-edge scoreboard (evidence_yes=0); overdue weekly refresh | pytest test_write_weekly_report; evidence/quant_edge/t1_156_weekly_quant_board.json | merged
 2026-07-26T07:55:00Z | Tier1 | T1-156 WEEKLY_REPORT embeds quant-edge scoreboard (evidence_yes=0); overdue weekly refresh | pytest test_write_weekly_report; evidence/quant_edge/t1_156_weekly_quant_board.json | merged
 2026-07-26T08:10:00Z | Tier1 | T1-157 gamma EV sweep finding=false Newsom/Vance; harden write_weekly_report subprocess timeout; deps_audit ok flagged=21 | pytest; evidence/quant_edge/t1_157_gamma_weekly_timeout.json | merged
+2026-07-26T08:25:00Z | Tier1 | T1-158 reprice_ticks EV sweep finding=false (Newsom 4/8 ev_signal only, zero fills); as_path ready=true fixture test | pytest; evidence/quant_edge/t1_158_reprice_ev.json | merged

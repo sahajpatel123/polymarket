@@ -1,0 +1,19 @@
+{
+  "id": "T1-158",
+  "change": "reprice_ticks EV sweep + as_path ready=true unit test for through-price sells",
+  "note": "Newsom reprice 4/8: ev_signal=true (fewer quotes, positive holdout EV) but n_fill=0 → finding=false (T1-153 gate). Vance no ev_signal. Keep live_scaled reprice_ticks=2. Harness confirms as_path.ready when through-price sells exist (fixture only).",
+  "journal": "livecfg/journal/paper.jsonl.pre12h.1784925687.31229",
+  "reprice_sweep": {
+    "baseline": 2,
+    "newsom": {
+      "any_nondefault_finding": false,
+      "ev_signal_at": [4, 8],
+      "report": "logs/reprice_ev_sweep/newsom_cons.json"
+    },
+    "vance": {
+      "any_nondefault_finding": false,
+      "ev_signal_at": [],
+      "report": "logs/reprice_ev_sweep/vance_cons.json"
+    }
+  }
+}

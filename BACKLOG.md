@@ -1126,6 +1126,15 @@ done without evidence (script output / tests) from that cycle.
   `tests/test_gamma_ev_sweep.py`,
   `evidence/quant_edge/t1_157_gamma_weekly_timeout.json`
 
+### T1-158 reprice_ticks EV sweep + through-ready harness test
+- Status: `done`
+- Done when: `reprice_ev_sweep` on Newsom/Vance; finding=false (ev_signal only
+  on Newsom 4/8 with zero fills); as_path ready=true unit test for through
+  prints; evidence JSON.
+- Evidence: `scripts/reprice_ev_sweep.py`, `tests/test_as_path_status.py`,
+  `tests/test_reprice_ev_sweep.py`,
+  `evidence/quant_edge/t1_158_reprice_ev.json`
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
