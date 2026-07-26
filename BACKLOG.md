@@ -922,6 +922,15 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: `sweep_micro_levels`, `scripts/flow_calibration.py`,
   `src/polymaker/replay/flow_calibration.py`, `tests/test_flow_calibration.py`
 
+### T1-135 kelly_fraction profile knob + toxicity calibration + Kelly sweep
+- Status: `done`
+- Done when: `StrategyProfile.kelly_fraction` default 0.25 wired into advanced
+  quoting (behavior-preserving); toxicity_calibration harness exists; Newsom
+  toxicity_finding=true, Vance false; kelly_fraction_sweep 0.125/0.25/0.5 all
+  finding=false on Newsom EV.
+- Evidence: config + advanced_quoting; `scripts/toxicity_calibration.py`,
+  `scripts/kelly_fraction_sweep.py`, `tests/test_toxicity_kelly.py`
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

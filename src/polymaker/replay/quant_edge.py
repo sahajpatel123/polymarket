@@ -48,6 +48,7 @@ TECHNIQUE_INVENTORY: tuple[dict[str, str], ...] = (
     {"id": "garch_vol", "module": "yes", "wired": "no", "evidence": "no"},
     {"id": "ofi_skew", "module": "yes", "wired": "fed", "evidence": "no"},
     {"id": "covariance_sizing", "module": "yes", "wired": "no", "evidence": "no"},
+    {"id": "markout_toxicity", "module": "yes", "wired": "yes", "evidence": "mixed"},
 )
 
 

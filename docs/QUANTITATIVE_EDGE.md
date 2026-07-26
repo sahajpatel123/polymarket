@@ -26,6 +26,8 @@ FV predictors: `scripts/fv_calibration.py` → `polymaker.replay.fv_calibration`
 `--sweep-levels` for micro depth).
 Flow: `scripts/flow_calibration.py` → `polymaker.replay.flow_calibration`
 (flow_z → P(up) vs climatology).
+Toxicity: `scripts/toxicity_calibration.py` → `polymaker.replay.toxicity_calibration`.
+Kelly fraction: `scripts/kelly_fraction_sweep.py` (requires `StrategyProfile.kelly_fraction`).
 Covariance sizing: `scripts/cov_sizing_eval.py` → `polymaker.replay.cov_sizing_eval`
 (tune cov vs uncorrelated budget; holdout variance reduction CI).
 
@@ -54,12 +56,13 @@ scoring rule and is no longer used.
 | Kalman mid | `intelligence/signal_processing.py` | intel-only | **no** (worse than mid on Newsom+Vance OOS) |
 | Calibration-weighted signal blend | `strategy/signal_blend.py` | **no** | no (no clear OOS win vs mid) |
 | Avellaneda–Stoikov | `strategy/avellaneda_stoikov.py` | opt-in (`use_advanced_quoting`) | no |
-| Fractional Kelly | `strategy/kelly.py` | opt-in | no |
+| Fractional Kelly | `strategy/kelly.py` | opt-in (`kelly_fraction`, default 0.25) | **no** (0.125/0.5 vs 0.25: no EV finding on Newsom) |
 | Kyle λ / Glosten–Milgrom | `strategy/kyle_lambda.py` | **fed**; not in quotes | mixed (Spearman vs \|Δmid\| unstable across windows) |
 | VPIN | `strategy/vpin.py` | **fed**; not in quotes | **no** (Newsom Brier skill did not replicate on Vance) |
 | GARCH(1,1) vol | `strategy/garch.py` | **no** | **no** (OOS MSE ≈ EWMA on Newsom; finding=false) |
 | OFI skew | `strategy/ofi.py` | **fed**; not in quotes | no (worse than climatology) |
 | Covariance sizing | `strategy/covariance_sizing.py` | **no** | no |
+| Markout toxicity | `strategy/estimators.py` | yes (spreads/size) | **mixed** (Newsom virtual-markout Brier yes; Vance no) |
 | Proper scoring + CI | `strategy/calibration.py` | metrics analyze | harness ready |
 
 ## Why each exists (one line)
@@ -97,3 +100,6 @@ and a PR — never auto-merge. See `AUTONOMOUS_LOOP_PROTOCOL.md`.
 | 2026-07-26T02:25Z | Newsom micro_levels sweep | levels 1–8 @30s | **true** (best **5**) | levels=5 MSE 6.0e-8 p≈0.019; default 3 also true but worse; level 1 not sig |
 | 2026-07-26T02:25Z | Vance micro_levels sweep | levels 1–8 @30s | all **false** | micro worse than mid at all depths — do not change default yet |
 | 2026-07-26T02:25Z | Newsom+Vance flow_calibration | flow_z → P(up) | both **false** | worse than climatology (like OFI) |
+| 2026-07-26T02:40Z | Newsom toxicity_calibration | virtual markout → P(big move) | **true** | Brier skill vs climatology; needs Vance+EV before quote changes |
+| 2026-07-26T02:40Z | Vance toxicity_calibration | virtual markout | **false** | no replication |
+| 2026-07-26T02:40Z | Newsom kelly_fraction_sweep | 0.125 / 0.25 / 0.5 | all **false** | no EV delta vs quarter-Kelly on this tape |

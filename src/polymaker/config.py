@@ -229,6 +229,9 @@ class StrategyProfile(BaseModel):
     # Total bankroll for Kelly sizing (USD). When 0, uses profile base_size.
     # For a $30 paper account, set this to 30.0.
     bankroll_usdc: float = 0.0
+    # Fraction of full Kelly to deploy (0.25 = quarter-Kelly). Only used when
+    # use_advanced_quoting is True. Default matches prior hard-coded value.
+    kelly_fraction: float = 0.25
     # ── intelligence / judgment layer ──
     # When True, DecisionFramework gates quoting (skip dead/stale/toxic),
     # scales size, and chooses buy_band_frac from regime + fill learning.

@@ -202,6 +202,8 @@ def compute_advanced_quotes(inp: AdvancedQuoteInputs) -> AdvancedQuoteOutput:
 
     edge = edge_from_spread(half, tick)
     bankroll = max(inp.bankroll_usdc, p.bankroll_usdc, p.q_max_usdc, 1.0)
+    kf = float(getattr(p, "kelly_fraction", 0.25) or 0.25)
+    kf = max(0.01, min(1.0, kf))
 
     kelly_yes = kelly_size(KellyInputs(
         edge=edge,
@@ -210,7 +212,7 @@ def compute_advanced_quotes(inp: AdvancedQuoteInputs) -> AdvancedQuoteOutput:
         bankroll_usdc=bankroll * 0.5,
         inventory_shares=inp.pos_yes.size,
         max_inventory_shares=max_inv,
-        kelly_fraction=0.25,
+        kelly_fraction=kf,
         price=max(inp.fv, tick),
     ))
     kelly_no = kelly_size(KellyInputs(
@@ -220,7 +222,7 @@ def compute_advanced_quotes(inp: AdvancedQuoteInputs) -> AdvancedQuoteOutput:
         bankroll_usdc=bankroll * 0.5,
         inventory_shares=inp.pos_no.size,
         max_inventory_shares=max_inv,
-        kelly_fraction=0.25,
+        kelly_fraction=kf,
         price=max(no_fv, tick),
     ))
 
