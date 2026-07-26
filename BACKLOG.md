@@ -1149,6 +1149,13 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: `scripts/delta_min_ev_sweep.py`, `tests/test_delta_min_ev_sweep.py`,
   `evidence/quant_edge/t1_160_delta_min_ev.json`
 
+### T1-161 layer_step_ticks EV sweep
+- Status: `done`
+- Done when: `layer_step_ev_sweep` on Newsom/Vance; finding=false (Newsom
+  step=3 ev_signal only); keep live_scaled layer_step_ticks=2; evidence JSON.
+- Evidence: `scripts/layer_step_ev_sweep.py`, `tests/test_layer_step_ev_sweep.py`,
+  `evidence/quant_edge/t1_161_layer_step_ev.json`
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

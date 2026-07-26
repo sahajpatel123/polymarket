@@ -1,0 +1,17 @@
+{
+  "id": "T1-161",
+  "change": "layer_step_ticks EV sweep: 1–4 vs live_scaled baseline 2; finding=false",
+  "note": "Newsom step=3: ev_signal=true (n_quote 244→235, tiny +dn_ev) but n_fill=0 → finding=false. step=1 slightly negative. Vance fully inert. Keep live_scaled layer_step_ticks=2.",
+  "journal": "livecfg/journal/paper.jsonl.pre12h.1784925687.31229",
+  "baseline_layer_step_ticks": 2,
+  "newsom": {
+    "any_nondefault_finding": false,
+    "ev_signal_at": [3],
+    "report": "logs/layer_step_ev_sweep/newsom_cons.json"
+  },
+  "vance": {
+    "any_nondefault_finding": false,
+    "ev_signal_at": [],
+    "report": "logs/layer_step_ev_sweep/vance_cons.json"
+  }
+}
