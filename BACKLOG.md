@@ -1035,6 +1035,15 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: `src/polymaker/replay/market_resolve.py`, scripts, tests,
   `evidence/quant_edge/t1_147_slug_resolve_band_floor.json`
 
+
+### T1-148 band↔touch tradeoff sweep
+- Status: `done`
+- Done when: `band_touch_tradeoff` shows rewards_max_spread 5.5→0 reduces
+  mid−bid gap but n_crossable stays 0; documents that join-touch (not band
+  shrink) is required for AS fills; evidence JSON.
+- Evidence: `scripts/band_touch_tradeoff.py`, `tests/test_band_touch_tradeoff.py`,
+  `evidence/quant_edge/t1_148_band_touch_tradeoff.json`
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

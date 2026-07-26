@@ -336,3 +336,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-26T05:25:00Z | Tier1 | T1-146 correct-token calibration ledger: OFI/VPIN/toxicity/flow/FV-Vance all finding=false; tox+VPIN prior wins overturned; kyle→partial; micro/tox inventory→no | pytest test_quant_edge_eval; evidence/quant_edge/t1_146_correct_calibration_ledger.json | merged
 
 2026-07-26T05:40:00Z | Tier1 | T1-147 quant_edge --slug catalog resolve; remaining AS blocker is reward-band passive bids (~4¢ below touch), not mispairing | pytest test_market_resolve; evidence/quant_edge/t1_147_slug_resolve_band_floor.json | merged
+
+2026-07-26T05:55:00Z | Tier1 | T1-148 band_touch_tradeoff: shrinking rewards_max_spread to 0 still n_crossable=0 — AS needs join-touch policy, not band shrink | pytest test_band_touch_tradeoff; evidence/quant_edge/t1_148_band_touch_tradeoff.json | merged
