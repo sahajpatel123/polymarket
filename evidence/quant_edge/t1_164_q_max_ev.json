@@ -1,0 +1,17 @@
+{
+  "id": "T1-164",
+  "change": "q_max_usdc EV sweep: 50/125/250/500 vs live_scaled baseline 250; finding=false (fully inert)",
+  "note": "Newsom+Vance conservative: dn_ev=0, n_quote unchanged, n_fill=0 for all values. Inventory cap not binding on zero-fill paper path. Keep live_scaled q_max_usdc=250; size/capital increases remain human-only.",
+  "journal": "livecfg/journal/paper.jsonl.pre12h.1784925687.31229",
+  "baseline_q_max_usdc": 250.0,
+  "newsom": {
+    "any_nondefault_finding": false,
+    "ev_signal_at": [],
+    "report": "logs/q_max_ev_sweep/newsom_cons.json"
+  },
+  "vance": {
+    "any_nondefault_finding": false,
+    "ev_signal_at": [],
+    "report": "logs/q_max_ev_sweep/vance_cons.json"
+  }
+}

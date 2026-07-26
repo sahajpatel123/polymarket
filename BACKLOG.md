@@ -1170,6 +1170,13 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: `scripts/min_edge_ev_sweep.py`, `tests/test_min_edge_ev_sweep.py`,
   `evidence/quant_edge/t1_163_min_edge_as_recheck.json`
 
+### T1-164 q_max_usdc EV sweep
+- Status: `done`
+- Done when: `q_max_ev_sweep` on Newsom/Vance; finding=false (fully inert);
+  keep live_scaled q_max_usdc=250; evidence JSON.
+- Evidence: `scripts/q_max_ev_sweep.py`, `tests/test_q_max_ev_sweep.py`,
+  `evidence/quant_edge/t1_164_q_max_ev.json`
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
