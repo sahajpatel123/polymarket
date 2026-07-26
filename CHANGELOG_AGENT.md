@@ -298,3 +298,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-25T15:08:00Z | Tier1 | Skeptic fixes: quarantine→REDUCE_ONLY (exits keep), live exit urgency, day_start_equity+record_quote/order for degradation | pytest 479 passed; test_engine_degradation_exits; SCRATCH skeptic_engine_fixes ACCEPT | ready
 
 2026-07-26T00:53:08Z | Tier1 | T1-128 Quantitative Edge evidence harness: calibration soft-label fix (FV vs future mid, not P(up)); signal_blend + GARCH(1,1) pure modules; quant_edge_eval with OOS+bootstrap CI+paired significance; docs/QUANTITATIVE_EDGE.md inventory | pytest test_quant_edge_eval+test_quantitative_edge 17 passed; quant_edge_eval regime_dense finding=True (synth; live evidence still pending) | merged
+
+2026-07-26T01:10:00Z | Tier1 | T1-129 feed VPIN/Kyle/OFI in engine+replay (quote-neutral); reject degenerate bootstrap CI; live Newsom AS+Kelly quant_edge_eval finding=false (holdout dn_ev=+0.007, p≈0.20) | pytest test_quant_edge_eval; live report logs/quant_edge_eval/live_newsom/report.json | merged

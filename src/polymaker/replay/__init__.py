@@ -301,6 +301,7 @@ def _recompute(st: ReplayState, now: float) -> None:
     if yes_view.best_bid >= yes_view.best_ask:
         return
 
+    st.est.on_book_view(yes_view, now)
     micro = yb.microprice(p.micro_levels)
     if micro is None:
         return
@@ -559,6 +560,12 @@ def apply_journal_event(st: ReplayState, row: dict[str, Any]) -> bool:
         st._seen_trades.add(tkey)
 
         st.est.flow.update(tp.aggressor, tp.size, tp.ts or ts)
+        # Mid for Kyle λ (YES book mid if available)
+        mid = 0.0
+        yv = st.yes_book.view()
+        if yv.best_bid is not None and yv.best_ask is not None:
+            mid = 0.5 * (yv.best_bid + yv.best_ask)
+        st.est.on_trade_print(tp.aggressor, tp.size, mid, float(tp.ts or ts))
         tts = float(tp.ts or ts)
         st.trade_ts.append(tts)
         cutoff = tts - 3600.0

@@ -719,6 +719,14 @@ class Engine:
         meta = self.metas[cid]
         p = self.profiles[cid]
         self.est[cid].flow.update(tp.aggressor, tp.size, tp.ts)
+        # Toxicity / impact estimators (fed here; quote consumption is Tier-2)
+        book = self.md.book(tp.asset_id)
+        mid = 0.0
+        if book is not None:
+            bb0, ba0 = book.best_bid(), book.best_ask()
+            if bb0 is not None and ba0 is not None:
+                mid = 0.5 * (bb0.price + ba0.price)
+        self.est[cid].on_trade_print(tp.aggressor, tp.size, mid, float(tp.ts or time.time()))
         # Feed judgment layer: trade history for dead-tape / microstructure
         ts = float(tp.ts or time.time())
         hist = self._trade_ts.setdefault(cid, [])
@@ -744,7 +752,6 @@ class Engine:
         base = p.base_size_usdc / max(tp.price, meta.tick_size)
         if tp.size < p.event_sweep_mult * base:
             return
-        book = self.md.book(tp.asset_id)
         if book is None:
             return
         bb, ba = book.best_bid(), book.best_ask()
@@ -910,10 +917,11 @@ class Engine:
             return
 
         now = time.time()
+        est = self.est[cid]
+        est.on_book_view(yes_view, now)
         micro = yes_book.microprice(p.micro_levels)
         if micro is None:
             return
-        est = self.est[cid]
         est.flow.decay_to(now)
         # FV preview for risk marks only — last_fv stays previous until after
         # build_targets so regime jump detection matches the shared pipeline.

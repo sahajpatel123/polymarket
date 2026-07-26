@@ -44,10 +44,10 @@ scoring rule and is no longer used.
 | Calibration-weighted signal blend | `strategy/signal_blend.py` | **no** | no |
 | Avellaneda–Stoikov | `strategy/avellaneda_stoikov.py` | opt-in (`use_advanced_quoting`) | no |
 | Fractional Kelly | `strategy/kelly.py` | opt-in | no |
-| Kyle λ / Glosten–Milgrom | `strategy/kyle_lambda.py` | estimators present | no |
-| VPIN | `strategy/vpin.py` | estimators present | no |
+| Kyle λ / Glosten–Milgrom | `strategy/kyle_lambda.py` | **fed** (engine+replay); not in quotes | no |
+| VPIN | `strategy/vpin.py` | **fed** (engine+replay); not in quotes | no |
 | GARCH(1,1) vol | `strategy/garch.py` | **no** | no |
-| OFI skew | `strategy/ofi.py` | estimators present | no |
+| OFI skew | `strategy/ofi.py` | **fed** (engine+replay); not in quotes | no |
 | Covariance sizing | `strategy/covariance_sizing.py` | **no** | no |
 | Proper scoring + CI | `strategy/calibration.py` | metrics analyze | harness ready |
 
@@ -67,3 +67,10 @@ scoring rule and is no longer used.
 Tier-2 wiring of any technique into the live quote path requires a green
 `quant_edge_eval` finding on a fresh paper window (gate: ≥24h, ≥500 quotes)
 and a PR — never auto-merge. See `AUTONOMOUS_LOOP_PROTOCOL.md`.
+
+## Live evidence log
+
+| When (UTC) | Tape | Candidate | finding | Notes |
+|------------|------|-----------|---------|-------|
+| 2026-07-26T01:06Z | livecfg Newsom journal | `use_advanced_quoting=true` vs `live_scaled` | **false** | holdout dn_ev=+0.007, OOS sign match, but paired p≈0.20 — not significant |
+| 2026-07-26T00:53Z | fixtures/regime_dense | AS+Kelly on | true (synth only) | does not promote; live gate required |

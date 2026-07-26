@@ -140,6 +140,11 @@ def test_technique_inventory_covers_core_set():
         "covariance_sizing",
     ):
         assert required in ids
+    by_id = {t["id"]: t for t in TECHNIQUE_INVENTORY}
+    # Fed into estimators but not yet consumed by quote math
+    assert by_id["vpin"]["wired"] == "fed"
+    assert by_id["kyle_lambda"]["wired"] == "fed"
+    assert by_id["ofi_skew"]["wired"] == "fed"
 
 
 def test_quant_edge_eval_runs(tmp_path: Path):

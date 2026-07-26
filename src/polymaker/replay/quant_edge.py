@@ -43,10 +43,10 @@ TECHNIQUE_INVENTORY: tuple[dict[str, str], ...] = (
     {"id": "signal_blend_calibration", "module": "yes", "wired": "no", "evidence": "no"},
     {"id": "avellaneda_stoikov", "module": "yes", "wired": "opt-in", "evidence": "no"},
     {"id": "kelly_fractional", "module": "yes", "wired": "opt-in", "evidence": "no"},
-    {"id": "kyle_lambda", "module": "yes", "wired": "estimators", "evidence": "no"},
-    {"id": "vpin", "module": "yes", "wired": "estimators", "evidence": "no"},
+    {"id": "kyle_lambda", "module": "yes", "wired": "fed", "evidence": "no"},
+    {"id": "vpin", "module": "yes", "wired": "fed", "evidence": "no"},
     {"id": "garch_vol", "module": "yes", "wired": "no", "evidence": "no"},
-    {"id": "ofi_skew", "module": "yes", "wired": "estimators", "evidence": "no"},
+    {"id": "ofi_skew", "module": "yes", "wired": "fed", "evidence": "no"},
     {"id": "covariance_sizing", "module": "yes", "wired": "no", "evidence": "no"},
 )
 
@@ -228,12 +228,14 @@ def evaluate_quant_edge(
     oos_sign_match = (full_ev_delta == 0.0 and hold_ev_delta == 0.0) or (
         full_ev_delta * hold_ev_delta > 0.0
     )
+    ci_lo = float(significance.get("bootstrap_ci_lower") or 0.0)
+    ci_hi = float(significance.get("bootstrap_ci_upper") or 0.0)
+    # Degenerate CI (all chunk deltas identical → lo==hi) is not evidence.
+    ci_width = abs(ci_hi - ci_lo)
     ci_excludes_zero = (
         significance["n_chunks"] >= 2
-        and (
-            significance["bootstrap_ci_lower"] > 0.0
-            or significance["bootstrap_ci_upper"] < 0.0
-        )
+        and ci_width > 1e-12
+        and (ci_lo > 0.0 or ci_hi < 0.0)
     )
     finding = bool(
         oos_sign_match

@@ -81,3 +81,36 @@ def test_markout_benign_fills_are_not_toxic():
     mt.evaluate(fv_now=0.55, ts=31.0)
     assert mt.markout > 0
     assert mt.toxicity == 0.0
+
+
+def test_market_estimators_feed_vpin_kyle_ofi():
+    from polymaker.marketdata.orderbook import BookView
+    from polymaker.strategy.estimators import MarketEstimators
+
+    est = MarketEstimators(
+        vol=VolEstimator(10, 600),
+        flow=FlowEstimator(60),
+        markout=MarkoutTracker(30, 100),
+    )
+    assert est.vpin.vpin == 0.0
+    # Default VPIN bucket is 100 shares — fill at least one completed bucket
+    est.on_trade_print(Side.BUY, size=100.0, mid=0.50, ts=1.0)
+    est.on_trade_print(Side.BUY, size=50.0, mid=0.52, ts=2.0)
+    assert est.vpin.vpin > 0.0
+    assert est.kyle.lambda_param > 0.0
+
+    v1 = BookView(
+        best_bid=0.50, best_bid_size=100.0,
+        best_ask=0.52, best_ask_size=100.0,
+        second_bid=0.49, second_ask=0.53,
+        bid_depth=100.0, ask_depth=100.0,
+    )
+    est.on_book_view(v1, ts=3.0)
+    v2 = BookView(
+        best_bid=0.50, best_bid_size=150.0,
+        best_ask=0.52, best_ask_size=100.0,
+        second_bid=0.49, second_ask=0.53,
+        bid_depth=150.0, ask_depth=100.0,
+    )
+    est.on_book_view(v2, ts=4.0)
+    assert est.ofi.normalized_ofi > 0.0

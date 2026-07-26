@@ -865,6 +865,16 @@ done without evidence (script output / tests) from that cycle.
   `src/polymaker/strategy/signal_blend.py`, `src/polymaker/strategy/garch.py`,
   `tests/test_quant_edge_eval.py`
 
+### T1-129 Feed VPIN / Kyle λ / OFI in engine+replay (quote-neutral)
+- Status: `done`
+- Done when: MarketEstimators.on_trade_print / on_book_view update VPIN, Kyle λ,
+  and OFI from live trades and YES book views in both engine and replay; quote
+  math unchanged; inventory marks them `fed` not consumed; degenerate bootstrap
+  CI (lo==hi) no longer counts as ci_excludes_zero; live AS+Kelly eval logged
+  finding=false (p≈0.20).
+- Evidence: estimators + engine + replay hooks; docs live evidence table;
+  pytest test_quant_edge_eval
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

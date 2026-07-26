@@ -12,6 +12,7 @@ import math
 from dataclasses import dataclass, field
 
 from polymaker.domain import Side
+from polymaker.marketdata.orderbook import BookView
 from polymaker.strategy.kyle_lambda import KyleLambdaEstimator
 from polymaker.strategy.ofi import OFICalculator
 from polymaker.strategy.vpin import VPINEstimator
@@ -273,4 +274,16 @@ class MarketEstimators:
         self.markout.evaluate(fv, ts)
         self.last_fv = fv
         self.last_fv_ts = ts
+
+    def on_trade_print(
+        self, aggressor: Side, size: float, mid: float, ts: float
+    ) -> None:
+        """Feed VPIN + Kyle λ from a public trade print (quote-neutral until consumed)."""
+        self.vpin.update(aggressor, size)
+        if mid > 0:
+            self.kyle.update(mid=mid, aggressor=aggressor, size=size, ts=ts)
+
+    def on_book_view(self, view: BookView, ts: float) -> None:
+        """Feed OFI from a top-of-book view (quote-neutral until consumed)."""
+        self.ofi.update_from_book(view, ts)
 
