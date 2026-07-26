@@ -32,6 +32,7 @@ class QuoteTradeGap:
     p90_bid_gap: float | None
     mean_trade_minus_fv: float | None = None
     median_trade_minus_fv: float | None = None
+    mean_mid_minus_bid: float | None = None  # how far below book mid we rest
     reason: str = ""
 
     def as_dict(self) -> dict[str, Any]:
@@ -61,6 +62,11 @@ class QuoteTradeGap:
                 None
                 if self.median_trade_minus_fv is None
                 else round(self.median_trade_minus_fv, 6)
+            ),
+            "mean_mid_minus_bid": (
+                None
+                if self.mean_mid_minus_bid is None
+                else round(self.mean_mid_minus_bid, 6)
             ),
             "reason": self.reason,
         }
@@ -100,6 +106,7 @@ def measure_quote_trade_gap(
     n_crossable = 0
     gaps: list[float] = []
     fv_gaps: list[float] = []  # trade - token FV
+    mid_bid_gaps: list[float] = []  # book mid - our best bid
 
     for row in rows:
         kind = row.get("kind")
@@ -129,9 +136,18 @@ def measure_quote_trade_gap(
                 if live_same:
                     n_with_live += 1
                     bids = [o.price for o in live_same if o.side is Side.BUY]
+                    book = (
+                        st.yes_book
+                        if tp.asset_id == meta.yes.token_id
+                        else st.no_book
+                    )
+                    view = book.view()
                     if bids:
                         best_bid = max(bids)
                         gaps.append(float(tp.price) - best_bid)
+                        if view.best_bid is not None and view.best_ask is not None:
+                            mid = 0.5 * (view.best_bid + view.best_ask)
+                            mid_bid_gaps.append(mid - best_bid)
                     for o in live_same:
                         if (
                             o.side is Side.BUY
@@ -161,6 +177,8 @@ def measure_quote_trade_gap(
     p90 = _percentile(gaps_sorted, 0.9)
     mean_fv_gap = (sum(fv_gaps) / len(fv_gaps)) if fv_gaps else None
     med_fv_gap = _percentile(sorted(fv_gaps), 0.5) if fv_gaps else None
+    mean_mid_bid = (sum(mid_bid_gaps) / len(mid_bid_gaps)) if mid_bid_gaps else None
+    band = float(meta.rewards_max_spread or 0.0) / 100.0
 
     reasons: list[str] = []
     if n_trades == 0:
@@ -171,6 +189,12 @@ def measure_quote_trade_gap(
         reasons.append(f"bids_below_tape_mean_gap={mean_gap:.4f}")
         if mean_fv_gap is not None:
             reasons.append(f"mean_trade_minus_fv={mean_fv_gap:.4f}")
+        if mean_mid_bid is not None:
+            reasons.append(f"mean_mid_minus_bid={mean_mid_bid:.4f}")
+        if band > 0 and mean_mid_bid is not None and mean_mid_bid >= 0.5 * band:
+            reasons.append(
+                f"passive_vs_touch_reward_band={band:.4f}"
+            )
     elif n_crossable == 0 and n_sell == 0:
         reasons.append("no_sell_aggressors_for_bid_fills")
     elif n_crossable == 0:
@@ -191,5 +215,6 @@ def measure_quote_trade_gap(
         p90_bid_gap=p90,
         mean_trade_minus_fv=mean_fv_gap,
         median_trade_minus_fv=med_fv_gap,
+        mean_mid_minus_bid=mean_mid_bid,
         reason=";".join(reasons),
     )

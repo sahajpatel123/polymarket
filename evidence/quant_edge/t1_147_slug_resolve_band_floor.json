@@ -1,0 +1,67 @@
+{
+  "change": "--slug catalog resolve for quant_edge + AS blocker = passive reward-band placement",
+  "gap_catalog_meta": {
+    "mean_bid_gap": 0.042758,
+    "mean_mid_minus_bid": 0.042773,
+    "mean_trade_minus_fv": 1.7e-05,
+    "median_bid_gap": 0.042,
+    "median_trade_minus_fv": 2e-05,
+    "n_aggressor_buy": 34,
+    "n_aggressor_sell": 40,
+    "n_crossable": 0,
+    "n_fill": 0,
+    "n_quote": 244,
+    "n_trades": 74,
+    "n_trades_with_live": 33,
+    "p90_bid_gap": 0.043,
+    "reason": "bids_below_tape_mean_gap=0.0428;mean_trade_minus_fv=0.0000;mean_mid_minus_bid=0.0428;passive_vs_touch_reward_band=0.0550"
+  },
+  "id": "T1-147",
+  "note": "Use --slug/--db to load catalog tokens+rewards_max_spread (Newsom/Vance=5.5). With correct meta, mean_mid_minus_bid\u22480.043 while book touch is at mid \u2014 QUIET reward-band farming rests ~4\u00a2 below touch so sell aggressors never cross. AS EV needs closer-to-touch placement (Tier-2) or denser adverse fills \u2014 not more mispaired ablations.",
+  "resolve_newsom": {
+    "condition_id": "0x0f49db97f71c68b1e42a6d16e3de93d85dbf7d4148e3f018eb79e88554be9f75",
+    "neg_risk": true,
+    "no_token": "87854174148074652060467921081181402357467303721471806610111179101805869578687",
+    "rewards_daily_rate": 214.0,
+    "rewards_max_spread": 5.5,
+    "rewards_min_size": 200.0,
+    "slug": "will-gavin-newsom-win-the-2028-democratic-presidential-nomination-568",
+    "tick_size": 0.001,
+    "token_pair": {
+      "frac_near_one": 1.0,
+      "max_sum": 1.0,
+      "mean_sum": 1.0,
+      "min_sum": 1.0,
+      "n_samples": 11760,
+      "no_token": "87854174148074652060467921081181402357467303721471806610111179101805869578687",
+      "pair_ok": true,
+      "reason": "ok",
+      "tol": 0.02,
+      "yes_token": "54533043819946592547517511176940999955633860128497669742211153063842200957669"
+    },
+    "yes_token": "54533043819946592547517511176940999955633860128497669742211153063842200957669"
+  },
+  "resolve_vance": {
+    "condition_id": "0x18b1c135d0a40c5894da9412e77311827d9caf16cf4cd6591b247a34730af919",
+    "neg_risk": true,
+    "no_token": "78633590736077251574794513664747155551297291244492840448622550955320930591622",
+    "rewards_daily_rate": 308.0,
+    "rewards_max_spread": 5.5,
+    "rewards_min_size": 200.0,
+    "slug": "will-jd-vance-win-the-2028-republican-presidential-nomination",
+    "tick_size": 0.001,
+    "token_pair": {
+      "frac_near_one": 1.0,
+      "max_sum": 1.0,
+      "mean_sum": 1.0,
+      "min_sum": 1.0,
+      "n_samples": 15698,
+      "no_token": "78633590736077251574794513664747155551297291244492840448622550955320930591622",
+      "pair_ok": true,
+      "reason": "ok",
+      "tol": 0.02,
+      "yes_token": "40081275558852222228080198821361202017557872256707631666334039001378518619916"
+    },
+    "yes_token": "40081275558852222228080198821361202017557872256707631666334039001378518619916"
+  }
+}

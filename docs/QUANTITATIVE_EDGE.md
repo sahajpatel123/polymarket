@@ -60,6 +60,8 @@ Quote–trade gap (why fills stay zero):
 ```bash
 uv run python scripts/quote_trade_gap.py --journal … --yes-token …
 uv run python scripts/touchability_sweep.py --journal … --yes-token …
+uv run python scripts/resolve_market_tokens.py --slug … --db livecfg/state.db
+uv run python scripts/quant_edge_eval.py --journal … --slug … --db livecfg/state.db
 uv run python scripts/token_pair_sanity.py --journal … --yes-token … --no-token …
 uv run python scripts/quote_side_coverage.py --journal … --yes-token … --no-token …
 ```
@@ -140,6 +142,7 @@ and a PR — never auto-merge. See `AUTONOMOUS_LOOP_PROTOCOL.md`.
 | 2026-07-26T04:55Z | token_pair_sanity | wrong vs catalog Newsom/Vance | **pair_ok** | Historical “Newsom” pair mean_sum=0.78 (Vance NO+Newsom YES); correct pairs sum=1.0, two-sided quotes restore |
 | 2026-07-26T05:10Z | correct-token rerun | AS / flow0 / FV micro | all **false** | pair_ok; two-sided quotes; still n_fill=0 / gap≈0.023; **micro finding overturned** |
 | 2026-07-26T05:25Z | correct-token calibrations | OFI/VPIN/tox/flow/FV Vance | all **false** | prior VPIN/tox Newsom wins overturned; Kyle Spearman only (partial) |
+| 2026-07-26T05:40Z | slug resolve + band gap | catalog meta Newsom | n_crossable=0 | mean_mid_minus_bid≈0.043 ≈ passive reward-band farming; use `--slug` |
 
 ## Freeze list (do not Tier-2 wire without multi-market EV)
 
@@ -151,4 +154,6 @@ and a PR — never auto-merge. See `AUTONOMOUS_LOOP_PROTOCOL.md`.
 - Correct Newsom: yes=54533043… no=87854174… (cid 0x0f49db97…); Vance: yes=40081275… no=78633590… (cid 0x18b1c135…)
 - `promotion_eligible` now requires `token_pair_ok` (YES+NO mid sum ≈ 1)
 - Correct-token rerun (T1-145): AS/flow0/micro all finding=false; micro prior win **overturned**
-- AS EV still blocked (n_fill_optimistic=0); need tape that crosses resting bids
+- AS EV blocked by **passive reward-band placement** (~4¢ below touch; rewards_max_spread=5.5) — not token pairing
+- Prefer `--slug`/`resolve_market_tokens` over raw token IDs
+- Next Tier-2 candidate only with EV evidence: closer-to-touch join vs reward uptime tradeoff

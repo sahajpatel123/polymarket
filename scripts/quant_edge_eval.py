@@ -111,6 +111,16 @@ def main() -> int:
     ap.add_argument("--no-token", default=None)
     ap.add_argument("--condition-id", default=None)
     ap.add_argument("--tick-size", type=float, default=None)
+    ap.add_argument(
+        "--slug",
+        default=None,
+        help="Resolve tokens/tick/rewards from catalog by slug (preferred over raw token IDs)",
+    )
+    ap.add_argument(
+        "--db",
+        default=None,
+        help="Catalog SQLite path for --slug (default: <config-dir>/../state.db or state.db)",
+    )
     args = ap.parse_args()
 
     base_ov = _load_overrides(args.baseline_overrides, args.baseline_overrides_file)
@@ -133,7 +143,32 @@ def main() -> int:
             cand_ov = {"use_advanced_quoting": True}
         candidate = profile_from_overrides(baseline, cand_ov)
 
-    meta = _meta_from_args(args)
+    if args.slug:
+        from pathlib import Path as _P
+
+        from polymaker.replay.market_resolve import resolve_market_by_slug
+
+        db = args.db
+        if db is None:
+            cfg_db = _P(args.config_dir) / "state.db"
+            db = str(cfg_db if cfg_db.exists() else "state.db")
+        meta = resolve_market_by_slug(args.slug, db_path=db)
+        # Allow explicit overrides to still win if provided
+        if args.yes_token or args.no_token or args.condition_id or args.tick_size is not None:
+            from dataclasses import replace
+
+            updates = {}
+            if args.condition_id:
+                updates["condition_id"] = args.condition_id
+            if args.tick_size is not None:
+                updates["tick_size"] = args.tick_size
+            if args.yes_token or args.no_token:
+                yes = args.yes_token or meta.yes.token_id
+                no = args.no_token or meta.no.token_id
+                updates["tokens"] = (TokenMeta(yes, "Yes"), TokenMeta(no, "No"))
+            meta = replace(meta, **updates) if updates else meta
+    else:
+        meta = _meta_from_args(args)
     journal = Path(args.journal)
     if not journal.exists():
         print(f"status=ERROR reason=missing_journal path={journal}", file=sys.stderr)

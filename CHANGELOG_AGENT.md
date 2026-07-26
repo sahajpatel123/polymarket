@@ -334,3 +334,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-26T05:10:00Z | Tier1 | T1-145 re-run AS/flow0/FV on catalog-correct Newsom+Vance tokens; pair_ok; micro finding overturned (false); AS/flow0 false; as_ev_ready still false | pytest test_quant_edge_eval; evidence/quant_edge/t1_145_correct_token_rerun.json | merged
 
 2026-07-26T05:25:00Z | Tier1 | T1-146 correct-token calibration ledger: OFI/VPIN/toxicity/flow/FV-Vance all finding=false; tox+VPIN prior wins overturned; kyle→partial; micro/tox inventory→no | pytest test_quant_edge_eval; evidence/quant_edge/t1_146_correct_calibration_ledger.json | merged
+
+2026-07-26T05:40:00Z | Tier1 | T1-147 quant_edge --slug catalog resolve; remaining AS blocker is reward-band passive bids (~4¢ below touch), not mispairing | pytest test_market_resolve; evidence/quant_edge/t1_147_slug_resolve_band_floor.json | merged

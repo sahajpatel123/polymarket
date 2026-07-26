@@ -1026,6 +1026,15 @@ done without evidence (script output / tests) from that cycle.
   finding=false; inventory markout_toxicity→no, kyle→partial; evidence JSON.
 - Evidence: `evidence/quant_edge/t1_146_correct_calibration_ledger.json`
 
+
+### T1-147 catalog --slug resolve + reward-band AS blocker
+- Status: `done`
+- Done when: `resolve_market_by_slug` + `quant_edge_eval --slug/--db`; gap with
+  catalog rewards_max_spread shows mean_mid_minus_bid≈0.043 (passive vs touch);
+  docs prefer slug resolution; evidence JSON.
+- Evidence: `src/polymaker/replay/market_resolve.py`, scripts, tests,
+  `evidence/quant_edge/t1_147_slug_resolve_band_floor.json`
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
