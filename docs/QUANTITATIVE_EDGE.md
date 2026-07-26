@@ -45,10 +45,11 @@ Verdict `finding=true` only when OOS EV improves, the paired test is
 significant, and the bootstrap CI excludes zero.
 
 `promotion_eligible` additionally requires `--fill-mode conservative`
-(default) **and** `as_ev_ready` from the fill-readiness gate (enough
-`last_trade_price` prints; optional optimistic fill probe). `base` /
-`optimistic` are diagnostics when queue-ahead yields `n_fill≈0` under
-conservative — a diagnostic finding alone does not promote.
+(default), `as_ev_ready` from the fill-readiness gate (enough
+`last_trade_price` prints), `token_pair_ok`, **and** `n_fill_candidate>0`.
+Zero-fill EV deltas (reward-path noise) are not AS promotion evidence.
+`base` / `optimistic` are diagnostics when queue-ahead yields `n_fill≈0`
+under conservative — a diagnostic finding alone does not promote.
 
 ```bash
 uv run python scripts/fill_readiness.py \
@@ -146,6 +147,7 @@ and a PR — never auto-merge. See `AUTONOMOUS_LOOP_PROTOCOL.md`.
 | 2026-07-26T05:40Z | slug resolve + band gap | catalog meta Newsom | n_crossable=0 | mean_mid_minus_bid≈0.043 ≈ passive reward-band farming; use `--slug` |
 | 2026-07-26T05:55Z | band_touch_tradeoff | rewards_max_spread 5.5→0 | **any_crossable=false** | gap shrinks but never joins touch; need join-touch policy not band shrink |
 | 2026-07-26T06:10Z | Newsom pre12h join_best_bid | join / join+min_edge0 | **finding=false** | join alone inert (min_edge blocks BB); join+min_edge0 → n_fill 0→33, OOS EV+, but degenerate bootstrap CI + optimistic fills |
+| 2026-07-26T06:25Z | bootstrap CI fix + join×2 | Newsom/Vance join+min_edge0 | Newsom opt **true** / Vance **false** | LCG CI bug fixed; conservative n_fill=0; promo now needs fills; join still frozen |
 
 ## Freeze list (do not Tier-2 wire without multi-market EV)
 
@@ -162,3 +164,5 @@ and a PR — never auto-merge. See `AUTONOMOUS_LOOP_PROTOCOL.md`.
 - Narrowing `rewards_max_spread` alone **does not** create crossable quotes (T1-148)
 - `join_best_bid` knob exists (default **False**); alone does not unlock fills — **min_edge_ticks** caps bids below BB when BB≈mid≈FV (T1-149)
 - `join_best_bid=true` + `min_edge_ticks=0` unlocks optimistic fills (n_fill=33) with positive OOS EV on Newsom pre12h but **finding=false** (degenerate CI) → still freeze; need conservative multi-market EV before Tier-2 default
+- Bootstrap CI fixed (T1-150): old LCG collapsed CI when `n_chunks` was a power of 2; Newsom optimistic join now finding=true, Vance finding=false — **still freeze** (no multi-market + conservative fills)
+- `promotion_eligible` now also requires `n_fill_candidate>0` (blocks zero-fill reward-path “findings”)

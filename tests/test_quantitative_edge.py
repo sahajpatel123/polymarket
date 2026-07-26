@@ -79,6 +79,15 @@ def test_bootstrap_confidence_interval():
     assert lo <= mean <= hi
 
 
+def test_bootstrap_ci_nondegenerate_for_power_of_two_n():
+    """Power-of-two lengths must not collapse the CI (old LCG residue-cycle bug)."""
+    data = [-0.0004, 0.0003, 0.0008, 0.0012, 0.0056, 0.0032, 0.0022, 0.0007]
+    mean, lo, hi = bootstrap_confidence_interval(data, n_resamples=1000, ci=0.95, seed=7)
+    assert mean == pytest.approx(sum(data) / len(data))
+    assert hi - lo > 1e-6
+    assert lo < mean < hi
+
+
 def test_paired_significance_test():
     baseline = [1.0, 1.5, 2.0, 1.2, 1.8]
     candidate = [1.5, 2.2, 2.8, 1.9, 2.5]  # systematically higher

@@ -1,0 +1,65 @@
+{
+  "id": "T1-150",
+  "change": "Fix degenerate bootstrap CI (LCG residue cycle on power-of-2 n); multi-market join+min_edge0; require n_fill_candidate>0 for promotion_eligible",
+  "bootstrap_bug": {
+    "symptom": "bootstrap_ci_lower == bootstrap_ci_upper == mean whenever n_chunks in {2,4,8,...}",
+    "cause": "bare LCG state%n produced a full residue permutation each resample of length n=2^k",
+    "fix": "random.Random.randrange in strategy/calibration.bootstrap_confidence_interval",
+    "test": "test_bootstrap_ci_nondegenerate_for_power_of_two_n"
+  },
+  "promotion_gate": {
+    "added": "n_fill_candidate > 0",
+    "reason": "Newsom conservative join+min_edge0 was promotion_eligible with n_fill 0->0 (reward-path EV, not AS)"
+  },
+  "journal": "livecfg/journal/paper.jsonl.pre12h.1784925687.31229",
+  "candidate_overrides": {"join_best_bid": true, "min_edge_ticks": 0},
+  "gap": [
+    {"market": "newsom", "profile": "baseline", "n_crossable": 0, "n_fill": 0, "mean_mid_minus_bid": 0.042773},
+    {"market": "newsom", "profile": "join_minedge0", "n_crossable": 33, "n_fill": 33, "mean_mid_minus_bid": 0.004318},
+    {"market": "vance", "profile": "baseline", "n_crossable": 0, "n_fill": 0, "mean_mid_minus_bid": 0.043056},
+    {"market": "vance", "profile": "join_minedge0", "n_crossable": 2, "n_fill": 2, "mean_mid_minus_bid": 0.0005}
+  ],
+  "evals_after_ci_fix": [
+    {
+      "run": "newsom_optimistic",
+      "finding": true,
+      "promotion_eligible_after_fill_gate": false,
+      "n_fill": "0->33",
+      "full_dn_ev": 0.000367,
+      "holdout_dn_ev": 0.000677,
+      "boot_ci": [0.000568375, 0.00301975],
+      "paired_p": 0.012313
+    },
+    {
+      "run": "newsom_conservative",
+      "finding": true,
+      "promotion_eligible_before_fill_gate": true,
+      "promotion_eligible_after_fill_gate": false,
+      "n_fill": "0->0",
+      "note": "zero-fill EV finding is not AS; gate now blocks promo",
+      "full_dn_ev": 0.000384,
+      "holdout_dn_ev": 0.000637,
+      "paired_p": 0.007931
+    },
+    {
+      "run": "vance_optimistic",
+      "finding": false,
+      "n_fill": "0->2",
+      "full_dn_ev": 4.7e-05,
+      "holdout_dn_ev": 0.003838,
+      "boot_ci": [-6.325e-05, 0.002317625],
+      "paired_p": 0.13891
+    },
+    {
+      "run": "vance_conservative",
+      "finding": false,
+      "n_fill": "0->0",
+      "as_ev_ready": false,
+      "full_dn_ev": 0.000293,
+      "holdout_dn_ev": 0.005406,
+      "paired_p": 0.133339
+    }
+  ],
+  "verdict": "join+min_edge0 remains frozen for Tier-2: single-market optimistic finding only; Vance fails; conservative never fills under queue-ahead",
+  "reports_dir": "logs/quant_edge_eval/t1_150_join_multimarket/"
+}

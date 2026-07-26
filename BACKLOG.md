@@ -1053,6 +1053,16 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: `src/polymaker/strategy/quoting.py`, `config.py`,
   `tests/test_quoting.py`, `evidence/quant_edge/t1_149_join_best_bid.json`
 
+### T1-150 bootstrap CI fix + join multi-market + fill gate
+- Status: `done`
+- Done when: bootstrap CI non-degenerate for power-of-2 n_chunks; Newsom+Vance
+  join+min_edge0 optimistic/conservative re-run; promotion_eligible requires
+  n_fill_candidate>0; join remains frozen (Vance finding=false; conservative
+  n_fill=0); evidence JSON.
+- Evidence: `src/polymaker/strategy/calibration.py`, `replay/quant_edge.py`,
+  `tests/test_quantitative_edge.py`,
+  `evidence/quant_edge/t1_150_bootstrap_ci_join_multimarket.json`
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

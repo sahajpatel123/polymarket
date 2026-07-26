@@ -14,6 +14,7 @@ No I/O — pure mathematical evaluation module.
 from __future__ import annotations
 
 import math
+import random
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -149,8 +150,12 @@ def bootstrap_confidence_interval(
     seed: int = 42,
 ) -> tuple[float, float, float]:
     """Compute non-parametric bootstrap confidence interval for a metric series.
-    
+
     Returns (mean, ci_lower, ci_upper).
+
+    Uses ``random.Random`` (not a bare LCG ``state % n``). The previous LCG
+    sampler produced a full residue cycle mod ``n`` whenever ``n`` was a power
+    of two, so every resample mean equaled the sample mean and CIs collapsed.
     """
     if not series:
         return 0.0, 0.0, 0.0
@@ -160,15 +165,12 @@ def bootstrap_confidence_interval(
     if n < 2 or n_resamples <= 0:
         return mean_val, mean_val, mean_val
 
-    # Simple deterministic pseudo-random sampler for reproducibility
+    rng = random.Random(seed)
     resample_means: list[float] = []
-    state = seed
     for _ in range(n_resamples):
         s_sum = 0.0
         for _ in range(n):
-            state = (1103515245 * state + 12345) & 0x7FFFFFFF
-            idx = state % n
-            s_sum += series[idx]
+            s_sum += series[rng.randrange(n)]
         resample_means.append(s_sum / n)
 
     resample_means.sort()

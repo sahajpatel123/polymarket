@@ -280,6 +280,7 @@ def evaluate_quant_edge(
         and fill_mode == "conservative"
         and readiness.as_ev_ready
         and pair_ok
+        and n_fill_cand > 0
     )
     verdict = {
         "oos_sign_match": oos_sign_match,
@@ -299,7 +300,8 @@ def evaluate_quant_edge(
         "note": (
             "finding=true only when OOS EV improves, paired test is significant, "
             "and bootstrap CI excludes zero; promotion_eligible additionally "
-            "requires fill_mode=conservative, as_ev_ready, and token_pair_ok"
+            "requires fill_mode=conservative, as_ev_ready, token_pair_ok, "
+            "and n_fill_candidate>0 (zero-fill EV deltas are not AS evidence)"
         ),
     }
 
