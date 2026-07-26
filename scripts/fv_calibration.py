@@ -17,6 +17,7 @@ from pathlib import Path
 from polymaker.replay.fv_calibration import (
     calibrate_fair_value,
     calibrate_fair_value_multi_horizon,
+    sweep_micro_levels,
     write_fv_report,
 )
 
@@ -32,6 +33,11 @@ def main() -> int:
         default=None,
         help="Comma-separated horizons for multi-horizon mode (e.g. 5,30,120)",
     )
+    ap.add_argument(
+        "--sweep-levels",
+        default=None,
+        help="Comma-separated micro_levels to sweep (e.g. 1,2,3,5,8)",
+    )
     ap.add_argument("--sample-every", type=int, default=5)
     ap.add_argument("--holdout-frac", type=float, default=0.3)
     ap.add_argument("--micro-levels", type=int, default=3)
@@ -42,6 +48,29 @@ def main() -> int:
     if not journal.exists():
         print(f"status=ERROR reason=missing_journal path={journal}", file=sys.stderr)
         return 2
+
+    if args.sweep_levels:
+        levels = tuple(int(x.strip()) for x in args.sweep_levels.split(",") if x.strip())
+        sweep = sweep_micro_levels(
+            journal,
+            yes_token=args.yes_token,
+            no_token=args.no_token,
+            levels=levels,
+            horizon_s=args.horizon_s,
+            sample_every=args.sample_every,
+            holdout_frac=args.holdout_frac,
+        )
+        path = Path(args.report)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(sweep, indent=2, sort_keys=True) + "\n")
+        print(f"status=OK mode=sweep_levels journal={journal} report={path}")
+        print(f"any_finding={sweep.get('any_finding')} best={sweep.get('best_finding_row')}")
+        for r in sweep.get("rows") or []:
+            print(
+                f"levels={r.get('micro_levels')} finding={r.get('micro_finding')} "
+                f"mse_micro={r.get('mse_micro')} skill={r.get('bootstrap_mean_skill')} p={r.get('paired_p')}"
+            )
+        return 0
 
     if args.horizons:
         hs = tuple(float(x.strip()) for x in args.horizons.split(",") if x.strip())

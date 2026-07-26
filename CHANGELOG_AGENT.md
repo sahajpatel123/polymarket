@@ -308,3 +308,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-26T01:55:00Z | Tier1 | T1-132 fv_calibration mid/micro/Kalman/blend; bootstrap CI precision 12dp; Newsom micro_finding=true (p≈0.048), Vance micro fails replication; Kalman no | pytest test_fv_calibration+test_quantitative_edge; logs/fv_calibration/*.json | merged
 
 2026-07-26T02:10:00Z | Tier1 | T1-133 multi-horizon FV (Newsom micro wins 30s+120s; Vance none) + cov_sizing_eval (uncorrelated budget; finding=false) + Vance AS finding=false | pytest test_cov_sizing_eval; logs/fv_calibration/*_multi.json; logs/cov_sizing_eval/newsom_vance.json | merged
+
+2026-07-26T02:25:00Z | Tier1 | T1-134 micro_levels sweep (Newsom best=5; Vance all false) + flow_z calibration (both markets false); no default levels change | pytest test_flow_calibration; logs/fv_calibration/*_levels.json; logs/flow_calibration/*.json | merged

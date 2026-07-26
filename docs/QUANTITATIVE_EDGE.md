@@ -22,7 +22,10 @@ Signal-only scoring: `scripts/signal_calibration.py` → `polymaker.replay.signa
 Vol forecasting: `scripts/vol_calibration.py` → `polymaker.replay.vol_calibration`
 (GARCH vs EWMA OOS MSE + significance).
 FV predictors: `scripts/fv_calibration.py` → `polymaker.replay.fv_calibration`
-(mid vs microprice vs Kalman vs blend; OOS MSE + significance; `--horizons` multi).
+(mid vs microprice vs Kalman vs blend; OOS MSE + significance; `--horizons` multi;
+`--sweep-levels` for micro depth).
+Flow: `scripts/flow_calibration.py` → `polymaker.replay.flow_calibration`
+(flow_z → P(up) vs climatology).
 Covariance sizing: `scripts/cov_sizing_eval.py` → `polymaker.replay.cov_sizing_eval`
 (tune cov vs uncorrelated budget; holdout variance reduction CI).
 
@@ -46,8 +49,8 @@ scoring rule and is no longer used.
 
 | Technique | Module | Live/replay wiring | Evidence gate |
 |-----------|--------|--------------------|---------------|
-| Microprice | `marketdata/orderbook.py` | yes | **mixed** (OOS beats mid on Newsom; fails on Vance) |
-| EWMA vol / flow | `strategy/estimators.py` | yes | partial |
+| Microprice | `marketdata/orderbook.py` | yes | **mixed** (Newsom OOS yes, best depth=5; Vance fails all depths) |
+| EWMA vol / flow | `strategy/estimators.py` | yes | partial (vol); **flow_z directional: no** |
 | Kalman mid | `intelligence/signal_processing.py` | intel-only | **no** (worse than mid on Newsom+Vance OOS) |
 | Calibration-weighted signal blend | `strategy/signal_blend.py` | **no** | no (no clear OOS win vs mid) |
 | Avellaneda–Stoikov | `strategy/avellaneda_stoikov.py` | opt-in (`use_advanced_quoting`) | no |
@@ -91,3 +94,6 @@ and a PR — never auto-merge. See `AUTONOMOUS_LOOP_PROTOCOL.md`.
 | 2026-07-26T02:10Z | Vance multi-horizon FV | micro @ 5/30/120s | all **false** | still no Vance replication |
 | 2026-07-26T02:10Z | Newsom×Vance cov_sizing | corr-scaled notionals | **false** | tune corr=0 (no scale); holdout corr≈−0.58 material but diversification ≠ downscale finding |
 | 2026-07-26T02:10Z | Vance AS+Kelly quant_edge | use_advanced_quoting | **false** | holdout dn_ev>0 but p≈0.29 — not significant |
+| 2026-07-26T02:25Z | Newsom micro_levels sweep | levels 1–8 @30s | **true** (best **5**) | levels=5 MSE 6.0e-8 p≈0.019; default 3 also true but worse; level 1 not sig |
+| 2026-07-26T02:25Z | Vance micro_levels sweep | levels 1–8 @30s | all **false** | micro worse than mid at all depths — do not change default yet |
+| 2026-07-26T02:25Z | Newsom+Vance flow_calibration | flow_z → P(up) | both **false** | worse than climatology (like OFI) |

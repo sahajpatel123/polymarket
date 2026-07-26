@@ -314,6 +314,54 @@ def calibrate_fair_value_multi_horizon(
     }
 
 
+def sweep_micro_levels(
+    journal: Path,
+    *,
+    yes_token: str,
+    no_token: str | None = None,
+    levels: tuple[int, ...] = (1, 2, 3, 5, 8),
+    horizon_s: float = 30.0,
+    sample_every: int = 5,
+    holdout_frac: float = 0.3,
+) -> dict[str, Any]:
+    """Compare microprice depth (levels) on OOS skill vs mid."""
+    rows_out: list[dict[str, Any]] = []
+    best: dict[str, Any] | None = None
+    for lv in levels:
+        rep = calibrate_fair_value(
+            journal,
+            yes_token=yes_token,
+            no_token=no_token,
+            horizon_s=horizon_s,
+            sample_every=sample_every,
+            holdout_frac=holdout_frac,
+            micro_levels=int(lv),
+        )
+        d = rep.as_dict()
+        mv = d["pairwise"].get("micro_vs_mid") or {}
+        row = {
+            "micro_levels": lv,
+            "n": d["n"],
+            "mse_mid": (d["predictors"].get("mid") or {}).get("mse"),
+            "mse_micro": (d["predictors"].get("micro") or {}).get("mse"),
+            "micro_finding": d["verdict"].get("micro_finding"),
+            "bootstrap_mean_skill": mv.get("bootstrap_mean_skill"),
+            "paired_p": mv.get("paired_p"),
+            "ci_excludes_zero": mv.get("ci_excludes_zero"),
+        }
+        rows_out.append(row)
+        if row["micro_finding"] and row["mse_micro"] is not None:
+            if best is None or float(row["mse_micro"]) < float(best["mse_micro"]):
+                best = row
+    return {
+        "horizon_s": horizon_s,
+        "levels": list(levels),
+        "rows": rows_out,
+        "best_finding_row": best,
+        "any_finding": any(r.get("micro_finding") for r in rows_out),
+    }
+
+
 def write_fv_report(report: FVCalibrationReport, path: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(report.as_dict(), indent=2, sort_keys=True) + "\n")

@@ -913,6 +913,15 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: `calibrate_fair_value_multi_horizon`, `scripts/cov_sizing_eval.py`,
   `src/polymaker/replay/cov_sizing_eval.py`, `tests/test_cov_sizing_eval.py`
 
+### T1-134 Micro levels sweep + flow_z calibration
+- Status: `done`
+- Done when: `--sweep-levels` compares micro depth on OOS; Newsom best finding
+  at levels=5; Vance sweep all false; flow_calibration scores flow_z→P(up) vs
+  climatology on both markets (both false). No default micro_levels change
+  (cross-market fail).
+- Evidence: `sweep_micro_levels`, `scripts/flow_calibration.py`,
+  `src/polymaker/replay/flow_calibration.py`, `tests/test_flow_calibration.py`
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
