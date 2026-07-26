@@ -197,6 +197,7 @@ def construct_quotes(inp: QuoteInputs) -> TargetQuotes:
             yes_bid_target, inp.yes_view, tick, dec, inp.fv, p.min_edge_ticks,
             max_join_distance=join_dist,
             band_lo=yes_band_lo,
+            join_best_bid=bool(p.join_best_bid),
         )
         if price is not None:
             _add_layers(quotes, m.yes.token_id, Side.BUY, price, tick, dec,
@@ -227,6 +228,7 @@ def construct_quotes(inp: QuoteInputs) -> TargetQuotes:
             no_bid_target, inp.no_view, tick, dec, no_fv, p.min_edge_ticks,
             max_join_distance=join_dist,
             band_lo=no_band_lo,
+            join_best_bid=bool(p.join_best_bid),
         )
         if price is not None:
             _add_layers(quotes, m.no.token_id, Side.BUY, price, tick, dec,
@@ -271,6 +273,7 @@ def _place_bid(
     target: float, view: BookView, tick: float, dec: int, fv: float, min_edge_ticks: int,
     *, max_join_distance: float | None = None,
     band_lo: float | None = None,
+    join_best_bid: bool = False,
 ) -> float | None:
     """Position a BUY: join the touch or sit behind, never cross, keep min edge vs FV.
 
@@ -278,6 +281,8 @@ def _place_bid(
     distance of FV (prevents chasing dust bids at 0.001 on thin books).
     band_lo: hard floor for reward-band eligibility; after all adjustments the
     bid is raised to band_lo (or dropped if that would violate min-edge / cross).
+    join_best_bid: when True, improve up to best_bid even if target was below
+    the touch (still capped by edge_cap / ask / band rules).
     """
     price = target
     # never bid above (FV - min_edge*tick): we don't pay through fair value
@@ -289,6 +294,13 @@ def _place_bid(
         bb = view.best_bid
         if max_join_distance is None or abs(bb - fv) <= max_join_distance:
             price = bb
+    elif join_best_bid and view.best_bid is not None:
+        # Improve toward touch from below when the touch is still safe vs FV.
+        bb = view.best_bid
+        if bb <= edge_cap + 1e-12 and (
+            max_join_distance is None or abs(bb - fv) <= max_join_distance
+        ):
+            price = max(price, bb)
     # never cross the ask
     if view.best_ask is not None and price >= view.best_ask:
         price = view.best_ask - tick

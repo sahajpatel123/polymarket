@@ -8,6 +8,7 @@ from polymaker.domain import Position, Regime, Side
 from polymaker.strategy.quoting import (
     QuoteInputs,
     _place_ask,
+    _place_bid,
     compute_fair_value,
     construct_quotes,
     round_to_tick,
@@ -248,6 +249,30 @@ def test_quiet_regime_clamps_spread_to_reward_band(meta, profile):
     top_yes = max(q.price for q in tq.quotes if q.token_id == "yes-token" and q.side == Side.BUY)
     # bid should be within (band + a tick of rounding) of FV
     assert top_yes >= 0.50 - band - meta.tick_size
+
+
+def test_place_bid_join_best_bid_improves_from_below():
+    """Opt-in join_best_bid raises a below-touch target up to best_bid when safe."""
+    v = view(0.49, 0.51)  # touch at 0.49; FV 0.50 → edge_cap with min_edge=0 is 0.50
+    # target below touch
+    p_default = _place_bid(0.47, v, 0.01, 2, 0.50, 0, join_best_bid=False)
+    assert p_default == 0.47
+    p_join = _place_bid(0.47, v, 0.01, 2, 0.50, 0, join_best_bid=True)
+    assert p_join == 0.49
+
+
+def test_place_bid_join_best_bid_respects_min_edge():
+    """Cannot join touch above FV−min_edge."""
+    v = view(0.50, 0.52)  # BB at FV
+    # min_edge=1 tick → edge_cap=0.49; BB=0.50 > edge_cap → stay at target
+    p = _place_bid(0.47, v, 0.01, 2, 0.50, 1, join_best_bid=True)
+    assert p == 0.47
+
+
+def test_strategy_profile_join_best_bid_default_off():
+    from polymaker.config import StrategyProfile
+
+    assert StrategyProfile().join_best_bid is False
 
 
 def test_entry_bids_never_dust_oob_on_junk_book(meta, profile):

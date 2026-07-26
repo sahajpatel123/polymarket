@@ -196,6 +196,10 @@ class StrategyProfile(BaseModel):
     reprice_ticks: int = 2
     resize_frac: float = 0.15
     min_edge_ticks: int = 1
+    # When True, improve BUY bids up to the book best bid (join touch) if the
+    # touch is still ≤ FV−min_edge and within the reward join distance.
+    # Default False preserves sit-behind / band-floor farming behavior.
+    join_best_bid: bool = False
     # regime
     event_cooloff_s: float = 60.0
     event_jump_ticks: int = 8

@@ -1044,6 +1044,15 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: `scripts/band_touch_tradeoff.py`, `tests/test_band_touch_tradeoff.py`,
   `evidence/quant_edge/t1_148_band_touch_tradeoff.json`
 
+### T1-149 opt-in join_best_bid unlocks fills only with min_edge=0
+- Status: `done`
+- Done when: `StrategyProfile.join_best_bid` (default False) improves bids to
+  BB when safe; gap sweep shows join alone still n_crossable=0; join+min_edge=0
+  → n_fill=33 optimistic on Newsom pre12h; EV finding=false (degenerate CI);
+  not promotion_eligible; evidence JSON.
+- Evidence: `src/polymaker/strategy/quoting.py`, `config.py`,
+  `tests/test_quoting.py`, `evidence/quant_edge/t1_149_join_best_bid.json`
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

@@ -1,0 +1,44 @@
+{
+  "id": "T1-149",
+  "change": "Opt-in StrategyProfile.join_best_bid (default False) + evidence that join alone is blocked by min_edge; join+min_edge_ticks=0 unlocks fills",
+  "note": "On correct-token Newsom pre12h, join_best_bid=true alone leaves n_crossable=0 (BB near mid exceeds FV-min_edge). join_best_bid=true + min_edge_ticks=0 yields n_crossable=33, n_fill=33, OOS EV delta>0 and paired p≈0.05, but finding=false (degenerate bootstrap CI lo==hi) and fill_mode=optimistic → not promotion_eligible. Do not default join or zero min_edge without Tier-2 multi-market conservative EV.",
+  "slug": "will-gavin-newsom-win-the-2028-democratic-presidential-nomination-568",
+  "journal": "livecfg/journal/paper.jsonl.pre12h.1784925687.31229",
+  "profile": "live_scaled",
+  "gap_sweep": {
+    "baseline": {"n_crossable": 0, "n_fill": 0, "mean_mid_minus_bid": 0.042773},
+    "join_only": {"join_best_bid": true, "n_crossable": 0, "n_fill": 0, "mean_mid_minus_bid": 0.042773},
+    "minedge0": {"min_edge_ticks": 0, "n_crossable": 0, "n_fill": 0, "mean_mid_minus_bid": 0.0425},
+    "join_minedge0": {
+      "join_best_bid": true,
+      "min_edge_ticks": 0,
+      "n_crossable": 33,
+      "n_fill": 33,
+      "mean_mid_minus_bid": 0.004318,
+      "mean_bid_gap": 0.004303
+    }
+  },
+  "quant_edge_eval": {
+    "candidate_overrides": {"join_best_bid": true, "min_edge_ticks": 0},
+    "fill_mode": "optimistic",
+    "full_dn_ev": 0.000367,
+    "holdout_dn_ev": 0.000677,
+    "n_fill": "0->33",
+    "paired_p": 0.049631,
+    "is_significant": true,
+    "ci_excludes_zero": false,
+    "finding": false,
+    "promotion_eligible": false,
+    "token_pair_ok": true,
+    "as_ev_ready": true,
+    "report": "logs/quant_edge_eval/join_touch_newsom/report.json"
+  },
+  "behavior": {
+    "join_best_bid_default": false,
+    "unit_tests": [
+      "test_place_bid_join_best_bid_improves_from_below",
+      "test_place_bid_join_best_bid_respects_min_edge",
+      "test_strategy_profile_join_best_bid_default_off"
+    ]
+  }
+}

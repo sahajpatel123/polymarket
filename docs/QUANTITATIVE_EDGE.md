@@ -145,6 +145,7 @@ and a PR — never auto-merge. See `AUTONOMOUS_LOOP_PROTOCOL.md`.
 | 2026-07-26T05:25Z | correct-token calibrations | OFI/VPIN/tox/flow/FV Vance | all **false** | prior VPIN/tox Newsom wins overturned; Kyle Spearman only (partial) |
 | 2026-07-26T05:40Z | slug resolve + band gap | catalog meta Newsom | n_crossable=0 | mean_mid_minus_bid≈0.043 ≈ passive reward-band farming; use `--slug` |
 | 2026-07-26T05:55Z | band_touch_tradeoff | rewards_max_spread 5.5→0 | **any_crossable=false** | gap shrinks but never joins touch; need join-touch policy not band shrink |
+| 2026-07-26T06:10Z | Newsom pre12h join_best_bid | join / join+min_edge0 | **finding=false** | join alone inert (min_edge blocks BB); join+min_edge0 → n_fill 0→33, OOS EV+, but degenerate bootstrap CI + optimistic fills |
 
 ## Freeze list (do not Tier-2 wire without multi-market EV)
 
@@ -159,4 +160,5 @@ and a PR — never auto-merge. See `AUTONOMOUS_LOOP_PROTOCOL.md`.
 - AS EV blocked by **passive reward-band placement** (~4¢ below touch; rewards_max_spread=5.5) — not token pairing
 - Prefer `--slug`/`resolve_market_tokens` over raw token IDs
 - Narrowing `rewards_max_spread` alone **does not** create crossable quotes (T1-148)
-- Next Tier-2 candidate only with EV evidence: **explicit join-touch / improve-bid** vs reward uptime
+- `join_best_bid` knob exists (default **False**); alone does not unlock fills — **min_edge_ticks** caps bids below BB when BB≈mid≈FV (T1-149)
+- `join_best_bid=true` + `min_edge_ticks=0` unlocks optimistic fills (n_fill=33) with positive OOS EV on Newsom pre12h but **finding=false** (degenerate CI) → still freeze; need conservative multi-market EV before Tier-2 default
