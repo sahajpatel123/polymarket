@@ -991,6 +991,14 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: `src/polymaker/replay/quote_trade_gap.py`, `scripts/quote_trade_gap.py`,
   `tests/test_quote_trade_gap.py`, `evidence/quant_edge/t1_142_quote_trade_gap.json`
 
+
+### T1-143 touchability sweep (spread knobs vs bid–tape gap)
+- Status: `done`
+- Done when: sweep delta_min/c_vol/min_edge on pre12h Newsom; any_crossable=false
+  for all candidates; gap ≈0.023 invariant; defaults unchanged; evidence JSON.
+- Evidence: `scripts/touchability_sweep.py`, `tests/test_touchability_sweep.py`,
+  `evidence/quant_edge/t1_143_touchability_sweep.json`
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

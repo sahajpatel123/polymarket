@@ -1,0 +1,42 @@
+{
+  "change": "touchability_sweep of delta_min/c_vol/min_edge \u2014 no crossable quotes",
+  "gap_with_fv": {
+    "mean_bid_gap": 0.023333,
+    "mean_trade_minus_fv": -0.191035,
+    "median_bid_gap": 0.023,
+    "median_trade_minus_fv": -0.217448,
+    "n_aggressor_buy": 38,
+    "n_aggressor_sell": 36,
+    "n_crossable": 0,
+    "n_fill": 0,
+    "n_quote": 256,
+    "n_trades": 74,
+    "n_trades_with_live": 3,
+    "p90_bid_gap": 0.024,
+    "reason": "bids_below_tape_mean_gap=0.0233;mean_trade_minus_fv=-0.1910"
+  },
+  "id": "T1-143",
+  "note": "On pre12h Newsom, sweeping delta_min_ticks\u2208{0,1,2}, c_vol\u2208{0,0.5,1.5}, min_edge\u2208{0,1} never yields n_crossable>0; mean bid gap stays \u22480.023. Spread knobs are not the bottleneck \u2014 quotes rarely coexist with trades (n_trades_with_live=3/74) and when they do, bids remain below tape. Do not change defaults from this sweep.",
+  "sweep": {
+    "any_crossable": false,
+    "baseline": {
+      "c_vol": 1.5,
+      "delta_min_ticks": 1,
+      "min_edge_ticks": 1
+    },
+    "best": {
+      "c_vol": 0.0,
+      "delta_min_ticks": 0,
+      "is_baseline": false,
+      "mean_bid_gap": 0.023,
+      "median_bid_gap": 0.023,
+      "min_edge_ticks": 0,
+      "n_crossable": 0,
+      "n_fill": 0,
+      "n_quote": 256,
+      "n_trades_with_live": 3,
+      "reason": "bids_below_tape_mean_gap=0.0230"
+    },
+    "n_rows": 18
+  }
+}

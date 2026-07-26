@@ -326,3 +326,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-26T04:10:00Z | Tier1 | T1-141 fill_readiness gate (as_ev_ready); livecfg Newsom/Vance/pre12h all false — n_trades thin or optimistic n_fill=0; AS EV paused pending denser tape | pytest test_fill_readiness+quant_edge_eval; evidence/quant_edge/t1_141_fill_readiness.json | merged
 
 2026-07-26T04:25:00Z | Tier1 | T1-142 quote_trade_gap: pre12h Newsom bids ~2.3¢ below tape (n_crossable=0 despite 36 sell aggressors) — AS n_fill=0 is quote placement not fill-sim | pytest test_quote_trade_gap; evidence/quant_edge/t1_142_quote_trade_gap.json | merged
+
+2026-07-26T04:40:00Z | Tier1 | T1-143 touchability_sweep: delta_min/c_vol/min_edge cannot create crossable quotes on pre12h Newsom (gap≈0.023 invariant); defaults unchanged | pytest test_touchability_sweep; evidence/quant_edge/t1_143_touchability_sweep.json | merged
