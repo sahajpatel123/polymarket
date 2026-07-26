@@ -875,6 +875,16 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: estimators + engine + replay hooks; docs live evidence table;
   pytest test_quant_edge_eval
 
+### T1-130 OFI/VPIN/Kyle signal calibration harness (proper scoring)
+- Status: `done`
+- Done when: a script scores OFI→P(up) and VPIN→P(big move) on OOS holdout with
+  Brier vs tune climatology, bootstrap CI, and paired significance; Kyle reports
+  Spearman vs |Δmid|; false-positive vs 0.5 baseline on rare events is avoided;
+  live Newsom results logged in docs/QUANTITATIVE_EDGE.md.
+- Evidence: `scripts/signal_calibration.py`, `src/polymaker/replay/signal_calibration.py`,
+  `tests/test_signal_calibration.py`; live ofi_finding=false, vpin_finding=true
+  (climatology baseline), kyle spearman≈0.74
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

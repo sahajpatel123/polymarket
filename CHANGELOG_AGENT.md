@@ -300,3 +300,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-26T00:53:08Z | Tier1 | T1-128 Quantitative Edge evidence harness: calibration soft-label fix (FV vs future mid, not P(up)); signal_blend + GARCH(1,1) pure modules; quant_edge_eval with OOS+bootstrap CI+paired significance; docs/QUANTITATIVE_EDGE.md inventory | pytest test_quant_edge_eval+test_quantitative_edge 17 passed; quant_edge_eval regime_dense finding=True (synth; live evidence still pending) | merged
 
 2026-07-26T01:10:00Z | Tier1 | T1-129 feed VPIN/Kyle/OFI in engine+replay (quote-neutral); reject degenerate bootstrap CI; live Newsom AS+Kelly quant_edge_eval finding=false (holdout dn_ev=+0.007, p≈0.20) | pytest test_quant_edge_eval; live report logs/quant_edge_eval/live_newsom/report.json | merged
+
+2026-07-26T01:25:00Z | Tier1 | T1-130 signal_calibration harness: OFI/VPIN Brier vs tune climatology + CI/significance; Kyle Spearman; live Newsom ofi_finding=false vpin_finding=true (partial; not quote EV) | pytest test_signal_calibration; logs/signal_calibration/newsom.json | merged
