@@ -37,6 +37,7 @@ Churn EV: `scripts/reprice_ev_sweep.py` (quote EV of alternate `reprice_ticks`).
 Depth EV: `scripts/layers_ev_sweep.py` (quote EV of alternate `layers`).
 Floor EV: `scripts/delta_min_ev_sweep.py` (quote EV of alternate `delta_min_ticks`).
 Spacing EV: `scripts/layer_step_ev_sweep.py` (quote EV of alternate `layer_step_ticks`).
+Size EV: `scripts/base_size_ev_sweep.py` (quote EV of alternate `base_size_usdc`).
 AS path board: `scripts/as_path_status.py`.
 Kelly fraction: `scripts/kelly_fraction_sweep.py` (requires `StrategyProfile.kelly_fraction`).
 Status board: `scripts/quant_edge_status.py`.
@@ -172,6 +173,7 @@ and a PR — never auto-merge. See `AUTONOMOUS_LOOP_PROTOCOL.md`.
 | 2026-07-26T08:40Z | layers_ev_sweep | layers 1–4 vs 3 | **false** | Newsom 1/2 ev_signal (fewer quotes, 0 fills); Vance inert; keep layers=3 |
 | 2026-07-26T08:55Z | delta_min_ev_sweep | delta_min 1–4 vs 1 | **false** | Newsom+Vance fully inert (dn_ev=0, n_quote unchanged); keep delta_min=1 |
 | 2026-07-26T09:10Z | layer_step_ev_sweep | step 1–4 vs 2 | **false** | Newsom step=3 ev_signal (fewer quotes, 0 fills); Vance inert; keep step=2 |
+| 2026-07-26T09:25Z | base_size_ev_sweep | size 5/25/50/100 vs 50 | **false** | Newsom 25 ev_signal (0 fills); Vance smaller/larger hurt; keep 50 |
 
 ## Freeze list (do not Tier-2 wire without multi-market EV)
 
@@ -191,6 +193,7 @@ soften the conservative matcher for a metric.
 - `layers` — see T1-159; fewer layers can raise ev_signal without fills — keep 3
 - `delta_min_ticks` — see T1-160; not binding vs reward band on this tape — keep 1
 - `layer_step_ticks` — see T1-161; wider spacing can raise ev_signal without fills — keep 2
+- `base_size_usdc` — see T1-162; size=25 Newsom-only ev_signal without fills — keep 50 (size ↑ human-only)
 
 **Token hygiene:** prefer `--slug`; prior mispaired Newsom/Vance tokens invalid
 (mean_sum≈0.78). Correct Newsom yes=54533043… no=87854174…; Vance yes=40081275…

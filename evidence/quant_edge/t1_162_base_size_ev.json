@@ -1,0 +1,17 @@
+{
+  "id": "T1-162",
+  "change": "base_size_usdc EV sweep: 5/25/50/100 vs live_scaled baseline 50; finding=false",
+  "note": "Newsom size=25: ev_signal=true (n_quote 244→136, +dn_ev) but n_fill=0 → finding=false. size=5 hurts Newsom+Vance. size=100 Vance negative. Keep live_scaled base_size_usdc=50; size/capital increases remain human-only.",
+  "journal": "livecfg/journal/paper.jsonl.pre12h.1784925687.31229",
+  "baseline_base_size_usdc": 50.0,
+  "newsom": {
+    "any_nondefault_finding": false,
+    "ev_signal_at": [25.0],
+    "report": "logs/base_size_ev_sweep/newsom_cons.json"
+  },
+  "vance": {
+    "any_nondefault_finding": false,
+    "ev_signal_at": [],
+    "report": "logs/base_size_ev_sweep/vance_cons.json"
+  }
+}

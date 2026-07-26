@@ -1156,6 +1156,13 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: `scripts/layer_step_ev_sweep.py`, `tests/test_layer_step_ev_sweep.py`,
   `evidence/quant_edge/t1_161_layer_step_ev.json`
 
+### T1-162 base_size_usdc EV sweep
+- Status: `done`
+- Done when: `base_size_ev_sweep` on Newsom/Vance; finding=false (Newsom
+  size=25 ev_signal only); keep live_scaled base_size_usdc=50; evidence JSON.
+- Evidence: `scripts/base_size_ev_sweep.py`, `tests/test_base_size_ev_sweep.py`,
+  `evidence/quant_edge/t1_162_base_size_ev.json`
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
