@@ -885,6 +885,16 @@ done without evidence (script output / tests) from that cycle.
   `tests/test_signal_calibration.py`; live ofi_finding=false, vpin_finding=true
   (climatology baseline), kyle spearman≈0.74
 
+### T1-131 GARCH vs EWMA vol calibration + VPIN cross-market check
+- Status: `done`
+- Done when: vol_calibration script scores GARCH(1,1) vs EWMA on OOS realized
+  variance MSE with bootstrap CI + paired test; Vance signal_calibration run
+  for VPIN replication; docs inventory updated (VPIN non-replicated; GARCH
+  finding=false on Newsom).
+- Evidence: `scripts/vol_calibration.py`, `src/polymaker/replay/vol_calibration.py`,
+  `tests/test_vol_calibration.py`; newsom garch_finding=false; vance
+  vpin_finding=false (replication fail)
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

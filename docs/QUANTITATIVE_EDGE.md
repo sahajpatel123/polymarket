@@ -19,6 +19,8 @@ with all three:
 Harness: `scripts/quant_edge_eval.py` → `polymaker.replay.quant_edge`.
 Signal-only scoring: `scripts/signal_calibration.py` → `polymaker.replay.signal_calibration`
 (Brier vs tune climatology for OFI/VPIN; not a substitute for quote EV evidence).
+Vol forecasting: `scripts/vol_calibration.py` → `polymaker.replay.vol_calibration`
+(GARCH vs EWMA OOS MSE + significance).
 
 ```bash
 uv run python scripts/quant_edge_eval.py \
@@ -46,10 +48,10 @@ scoring rule and is no longer used.
 | Calibration-weighted signal blend | `strategy/signal_blend.py` | **no** | no |
 | Avellaneda–Stoikov | `strategy/avellaneda_stoikov.py` | opt-in (`use_advanced_quoting`) | no |
 | Fractional Kelly | `strategy/kelly.py` | opt-in | no |
-| Kyle λ / Glosten–Milgrom | `strategy/kyle_lambda.py` | **fed** (engine+replay); not in quotes | no |
-| VPIN | `strategy/vpin.py` | **fed** (engine+replay); not in quotes | partial (OOS Brier skill vs climatology on Newsom; no quote EV yet) |
-| GARCH(1,1) vol | `strategy/garch.py` | **no** | no |
-| OFI skew | `strategy/ofi.py` | **fed** (engine+replay); not in quotes | no (worse than climatology on Newsom OOS) |
+| Kyle λ / Glosten–Milgrom | `strategy/kyle_lambda.py` | **fed**; not in quotes | mixed (Spearman vs \|Δmid\| unstable across windows) |
+| VPIN | `strategy/vpin.py` | **fed**; not in quotes | **no** (Newsom Brier skill did not replicate on Vance) |
+| GARCH(1,1) vol | `strategy/garch.py` | **no** | **no** (OOS MSE ≈ EWMA on Newsom; finding=false) |
+| OFI skew | `strategy/ofi.py` | **fed**; not in quotes | no (worse than climatology) |
 | Covariance sizing | `strategy/covariance_sizing.py` | **no** | no |
 | Proper scoring + CI | `strategy/calibration.py` | metrics analyze | harness ready |
 
@@ -76,4 +78,6 @@ and a PR — never auto-merge. See `AUTONOMOUS_LOOP_PROTOCOL.md`.
 |------------|------|-----------|---------|-------|
 | 2026-07-26T01:06Z | livecfg Newsom journal | `use_advanced_quoting=true` vs `live_scaled` | **false** | holdout dn_ev=+0.007, OOS sign match, but paired p≈0.20 — not significant |
 | 2026-07-26T00:53Z | fixtures/regime_dense | AS+Kelly on | true (synth only) | does not promote; live gate required |
-| 2026-07-26T01:25Z | livecfg Newsom (signal_calibration) | OFI P(up) / VPIN P(big move) | OFI **false**, VPIN **true*** | *predictive Brier vs tune climatology only — not yet quote-path EV evidence. Kyle Spearman(\|Δmid|)≈0.74 |
+| 2026-07-26T01:25Z | livecfg Newsom (signal_calibration) | OFI P(up) / VPIN P(big move) | OFI **false**, VPIN **true*** | *single-market; see Vance replication row |
+| 2026-07-26T01:40Z | livecfg Vance (+pre12h) | OFI / VPIN replicate | both **false** | VPIN Newsom skill **fails replication** → not a finding |
+| 2026-07-26T01:40Z | livecfg Newsom (vol_calibration) | GARCH vs EWMA MSE | **false** | n=858; MSE tied; no significant skill |

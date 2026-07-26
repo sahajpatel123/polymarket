@@ -302,3 +302,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-26T01:10:00Z | Tier1 | T1-129 feed VPIN/Kyle/OFI in engine+replay (quote-neutral); reject degenerate bootstrap CI; live Newsom AS+Kelly quant_edge_eval finding=false (holdout dn_ev=+0.007, p≈0.20) | pytest test_quant_edge_eval; live report logs/quant_edge_eval/live_newsom/report.json | merged
 
 2026-07-26T01:25:00Z | Tier1 | T1-130 signal_calibration harness: OFI/VPIN Brier vs tune climatology + CI/significance; Kyle Spearman; live Newsom ofi_finding=false vpin_finding=true (partial; not quote EV) | pytest test_signal_calibration; logs/signal_calibration/newsom.json | merged
+
+2026-07-26T01:40:00Z | Tier1 | T1-131 vol_calibration GARCH vs EWMA (finding=false on Newsom); VPIN fails Vance replication → inventory evidence=no; Kyle Spearman mixed | pytest test_vol_calibration; logs/vol_calibration/newsom.json; logs/signal_calibration/vance*.json | merged

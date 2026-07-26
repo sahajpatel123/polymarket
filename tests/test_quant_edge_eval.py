@@ -145,8 +145,9 @@ def test_technique_inventory_covers_core_set():
     assert by_id["vpin"]["wired"] == "fed"
     assert by_id["kyle_lambda"]["wired"] == "fed"
     assert by_id["ofi_skew"]["wired"] == "fed"
-    assert by_id["vpin"]["evidence"] == "partial"
+    assert by_id["vpin"]["evidence"] == "no"
     assert by_id["ofi_skew"]["evidence"] == "no"
+    assert by_id["kyle_lambda"]["evidence"] == "mixed"
 
 
 def test_quant_edge_eval_runs(tmp_path: Path):
