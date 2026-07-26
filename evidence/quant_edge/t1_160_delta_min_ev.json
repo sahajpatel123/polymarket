@@ -1,0 +1,17 @@
+{
+  "id": "T1-160",
+  "change": "delta_min_ticks EV sweep: 1–4 vs live_scaled baseline 1; finding=false (fully inert)",
+  "note": "Newsom+Vance conservative: dn_ev=0, n_quote unchanged (244/96), n_fill=0 for all values. Half-spread floor not binding vs reward band / other floors on this tape. Keep live_scaled delta_min_ticks=1.",
+  "journal": "livecfg/journal/paper.jsonl.pre12h.1784925687.31229",
+  "baseline_delta_min_ticks": 1,
+  "newsom": {
+    "any_nondefault_finding": false,
+    "ev_signal_at": [],
+    "report": "logs/delta_min_ev_sweep/newsom_cons.json"
+  },
+  "vance": {
+    "any_nondefault_finding": false,
+    "ev_signal_at": [],
+    "report": "logs/delta_min_ev_sweep/vance_cons.json"
+  }
+}

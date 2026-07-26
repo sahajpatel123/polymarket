@@ -350,3 +350,4 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-26T08:10:00Z | Tier1 | T1-157 gamma EV sweep finding=false Newsom/Vance; harden write_weekly_report subprocess timeout; deps_audit ok flagged=21 | pytest; evidence/quant_edge/t1_157_gamma_weekly_timeout.json | merged
 2026-07-26T08:25:00Z | Tier1 | T1-158 reprice_ticks EV sweep finding=false (Newsom 4/8 ev_signal only, zero fills); as_path ready=true fixture test | pytest; evidence/quant_edge/t1_158_reprice_ev.json | merged
 2026-07-26T08:40:00Z | Tier1 | T1-159 layers EV sweep finding=false (Newsom layers 1/2 ev_signal only, zero fills); keep layers=3 | pytest; evidence/quant_edge/t1_159_layers_ev.json | merged
+2026-07-26T08:55:00Z | Tier1 | T1-160 delta_min_ticks EV sweep finding=false (Newsom+Vance fully inert dn_ev=0); keep delta_min=1 | pytest; evidence/quant_edge/t1_160_delta_min_ev.json | merged

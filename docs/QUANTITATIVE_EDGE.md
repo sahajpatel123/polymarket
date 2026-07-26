@@ -35,6 +35,7 @@ Vol spread EV: `scripts/c_vol_ev_sweep.py` (quote EV of alternate `c_vol`).
 Inventory skew EV: `scripts/gamma_ev_sweep.py` (quote EV of alternate `gamma`).
 Churn EV: `scripts/reprice_ev_sweep.py` (quote EV of alternate `reprice_ticks`).
 Depth EV: `scripts/layers_ev_sweep.py` (quote EV of alternate `layers`).
+Floor EV: `scripts/delta_min_ev_sweep.py` (quote EV of alternate `delta_min_ticks`).
 AS path board: `scripts/as_path_status.py`.
 Kelly fraction: `scripts/kelly_fraction_sweep.py` (requires `StrategyProfile.kelly_fraction`).
 Status board: `scripts/quant_edge_status.py`.
@@ -168,6 +169,7 @@ and a PR — never auto-merge. See `AUTONOMOUS_LOOP_PROTOCOL.md`.
 | 2026-07-26T08:10Z | gamma_ev_sweep | gamma 0.2–1.5 vs 0.6 | **false** | Newsom+Vance cons dn_ev=0; weekly _run timeout hardened |
 | 2026-07-26T08:25Z | reprice_ev_sweep | reprice 1/2/4/8 | **false** | Newsom 4/8 ev_signal only (0 fills); Vance no signal; keep reprice=2 |
 | 2026-07-26T08:40Z | layers_ev_sweep | layers 1–4 vs 3 | **false** | Newsom 1/2 ev_signal (fewer quotes, 0 fills); Vance inert; keep layers=3 |
+| 2026-07-26T08:55Z | delta_min_ev_sweep | delta_min 1–4 vs 1 | **false** | Newsom+Vance fully inert (dn_ev=0, n_quote unchanged); keep delta_min=1 |
 
 ## Freeze list (do not Tier-2 wire without multi-market EV)
 
@@ -185,6 +187,7 @@ soften the conservative matcher for a metric.
 - `gamma` — see T1-157 sweep; keep live_scaled 0.6 unless finding+fills
 - `reprice_ticks` — see T1-158; Newsom quieter churn can raise ev_signal without fills — not a finding
 - `layers` — see T1-159; fewer layers can raise ev_signal without fills — keep 3
+- `delta_min_ticks` — see T1-160; not binding vs reward band on this tape — keep 1
 
 **Token hygiene:** prefer `--slug`; prior mispaired Newsom/Vance tokens invalid
 (mean_sum≈0.78). Correct Newsom yes=54533043… no=87854174…; Vance yes=40081275…
