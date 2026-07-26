@@ -322,11 +322,15 @@ def analyze(path: Path) -> MetricsReport:
             rep.mean_resting_notional_usdc[cid] = sum(samples) / len(samples)
 
     # ── Calibration & Proper Scoring Rules evaluation ───────────────────
-    # Evaluate calibration of logged fair value predictions against 30s horizon outcome direction
+    # Score FV as a probability forecast of the YES price level, not of
+    # "direction". Soft target = mid/FV at +30s (continuous in [0, 1]).
+    # Binary "went up" would treat FV=0.70 as P(up)=70%, which is wrong —
+    # FV is P(YES resolves), so quadratic/soft-label scores against the
+    # future price level are the proper short-horizon check.
     from polymaker.strategy.calibration import evaluate_calibration, expected_value_per_quote
 
     probs: list[float] = []
-    outcomes: list[int] = []
+    outcomes: list[float] = []
     horizon_s = 30.0
 
     for cid, marks in marks_by_cid.items():
@@ -342,8 +346,8 @@ def analyze(path: Path) -> MetricsReport:
                     fv_future = marks[k][1]
                     break
             if fv_future is not None:
-                probs.append(fv_i)
-                outcomes.append(1 if fv_future >= fv_i else 0)
+                probs.append(min(max(float(fv_i), 0.0), 1.0))
+                outcomes.append(min(max(float(fv_future), 0.0), 1.0))
 
     if probs:
         cal = evaluate_calibration(probs, outcomes)

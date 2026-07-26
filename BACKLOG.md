@@ -853,6 +853,18 @@ done without evidence (script output / tests) from that cycle.
   DOWN still fails connectivity first.
 - Evidence: unit stuck@5529 vs advanced@5600
 
+### T1-128 Quantitative Edge evidence harness
+- Status: `done`
+- Done when: a script compares baseline vs candidate with (a) Brier/log-loss/ECE
+  + EV/quote, (b) tune vs holdout OOS windows, (c) bootstrap CI + paired
+  significance on chunked EV deltas; `finding=true` only when all three align;
+  FV calibration scores against future mid (soft label), not binary "went up";
+  pure modules exist for calibration-weighted signal blend + GARCH(1,1);
+  inventory documented in docs/QUANTITATIVE_EDGE.md.
+- Evidence: `scripts/quant_edge_eval.py`, `src/polymaker/replay/quant_edge.py`,
+  `src/polymaker/strategy/signal_blend.py`, `src/polymaker/strategy/garch.py`,
+  `tests/test_quant_edge_eval.py`
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
