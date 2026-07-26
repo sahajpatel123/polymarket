@@ -138,6 +138,7 @@ def test_technique_inventory_covers_core_set():
         "garch_vol",
         "signal_blend_calibration",
         "covariance_sizing",
+        "markout_toxicity",
     ):
         assert required in ids
     by_id = {t["id"]: t for t in TECHNIQUE_INVENTORY}
@@ -150,6 +151,8 @@ def test_technique_inventory_covers_core_set():
     assert by_id["kyle_lambda"]["evidence"] == "mixed"
     assert by_id["microprice"]["evidence"] == "mixed"
     assert by_id["markout_toxicity"]["evidence"] == "mixed"
+    assert "flow_nudge_fv" in by_id
+    assert by_id["flow_nudge_fv"]["evidence"] == "no"
 
 
 def test_quant_edge_eval_runs(tmp_path: Path):

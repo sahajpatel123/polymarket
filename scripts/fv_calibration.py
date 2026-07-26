@@ -113,12 +113,15 @@ def main() -> int:
         "mse "
         f"mid={p.get('mid', {}).get('mse')} "
         f"micro={p.get('micro', {}).get('mse')} "
+        f"micro_flow={p.get('micro_flow', {}).get('mse')} "
         f"kalman={p.get('kalman', {}).get('mse')} "
         f"blend={p.get('blend', {}).get('mse')}"
     )
     print(
         "verdict "
         f"micro={v.get('micro_finding')} "
+        f"micro_flow={v.get('micro_flow_finding')} "
+        f"flow_helps={v.get('flow_nudge_helps_micro')} "
         f"kalman={v.get('kalman_finding')} "
         f"blend={v.get('blend_finding')} "
         f"any={v.get('any_finding')}"

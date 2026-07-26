@@ -39,6 +39,7 @@ from polymaker.strategy.calibration import (
 TECHNIQUE_INVENTORY: tuple[dict[str, str], ...] = (
     {"id": "microprice", "module": "yes", "wired": "yes", "evidence": "mixed"},
     {"id": "ewma_fv_vol", "module": "yes", "wired": "yes", "evidence": "partial"},
+    {"id": "flow_nudge_fv", "module": "yes", "wired": "yes", "evidence": "no"},
     {"id": "kalman_mid", "module": "yes", "wired": "intel-only", "evidence": "no"},
     {"id": "signal_blend_calibration", "module": "yes", "wired": "no", "evidence": "no"},
     {"id": "avellaneda_stoikov", "module": "yes", "wired": "opt-in", "evidence": "no"},

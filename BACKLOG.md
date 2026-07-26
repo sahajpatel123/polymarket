@@ -931,6 +931,14 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: config + advanced_quoting; `scripts/toxicity_calibration.py`,
   `scripts/kelly_fraction_sweep.py`, `tests/test_toxicity_kelly.py`
 
+### T1-136 Flow-nudge FV ablation + quant_edge_status
+- Status: `done`
+- Done when: fv_calibration scores micro_flow (weight=0.5) vs micro/mid; Newsom
+  shows flow_nudge_helps_micro=false (nudge worsens MSE); toxicity fails pre12h
+  temporal replication; quant_edge_status prints inventory gate summary.
+- Evidence: fv_calibration micro_flow fields; `scripts/quant_edge_status.py`;
+  logs/fv_calibration/*_flow_nudge.json; logs/toxicity_calibration/newsom_pre12h.json
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

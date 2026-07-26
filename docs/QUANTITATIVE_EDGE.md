@@ -28,6 +28,7 @@ Flow: `scripts/flow_calibration.py` → `polymaker.replay.flow_calibration`
 (flow_z → P(up) vs climatology).
 Toxicity: `scripts/toxicity_calibration.py` → `polymaker.replay.toxicity_calibration`.
 Kelly fraction: `scripts/kelly_fraction_sweep.py` (requires `StrategyProfile.kelly_fraction`).
+Status board: `scripts/quant_edge_status.py`.
 Covariance sizing: `scripts/cov_sizing_eval.py` → `polymaker.replay.cov_sizing_eval`
 (tune cov vs uncorrelated budget; holdout variance reduction CI).
 
@@ -52,7 +53,7 @@ scoring rule and is no longer used.
 | Technique | Module | Live/replay wiring | Evidence gate |
 |-----------|--------|--------------------|---------------|
 | Microprice | `marketdata/orderbook.py` | yes | **mixed** (Newsom OOS yes, best depth=5; Vance fails all depths) |
-| EWMA vol / flow | `strategy/estimators.py` | yes | partial (vol); **flow_z directional: no** |
+| EWMA vol / flow | `strategy/estimators.py` | yes | partial (vol); **flow_z directional: no**; **flow nudge in FV: no** (worsens micro OOS MSE) |
 | Kalman mid | `intelligence/signal_processing.py` | intel-only | **no** (worse than mid on Newsom+Vance OOS) |
 | Calibration-weighted signal blend | `strategy/signal_blend.py` | **no** | no (no clear OOS win vs mid) |
 | Avellaneda–Stoikov | `strategy/avellaneda_stoikov.py` | opt-in (`use_advanced_quoting`) | no |
@@ -103,3 +104,5 @@ and a PR — never auto-merge. See `AUTONOMOUS_LOOP_PROTOCOL.md`.
 | 2026-07-26T02:40Z | Newsom toxicity_calibration | virtual markout → P(big move) | **true** | Brier skill vs climatology; needs Vance+EV before quote changes |
 | 2026-07-26T02:40Z | Vance toxicity_calibration | virtual markout | **false** | no replication |
 | 2026-07-26T02:40Z | Newsom kelly_fraction_sweep | 0.125 / 0.25 / 0.5 | all **false** | no EV delta vs quarter-Kelly on this tape |
+| 2026-07-26T02:55Z | Newsom FV + flow nudge | micro vs micro+flow | flow_helps=**false** | micro_flow MSE worse than plain micro (sig); live weight=0.5 hurts forecasts |
+| 2026-07-26T02:55Z | Newsom toxicity pre12h | temporal replicate | **false** | prior Newsom toxicity finding does not hold on earlier window |

@@ -50,3 +50,5 @@ def test_fv_calibration_runs(tmp_path: Path):
     assert d["n"] >= 5
     assert "micro_finding" in d["verdict"]
     assert "mid" in d["predictors"]
+    assert "micro_flow" in d["predictors"]
+    assert "flow_nudge_helps_micro" in d["verdict"]

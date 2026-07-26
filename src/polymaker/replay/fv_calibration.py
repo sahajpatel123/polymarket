@@ -17,12 +17,14 @@ from typing import Any
 
 from polymaker.intelligence.signal_processing import KalmanMidPrice
 from polymaker.marketdata.orderbook import OrderBook
-from polymaker.marketdata.parse import parse_book, parse_price_changes
+from polymaker.marketdata.parse import parse_book, parse_last_trade, parse_price_changes
 from polymaker.replay import filter_rows_for_tokens, load_journal
 from polymaker.strategy.calibration import (
     bootstrap_confidence_interval,
     paired_significance_test,
 )
+from polymaker.strategy.estimators import FlowEstimator
+from polymaker.strategy.quoting import compute_fair_value
 from polymaker.strategy.signal_blend import SignalSource, blend_probabilities, calibration_weight
 
 
@@ -33,6 +35,7 @@ class FVSample:
     micro: float
     kalman: float
     blend: float
+    micro_flow: float  # micro + live flow nudge (weight=0.5)
 
 
 @dataclass(frozen=True)
@@ -68,9 +71,12 @@ def _collect(
     micro_levels: int,
     micro_brier: float,
     kalman_brier: float,
+    flow_halflife_s: float = 90.0,
+    flow_weight: float = 0.5,
 ) -> list[FVSample]:
     book = OrderBook()
     kalman = KalmanMidPrice(Q=1e-6, R=1e-5)
+    flow = FlowEstimator(flow_halflife_s)
     out: list[FVSample] = []
     n = 0
     for row in rows:
@@ -78,6 +84,12 @@ def _collect(
         data = row.get("data")
         ts = float(row.get("ts") or 0.0)
         if not isinstance(data, dict):
+            continue
+        if kind == "last_trade_price":
+            tp = parse_last_trade(data)
+            if tp is None or tp.asset_id != yes_token:
+                continue
+            flow.update(tp.aggressor, tp.size, float(tp.ts or ts))
             continue
         if kind == "book":
             upd = parse_book(data)
@@ -104,6 +116,8 @@ def _collect(
         micro = book.microprice(micro_levels)
         if micro is None:
             continue
+        tick = float(book.tick_size or 0.01)
+        flow.decay_to(ts)
         k_hat, _ = kalman.update(mid)
         blend = blend_probabilities(
             (
@@ -111,12 +125,20 @@ def _collect(
                 SignalSource("kalman", k_hat, kalman_brier),
             )
         ).probability
+        micro_flow = compute_fair_value(float(micro), flow.z, tick, weight=flow_weight)
 
         n += 1
         if sample_every > 1 and (n % sample_every) != 0:
             continue
         out.append(
-            FVSample(ts=ts, mid=mid, micro=float(micro), kalman=float(k_hat), blend=float(blend))
+            FVSample(
+                ts=ts,
+                mid=mid,
+                micro=float(micro),
+                kalman=float(k_hat),
+                blend=float(blend),
+                micro_flow=float(micro_flow),
+            )
         )
     return out
 
@@ -125,7 +147,7 @@ def _pair_errors(
     samples: list[FVSample], horizon_s: float
 ) -> dict[str, list[float]]:
     """Squared errors vs future mid for each predictor."""
-    keys = ("mid", "micro", "kalman", "blend")
+    keys = ("mid", "micro", "kalman", "blend", "micro_flow")
     errs: dict[str, list[float]] = {k: [] for k in keys}
     j = 0
     for s in samples:
@@ -140,6 +162,7 @@ def _pair_errors(
             "micro": s.micro,
             "kalman": s.kalman,
             "blend": s.blend,
+            "micro_flow": s.micro_flow,
         }
         for k, p in preds.items():
             errs[k].append((p - y) ** 2)
@@ -247,13 +270,20 @@ def calibrate_fair_value(
         "kalman_vs_mid": _skill_vs_mid(errs["mid"], errs["kalman"], label="kalman_vs_mid"),
         "blend_vs_mid": _skill_vs_mid(errs["mid"], errs["blend"], label="blend_vs_mid"),
         "micro_vs_kalman": _skill_vs_mid(errs["kalman"], errs["micro"], label="micro_vs_kalman"),
+        "micro_flow_vs_mid": _skill_vs_mid(errs["mid"], errs["micro_flow"], label="micro_flow_vs_mid"),
+        "micro_flow_vs_micro": _skill_vs_mid(
+            errs["micro"], errs["micro_flow"], label="micro_flow_vs_micro"
+        ),
     }
     verdict = {
         "micro_finding": bool(pairwise["micro_vs_mid"].get("finding")),
         "kalman_finding": bool(pairwise["kalman_vs_mid"].get("finding")),
         "blend_finding": bool(pairwise["blend_vs_mid"].get("finding")),
+        "micro_flow_finding": bool(pairwise["micro_flow_vs_mid"].get("finding")),
+        "flow_nudge_helps_micro": bool(pairwise["micro_flow_vs_micro"].get("finding")),
         "any_finding": any(
-            pairwise[k].get("finding") for k in ("micro_vs_mid", "kalman_vs_mid", "blend_vs_mid")
+            pairwise[k].get("finding")
+            for k in ("micro_vs_mid", "kalman_vs_mid", "blend_vs_mid", "micro_flow_vs_mid")
         ),
         "tune_micro_brier_proxy": micro_b,
         "tune_kalman_brier_proxy": kalman_b,
