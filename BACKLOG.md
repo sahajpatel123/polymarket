@@ -1118,6 +1118,14 @@ done without evidence (script output / tests) from that cycle.
   `tests/test_write_weekly_report.py`,
   `evidence/quant_edge/t1_156_weekly_quant_board.json`
 
+### T1-157 gamma EV sweep + weekly subprocess timeout
+- Status: `done`
+- Done when: `gamma_ev_sweep` finding=false on Newsom/Vance; `_run` timeout in
+  write_weekly_report; deps_audit snapshot; evidence JSON.
+- Evidence: `scripts/gamma_ev_sweep.py`, `scripts/write_weekly_report.py`,
+  `tests/test_gamma_ev_sweep.py`,
+  `evidence/quant_edge/t1_157_gamma_weekly_timeout.json`
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

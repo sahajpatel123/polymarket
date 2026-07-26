@@ -18,9 +18,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-def _run(cmd: list[str]) -> tuple[int, str, str]:
-    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
-    return proc.returncode, proc.stdout, proc.stderr
+def _run(cmd: list[str], *, timeout_s: float = 60.0) -> tuple[int, str, str]:
+    try:
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, check=False, timeout=timeout_s
+        )
+        return proc.returncode, proc.stdout, proc.stderr
+    except subprocess.TimeoutExpired as exc:
+        out = (exc.stdout or "") if isinstance(exc.stdout, str) else ""
+        err = (exc.stderr or "") if isinstance(exc.stderr, str) else ""
+        err = (err + f"\nstatus=TIMEOUT cmd={' '.join(cmd)} after={timeout_s}s").strip()
+        return 124, out, err
 
 
 def _status_line(stderr: str, stdout: str = "") -> str:

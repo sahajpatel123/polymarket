@@ -1,0 +1,16 @@
+{
+  "id": "T1-157",
+  "change": "gamma EV sweep (finding=false) + weekly writer subprocess timeouts + deps_audit snapshot",
+  "note": "Inventory skew gamma 0.2/0.6/1.0/1.5 vs live_scaled 0.6: dn_ev=0, finding=false on Newsom+Vance conservative. write_weekly_report._run now times out (default 60s) to avoid hangs. deps_audit ok=true flagged=21.",
+  "gamma_sweep": {
+    "baseline_gamma": 0.6,
+    "newsom": {"any_nondefault_finding": false, "report": "logs/gamma_ev_sweep/newsom_cons.json"},
+    "vance": {"any_nondefault_finding": false, "report": "logs/gamma_ev_sweep/vance_cons.json"}
+  },
+  "deps_audit": {
+    "ok": true,
+    "n_flagged_packages": 21,
+    "report": "logs/deps_audit/2026-07-26.json"
+  },
+  "weekly_timeout": true
+}

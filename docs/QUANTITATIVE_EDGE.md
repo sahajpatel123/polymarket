@@ -32,6 +32,7 @@ Toxicity: `scripts/toxicity_calibration.py` → `polymaker.replay.toxicity_calib
 Toxicity spread EV: `scripts/c_tox_ev_sweep.py` (quote EV of alternate `c_tox`).
 Kyle spread EV: `scripts/kyle_ev_sweep.py` (quote EV of alternate `c_kyle`; default 0).
 Vol spread EV: `scripts/c_vol_ev_sweep.py` (quote EV of alternate `c_vol`).
+Inventory skew EV: `scripts/gamma_ev_sweep.py` (quote EV of alternate `gamma`).
 AS path board: `scripts/as_path_status.py`.
 Kelly fraction: `scripts/kelly_fraction_sweep.py` (requires `StrategyProfile.kelly_fraction`).
 Status board: `scripts/quant_edge_status.py`.
@@ -162,6 +163,7 @@ and a PR — never auto-merge. See `AUTONOMOUS_LOOP_PROTOCOL.md`.
 | 2026-07-26T07:25Z | kyle_ev_sweep | c_kyle 0.5/1/2 vs 0 | **false** | Newsom+Vance cons+opt; dn_ev=0 n_fill=0; keep c_kyle=0 |
 | 2026-07-26T07:40Z | as_path_status + c_vol_ev | Newsom/Vance | ready=**false** / EV **false** | AS board blocked; c_vol 0.5–3.0 dn_ev=0; freeze list cleaned |
 | 2026-07-26T07:55Z | WEEKLY_REPORT refresh | inventory scoreboard | evidence_yes=**0** | weekly embeds quant-edge board; AS still blocked |
+| 2026-07-26T08:10Z | gamma_ev_sweep | gamma 0.2–1.5 vs 0.6 | **false** | Newsom+Vance cons dn_ev=0; weekly _run timeout hardened |
 
 ## Freeze list (do not Tier-2 wire without multi-market EV)
 
@@ -176,6 +178,7 @@ soften the conservative matcher for a metric.
 - micro_levels=5, `c_tox`, `c_kyle`, `flow_fv_weight=0` — EV finding=false
 - `join_best_bid` (default off) — optimistic Newsom-only; not multi-market / not conservative-fill
 - `c_vol` — see T1-155 sweep; keep profile default unless finding+fills
+- `gamma` — see T1-157 sweep; keep live_scaled 0.6 unless finding+fills
 
 **Token hygiene:** prefer `--slug`; prior mispaired Newsom/Vance tokens invalid
 (mean_sum≈0.78). Correct Newsom yes=54533043… no=87854174…; Vance yes=40081275…
