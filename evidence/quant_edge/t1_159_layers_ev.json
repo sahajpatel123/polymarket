@@ -1,0 +1,17 @@
+{
+  "id": "T1-159",
+  "change": "layers EV sweep: fewer layers can raise ev_signal via fewer quotes but finding=false (zero fills)",
+  "note": "Newsom layers=1/2: ev_signal=true, n_quote 244→136/191, n_fill=0 → finding=false. layers=4 inert. Vance all false. Keep live_scaled layers=3.",
+  "journal": "livecfg/journal/paper.jsonl.pre12h.1784925687.31229",
+  "baseline_layers": 3,
+  "newsom": {
+    "any_nondefault_finding": false,
+    "ev_signal_at": [1, 2],
+    "report": "logs/layers_ev_sweep/newsom_cons.json"
+  },
+  "vance": {
+    "any_nondefault_finding": false,
+    "ev_signal_at": [],
+    "report": "logs/layers_ev_sweep/vance_cons.json"
+  }
+}

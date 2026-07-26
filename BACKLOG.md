@@ -1135,6 +1135,13 @@ done without evidence (script output / tests) from that cycle.
   `tests/test_reprice_ev_sweep.py`,
   `evidence/quant_edge/t1_158_reprice_ev.json`
 
+### T1-159 layers EV sweep
+- Status: `done`
+- Done when: `layers_ev_sweep` on Newsom/Vance; finding=false (Newsom layers
+  1/2 ev_signal only); keep live_scaled layers=3; evidence JSON.
+- Evidence: `scripts/layers_ev_sweep.py`, `tests/test_layers_ev_sweep.py`,
+  `evidence/quant_edge/t1_159_layers_ev.json`
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
