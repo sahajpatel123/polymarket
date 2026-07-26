@@ -59,6 +59,11 @@ def main() -> int:
     ap.add_argument("--values", default="3.5,5.0")
     ap.add_argument("--holdout-frac", type=float, default=0.3)
     ap.add_argument("--n-chunks", type=int, default=4)
+    ap.add_argument(
+        "--fill-mode",
+        choices=("conservative", "base", "optimistic"),
+        default="conservative",
+    )
     ap.add_argument("--yes-token", default=None)
     ap.add_argument("--no-token", default=None)
     ap.add_argument("--condition-id", default=None)
@@ -89,12 +94,16 @@ def main() -> int:
                 holdout_frac=args.holdout_frac,
                 split="events",
                 n_chunks=args.n_chunks,
+                fill_mode=args.fill_mode,
             )
             d = ev.as_dict()
             row = {
                 "c_tox": c,
                 "is_baseline": abs(c - base_c) < 1e-12,
                 "finding": bool(d["verdict"].get("finding")),
+                "promotion_eligible": bool(d["verdict"].get("promotion_eligible")),
+                "n_fill_baseline": d["verdict"].get("n_fill_baseline"),
+                "n_fill_candidate": d["verdict"].get("n_fill_candidate"),
                 "holdout_ev_delta": d["verdict"].get("holdout_ev_delta"),
                 "full_ev_delta": d["verdict"].get("full_ev_delta"),
                 "is_significant": d["verdict"].get("is_significant"),
@@ -110,6 +119,7 @@ def main() -> int:
 
     report = {
         "baseline_c_tox": base_c,
+        "fill_mode": args.fill_mode,
         "values": values,
         "any_nondefault_finding": any(
             r["finding"] and not r["is_baseline"] for r in rows

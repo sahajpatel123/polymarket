@@ -101,6 +101,12 @@ def main() -> int:
     ap.add_argument("--split", choices=("time", "events"), default="events")
     ap.add_argument("--n-chunks", type=int, default=5)
     ap.add_argument("--alpha", type=float, default=0.05)
+    ap.add_argument(
+        "--fill-mode",
+        choices=("conservative", "base", "optimistic"),
+        default="conservative",
+        help="Replay fill model; conservative is promotion default",
+    )
     ap.add_argument("--yes-token", default=None)
     ap.add_argument("--no-token", default=None)
     ap.add_argument("--condition-id", default=None)
@@ -143,20 +149,22 @@ def main() -> int:
         split=args.split,
         n_chunks=args.n_chunks,
         alpha=args.alpha,
+        fill_mode=args.fill_mode,
     )
     report_path = write_report(result, Path(args.report))
     d = result.as_dict()
     v = d["verdict"]
     sig = d["significance"]
 
-    print(f"status=OK journal={journal}")
+    print(f"status=OK journal={journal} fill_mode={args.fill_mode}")
     print(f"report={report_path}")
     print(
         "full "
         f"dn_ev={d['full']['delta'].get('ev_per_quote_usdc')} "
         f"dn_brier={d['full']['delta'].get('brier_score')} "
         f"dn_logloss={d['full']['delta'].get('log_loss')} "
-        f"dn_ece={d['full']['delta'].get('expected_calibration_error')}"
+        f"dn_ece={d['full']['delta'].get('expected_calibration_error')} "
+        f"n_fill={d['full']['baseline'].get('n_fill')}->{d['full']['candidate'].get('n_fill')}"
     )
     print(
         "holdout "
@@ -174,6 +182,7 @@ def main() -> int:
     print(
         "verdict "
         f"finding={v.get('finding')} "
+        f"promotion_eligible={v.get('promotion_eligible')} "
         f"oos_sign_match={v.get('oos_sign_match')} "
         f"ci_excludes_zero={v.get('ci_excludes_zero')}"
     )

@@ -174,7 +174,35 @@ def test_quant_edge_eval_runs(tmp_path: Path):
     assert "full" in d and "holdout" in d and "significance" in d
     assert "verdict" in d
     assert "finding" in d["verdict"]
+    assert d["verdict"]["fill_mode"] == "conservative"
+    assert "promotion_eligible" in d["verdict"]
     assert d["significance"]["n_chunks"] >= 1
     # Calibration keys present on deltas
     assert "brier_score" in d["full"]["delta"]
     assert "ev_per_quote_usdc" in d["full"]["delta"]
+
+
+def test_quant_edge_eval_fill_mode_optimistic(tmp_path: Path):
+    journal = tmp_path / "j.jsonl"
+    _journal(journal, n=60)
+    baseline = StrategyProfile()
+    candidate = profile_from_overrides(baseline, {"use_advanced_quoting": True})
+    result = evaluate_quant_edge(
+        journal,
+        _meta(),
+        baseline,
+        candidate,
+        tmp_path / "out_opt",
+        holdout_frac=0.3,
+        split="events",
+        n_chunks=3,
+        fill_mode="optimistic",
+    )
+    d = result.as_dict()
+    assert d["verdict"]["fill_mode"] == "optimistic"
+    # Diagnostic modes cannot be promotion-eligible even if finding flips true.
+    if d["verdict"]["finding"]:
+        assert d["verdict"]["promotion_eligible"] is False
+    else:
+        assert d["verdict"]["promotion_eligible"] is False
+    assert d["full"]["window"].get("fill_mode") == "optimistic"

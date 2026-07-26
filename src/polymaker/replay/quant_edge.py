@@ -85,6 +85,7 @@ def _window_compare(
     holdout_frac: float,
     use_holdout: bool,
     split: str,
+    fill_mode: str = "conservative",
 ) -> dict[str, Any]:
     result = compare_profiles(
         journal,
@@ -95,6 +96,7 @@ def _window_compare(
         holdout_frac=holdout_frac,
         use_holdout=use_holdout,
         split=split,
+        fill_mode=fill_mode,
     )
     d = result.as_dict()
     # Surface the evidence-standard scalars explicitly.
@@ -119,6 +121,7 @@ def _chunk_ev_series(
     *,
     n_chunks: int,
     split: str,
+    fill_mode: str = "conservative",
 ) -> tuple[list[float], list[float]]:
     """Replay N sequential event-chunks; return baseline/candidate EV series."""
     rows = load_journal(journal)
@@ -146,6 +149,7 @@ def _chunk_ev_series(
             holdout_frac=0.0,
             use_holdout=False,
             split=split,
+            fill_mode=fill_mode,
         )
         base_evs.append(float(cmp.baseline.get("ev_per_quote_usdc") or 0.0))
         cand_evs.append(float(cmp.candidate.get("ev_per_quote_usdc") or 0.0))
@@ -163,26 +167,33 @@ def evaluate_quant_edge(
     split: str = "events",
     n_chunks: int = 5,
     alpha: float = 0.05,
+    fill_mode: str = "conservative",
 ) -> QuantEdgeEval:
-    """Run full / tune / holdout compares + chunked significance on EV."""
+    """Run full / tune / holdout compares + chunked significance on EV.
+
+    fill_mode=conservative is the promotion default. base/optimistic are
+    diagnostics when conservative yields n_fill≈0 (queue-ahead blocks fills).
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
 
     full = _window_compare(
         journal, meta, baseline, candidate, out_dir / "full",
-        holdout_frac=0.0, use_holdout=False, split=split,
+        holdout_frac=0.0, use_holdout=False, split=split, fill_mode=fill_mode,
     )
     tune = _window_compare(
         journal, meta, baseline, candidate, out_dir / "tune",
         holdout_frac=holdout_frac, use_holdout=False, split=split,
+        fill_mode=fill_mode,
     )
     holdout = _window_compare(
         journal, meta, baseline, candidate, out_dir / "holdout",
         holdout_frac=holdout_frac, use_holdout=True, split=split,
+        fill_mode=fill_mode,
     )
 
     base_evs, cand_evs = _chunk_ev_series(
         journal, meta, baseline, candidate, out_dir / "chunks",
-        n_chunks=n_chunks, split=split,
+        n_chunks=n_chunks, split=split, fill_mode=fill_mode,
     )
     deltas = [c - b for b, c in zip(base_evs, cand_evs)]
     if deltas:
@@ -245,6 +256,9 @@ def evaluate_quant_edge(
         and ci_excludes_zero
         and hold_ev_delta > 0.0
     )
+    n_fill_base = int(full.get("baseline", {}).get("n_fill") or 0)
+    n_fill_cand = int(full.get("candidate", {}).get("n_fill") or 0)
+    promotion_eligible = bool(finding and fill_mode == "conservative")
     verdict = {
         "oos_sign_match": oos_sign_match,
         "ci_excludes_zero": ci_excludes_zero,
@@ -252,9 +266,14 @@ def evaluate_quant_edge(
         "full_ev_delta": round(full_ev_delta, 8),
         "holdout_ev_delta": round(hold_ev_delta, 8),
         "finding": finding,
+        "fill_mode": fill_mode,
+        "n_fill_baseline": n_fill_base,
+        "n_fill_candidate": n_fill_cand,
+        "promotion_eligible": promotion_eligible,
         "note": (
             "finding=true only when OOS EV improves, paired test is significant, "
-            "and bootstrap CI excludes zero — else noise, not a result"
+            "and bootstrap CI excludes zero; promotion_eligible additionally "
+            "requires fill_mode=conservative (base/optimistic are diagnostic)"
         ),
     }
 

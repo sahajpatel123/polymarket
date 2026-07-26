@@ -205,8 +205,13 @@ def compare_profiles(
     holdout_frac: float = 0.0,
     use_holdout: bool = False,
     split: str = "time",
+    fill_mode: str = "conservative",
 ) -> CompareResult:
-    """Replay baseline and candidate on the same (optionally sliced) journal."""
+    """Replay baseline and candidate on the same (optionally sliced) journal.
+
+    fill_mode defaults to conservative (promotion-grade). Use base/optimistic
+    only as diagnostics when queue-ahead blocks all fills.
+    """
     rows = load_journal(journal_path)
     n_unfiltered = len(rows)
     # Restrict to this market's tokens before holdout cuts (multi-market tapes).
@@ -223,6 +228,7 @@ def compare_profiles(
         **window,
         "n_events_unfiltered": n_unfiltered,
         "n_events_market": len(rows),
+        "fill_mode": fill_mode,
     }
     out_dir.mkdir(parents=True, exist_ok=True)
     sliced_path = write_sliced_journal(sliced, out_dir / "journal_window.jsonl")
@@ -234,8 +240,12 @@ def compare_profiles(
         if p.exists():
             p.unlink()
 
-    r_base = run_replay(sliced_path, meta, baseline, base_metrics)
-    r_cand = run_replay(sliced_path, meta, candidate, cand_metrics)
+    r_base = run_replay(
+        sliced_path, meta, baseline, base_metrics, fill_mode=fill_mode
+    )
+    r_cand = run_replay(
+        sliced_path, meta, candidate, cand_metrics, fill_mode=fill_mode
+    )
     m_base = _report_metrics(analyze(base_metrics))
     m_cand = _report_metrics(analyze(cand_metrics))
     return CompareResult(

@@ -320,3 +320,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-26T03:25:00Z | Tier1 | T1-138 micro_levels=5 EV ablation finding=false on Newsom+Vance (MSE≠EV); micro_levels_ev_sweep script + evidence JSON; keep default depth=3 | pytest test_micro_levels_ev_sweep; evidence/quant_edge/t1_138_micro5_ev.json | merged
 
 2026-07-26T03:40:00Z | Tier1 | T1-139 c_tox EV sweep 5.0/7.0 vs 3.5 finding=false on Newsom+Vance (ΔEV=0, tox not binding on paper); freeze note needs filled tape | pytest test_c_tox_ev_sweep; evidence/quant_edge/t1_139_c_tox_ev.json | merged
+
+2026-07-26T03:55:00Z | Tier1 | T1-140 wire fill_mode through quant_edge (conservative promote gate); Newsom optimistic/base still n_fill≈0–1 — AS EV thin on this tape | pytest test_quant_edge_eval+compare; evidence/quant_edge/t1_140_fill_mode.json | merged

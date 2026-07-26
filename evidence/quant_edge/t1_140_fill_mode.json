@@ -1,0 +1,51 @@
+{
+  "change": "quant_edge fill_mode plumbing + promotion_eligible gate",
+  "id": "T1-140",
+  "note": "Prior EV ablations used conservative fill_mode (n_fill\u22480). Diagnostic optimistic/base can bind fills; only conservative findings promote.",
+  "runs": {
+    "as_kelly_optimistic": {
+      "fill_mode": "optimistic",
+      "finding": false,
+      "holdout_ev_delta": 0.006965,
+      "n_fill_baseline": 0,
+      "n_fill_candidate": 1,
+      "paired_p": 0.278696,
+      "promotion_eligible": false
+    },
+    "c_tox5_base": {
+      "fill_mode": "base",
+      "finding": false,
+      "holdout_ev_delta": 0.0,
+      "n_fill_baseline": 0,
+      "n_fill_candidate": 0,
+      "paired_p": 1.0,
+      "promotion_eligible": false
+    },
+    "c_tox_optimistic": {
+      "any_nondefault_finding": false,
+      "fill_mode": "optimistic",
+      "rows": [
+        {
+          "c_tox": 3.5,
+          "finding": false,
+          "full_ev_delta": 0.0,
+          "holdout_ev_delta": 0.0,
+          "n_fill_baseline": 0,
+          "n_fill_candidate": 0,
+          "paired_p": 1.0,
+          "promotion_eligible": false
+        },
+        {
+          "c_tox": 5.0,
+          "finding": false,
+          "full_ev_delta": 0.0,
+          "holdout_ev_delta": 0.0,
+          "n_fill_baseline": 0,
+          "n_fill_candidate": 0,
+          "paired_p": 1.0,
+          "promotion_eligible": false
+        }
+      ]
+    }
+  }
+}
