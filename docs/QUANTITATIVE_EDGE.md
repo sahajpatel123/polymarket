@@ -29,6 +29,7 @@ Micro depth EV: `scripts/micro_levels_ev_sweep.py` (quote EV of alternate
 Flow: `scripts/flow_calibration.py` → `polymaker.replay.flow_calibration`
 (flow_z → P(up) vs climatology).
 Toxicity: `scripts/toxicity_calibration.py` → `polymaker.replay.toxicity_calibration`.
+Toxicity spread EV: `scripts/c_tox_ev_sweep.py` (quote EV of alternate `c_tox`).
 Kelly fraction: `scripts/kelly_fraction_sweep.py` (requires `StrategyProfile.kelly_fraction`).
 Status board: `scripts/quant_edge_status.py`.
 Covariance sizing: `scripts/cov_sizing_eval.py` → `polymaker.replay.cov_sizing_eval`
@@ -65,7 +66,7 @@ scoring rule and is no longer used.
 | GARCH(1,1) vol | `strategy/garch.py` | **no** | **no** (OOS MSE ≈ EWMA on Newsom; finding=false) |
 | OFI skew | `strategy/ofi.py` | **fed**; not in quotes | no (worse than climatology) |
 | Covariance sizing | `strategy/covariance_sizing.py` | **no** | no |
-| Markout toxicity | `strategy/estimators.py` | yes (spreads/size) | **mixed** (Newsom virtual-markout Brier yes; Vance no) |
+| Markout toxicity | `strategy/estimators.py` | yes (spreads/size) | **mixed** (Newsom Brier yes; Vance/pre12h no; **c_tox EV inert** on paper — ΔEV=0 at 5/7) |
 | Proper scoring + CI | `strategy/calibration.py` | metrics analyze | harness ready |
 
 ## Why each exists (one line)
@@ -111,9 +112,11 @@ and a PR — never auto-merge. See `AUTONOMOUS_LOOP_PROTOCOL.md`.
 | 2026-07-26T03:10Z | Newsom quant_edge | `flow_fv_weight=0` vs 0.5 (`live_scaled`) | **false** | holdout dn_ev=0; p≈0.69; n_quote≈60 (with correct tick/cid) |
 | 2026-07-26T03:10Z | Vance quant_edge | `flow_fv_weight=0` vs 0.5 | **false** | holdout dn_ev=0; no OOS EV lift |
 | 2026-07-26T03:25Z | Newsom+Vance quant_edge | `micro_levels=5` vs 3 | both **false** | Newsom full dn_ev negative; Vance holdout dn_ev negative; MSE≠EV |
+| 2026-07-26T03:40Z | Newsom+Vance c_tox_ev_sweep | c_tox 5.0/7.0 vs 3.5 | both **false** | ΔEV identically 0 — toxicity not binding on paper quote path |
 
 ## Freeze list (do not Tier-2 wire without multi-market EV)
 
 - flow_z / OFI / VPIN / GARCH / Kalman / cov sizing / AS+Kelly — evidence **no** or single-market only
-- micro_levels=5, toxicity-aware spreads — **mixed** MSE/toxicity only; **EV micro5=false** both markets → keep default 3
+- micro_levels=5, toxicity-aware spreads — **mixed** MSE/toxicity only; **EV micro5=false**; **c_tox EV inert** → keep defaults
 - `flow_fv_weight=0` — forecast MSE favors zero on Newsom, but **EV finding=false** on Newsom+Vance; keep default 0.5; knob exposed for further tape
+- Need **fresh filled tape** (paper currently n_fill≈0) before adverse-selection EV claims can bind

@@ -1,0 +1,81 @@
+{
+  "any_finding": false,
+  "candidate": "c_tox sweep vs live_scaled 3.5",
+  "id": "T1-139",
+  "markets": {
+    "newsom": {
+      "any_nondefault_finding": false,
+      "baseline_c_tox": 3.5,
+      "rows": [
+        {
+          "c_tox": 3.5,
+          "finding": false,
+          "full_ev_delta": 0.0,
+          "holdout_ev_delta": 0.0,
+          "is_baseline": true,
+          "is_significant": false,
+          "oos_sign_match": true,
+          "paired_p": 1.0
+        },
+        {
+          "c_tox": 5.0,
+          "finding": false,
+          "full_ev_delta": 0.0,
+          "holdout_ev_delta": 0.0,
+          "is_baseline": false,
+          "is_significant": false,
+          "oos_sign_match": true,
+          "paired_p": 1.0
+        },
+        {
+          "c_tox": 7.0,
+          "finding": false,
+          "full_ev_delta": 0.0,
+          "holdout_ev_delta": 0.0,
+          "is_baseline": false,
+          "is_significant": false,
+          "oos_sign_match": true,
+          "paired_p": 1.0
+        }
+      ]
+    },
+    "vance": {
+      "any_nondefault_finding": false,
+      "baseline_c_tox": 3.5,
+      "rows": [
+        {
+          "c_tox": 3.5,
+          "finding": false,
+          "full_ev_delta": 0.0,
+          "holdout_ev_delta": 0.0,
+          "is_baseline": true,
+          "is_significant": false,
+          "oos_sign_match": true,
+          "paired_p": 1.0
+        },
+        {
+          "c_tox": 5.0,
+          "finding": false,
+          "full_ev_delta": 0.0,
+          "holdout_ev_delta": 0.0,
+          "is_baseline": false,
+          "is_significant": false,
+          "oos_sign_match": true,
+          "paired_p": 1.0
+        },
+        {
+          "c_tox": 7.0,
+          "finding": false,
+          "full_ev_delta": 0.0,
+          "holdout_ev_delta": 0.0,
+          "is_baseline": false,
+          "is_significant": false,
+          "oos_sign_match": true,
+          "paired_p": 1.0
+        }
+      ]
+    }
+  },
+  "note": "Newsom toxicity Brier skill earlier; raising c_tox does not produce OOS EV finding on Newsom or Vance \u2014 keep live_scaled c_tox=3.5.",
+  "promote_default": false
+}

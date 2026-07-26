@@ -318,3 +318,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-26T03:08:00Z | Tier1 | T1-137 StrategyProfile.flow_fv_weight (default 0.5) wired engine+pipeline; EV ablation weight=0 finding=false on Newsom+Vance (default unchanged); freeze list in QUANTITATIVE_EDGE | pytest test_quoting/decision_pipeline/quant_edge_eval; logs/quant_edge_eval/flow_weight0_*.json | merged
 
 2026-07-26T03:25:00Z | Tier1 | T1-138 micro_levels=5 EV ablation finding=false on Newsom+Vance (MSE≠EV); micro_levels_ev_sweep script + evidence JSON; keep default depth=3 | pytest test_micro_levels_ev_sweep; evidence/quant_edge/t1_138_micro5_ev.json | merged
+
+2026-07-26T03:40:00Z | Tier1 | T1-139 c_tox EV sweep 5.0/7.0 vs 3.5 finding=false on Newsom+Vance (ΔEV=0, tox not binding on paper); freeze note needs filled tape | pytest test_c_tox_ev_sweep; evidence/quant_edge/t1_139_c_tox_ev.json | merged

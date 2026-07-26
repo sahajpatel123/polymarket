@@ -955,6 +955,14 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: `scripts/micro_levels_ev_sweep.py`, `tests/test_micro_levels_ev_sweep.py`,
   `evidence/quant_edge/t1_138_micro5_ev.json`
 
+### T1-139 c_tox EV sweep (toxicity → spreads)
+- Status: `done`
+- Done when: `scripts/c_tox_ev_sweep.py` exists; live_scaled c_tox 5.0/7.0 vs 3.5
+  finding=false on Newsom+Vance with ΔEV=0 (toxicity not binding on paper
+  quote path); default unchanged; evidence JSON committed.
+- Evidence: `scripts/c_tox_ev_sweep.py`, `tests/test_c_tox_ev_sweep.py`,
+  `evidence/quant_edge/t1_139_c_tox_ev.json`
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
