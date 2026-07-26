@@ -346,3 +346,4 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-26T07:25:00Z | Tier1 | T1-154 opt-in c_kyle (default 0) wires Kyle λ into half-spread; Newsom+Vance EV sweep finding=false (dn_ev=0) — keep frozen | pytest; evidence/quant_edge/t1_154_kyle_ev_sweep.json | merged
 2026-07-26T07:40:00Z | Tier1 | T1-155 as_path_status board (ready=false) + c_vol EV sweep finding=false Newsom/Vance; consolidate AS freeze list | pytest; evidence/quant_edge/t1_155_as_path_c_vol.json | merged
 2026-07-26T07:55:00Z | Tier1 | T1-156 WEEKLY_REPORT embeds quant-edge scoreboard (evidence_yes=0); overdue weekly refresh | pytest test_write_weekly_report; evidence/quant_edge/t1_156_weekly_quant_board.json | merged
+2026-07-26T07:55:00Z | Tier1 | T1-156 WEEKLY_REPORT embeds quant-edge scoreboard (evidence_yes=0); overdue weekly refresh | pytest test_write_weekly_report; evidence/quant_edge/t1_156_weekly_quant_board.json | merged
