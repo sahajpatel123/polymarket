@@ -28,6 +28,7 @@ from polymaker.replay.compare import (
     slice_journal_rows,
     write_sliced_journal,
 )
+from polymaker.replay.fill_readiness import assess_fill_readiness
 from polymaker.strategy.calibration import (
     bootstrap_confidence_interval,
     paired_significance_test,
@@ -168,6 +169,7 @@ def evaluate_quant_edge(
     n_chunks: int = 5,
     alpha: float = 0.05,
     fill_mode: str = "conservative",
+    min_trades_for_as: int = 50,
 ) -> QuantEdgeEval:
     """Run full / tune / holdout compares + chunked significance on EV.
 
@@ -258,7 +260,16 @@ def evaluate_quant_edge(
     )
     n_fill_base = int(full.get("baseline", {}).get("n_fill") or 0)
     n_fill_cand = int(full.get("candidate", {}).get("n_fill") or 0)
-    promotion_eligible = bool(finding and fill_mode == "conservative")
+    readiness = assess_fill_readiness(
+        journal,
+        meta,
+        profile=baseline,
+        min_trades=min_trades_for_as,
+        run_optimistic_probe=False,
+    )
+    promotion_eligible = bool(
+        finding and fill_mode == "conservative" and readiness.as_ev_ready
+    )
     verdict = {
         "oos_sign_match": oos_sign_match,
         "ci_excludes_zero": ci_excludes_zero,
@@ -269,11 +280,13 @@ def evaluate_quant_edge(
         "fill_mode": fill_mode,
         "n_fill_baseline": n_fill_base,
         "n_fill_candidate": n_fill_cand,
+        "as_ev_ready": readiness.as_ev_ready,
+        "fill_readiness": readiness.as_dict(),
         "promotion_eligible": promotion_eligible,
         "note": (
             "finding=true only when OOS EV improves, paired test is significant, "
             "and bootstrap CI excludes zero; promotion_eligible additionally "
-            "requires fill_mode=conservative (base/optimistic are diagnostic)"
+            "requires fill_mode=conservative and as_ev_ready (enough trades)"
         ),
     }
 

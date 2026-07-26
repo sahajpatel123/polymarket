@@ -1,0 +1,50 @@
+{
+  "any_as_ev_ready": false,
+  "change": "fill_readiness gate for as_ev_ready / promotion_eligible",
+  "id": "T1-141",
+  "markets": {
+    "newsom": {
+      "as_ev_ready": false,
+      "duration_s": 12782.888,
+      "min_fills_optimistic": 20,
+      "min_trades": 50,
+      "n_book": 50,
+      "n_events": 27415,
+      "n_fill_optimistic": 0,
+      "n_price_change": 27360,
+      "n_quote_optimistic": 63,
+      "n_trades": 5,
+      "reason": "n_trades=5<50;n_fill_optimistic=0<20",
+      "trades_per_hour": 1.4081
+    },
+    "newsom_pre12h": {
+      "as_ev_ready": false,
+      "duration_s": 30139.317,
+      "min_fills_optimistic": 20,
+      "min_trades": 50,
+      "n_book": 141,
+      "n_events": 34929,
+      "n_fill_optimistic": 0,
+      "n_price_change": 34714,
+      "n_quote_optimistic": 256,
+      "n_trades": 74,
+      "reason": "n_fill_optimistic=0<20",
+      "trades_per_hour": 8.839
+    },
+    "vance": {
+      "as_ev_ready": false,
+      "duration_s": 12782.888,
+      "min_fills_optimistic": 20,
+      "min_trades": 50,
+      "n_book": 100,
+      "n_events": 28696,
+      "n_fill_optimistic": 0,
+      "n_price_change": 27360,
+      "n_quote_optimistic": 116,
+      "n_trades": 14,
+      "reason": "n_trades=14<50;n_fill_optimistic=0<20",
+      "trades_per_hour": 3.9428
+    }
+  },
+  "note": "Current livecfg paper has too few last_trade_price prints for AS EV (Newsom n_trades=5). pre12h reaches n_trades=74 but optimistic probe still n_fill=0 \u2014 quotes not crossed by tape. Collect denser/filled tape before further AS-sensitive knobs."
+}

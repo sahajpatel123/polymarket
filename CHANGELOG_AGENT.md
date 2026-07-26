@@ -322,3 +322,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-26T03:40:00Z | Tier1 | T1-139 c_tox EV sweep 5.0/7.0 vs 3.5 finding=false on Newsom+Vance (ΔEV=0, tox not binding on paper); freeze note needs filled tape | pytest test_c_tox_ev_sweep; evidence/quant_edge/t1_139_c_tox_ev.json | merged
 
 2026-07-26T03:55:00Z | Tier1 | T1-140 wire fill_mode through quant_edge (conservative promote gate); Newsom optimistic/base still n_fill≈0–1 — AS EV thin on this tape | pytest test_quant_edge_eval+compare; evidence/quant_edge/t1_140_fill_mode.json | merged
+
+2026-07-26T04:10:00Z | Tier1 | T1-141 fill_readiness gate (as_ev_ready); livecfg Newsom/Vance/pre12h all false — n_trades thin or optimistic n_fill=0; AS EV paused pending denser tape | pytest test_fill_readiness+quant_edge_eval; evidence/quant_edge/t1_141_fill_readiness.json | merged

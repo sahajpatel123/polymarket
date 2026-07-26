@@ -45,8 +45,16 @@ Verdict `finding=true` only when OOS EV improves, the paired test is
 significant, and the bootstrap CI excludes zero.
 
 `promotion_eligible` additionally requires `--fill-mode conservative`
-(default). `base` / `optimistic` are diagnostics when queue-ahead yields
-`n_fill≈0` under conservative — a diagnostic finding alone does not promote.
+(default) **and** `as_ev_ready` from the fill-readiness gate (enough
+`last_trade_price` prints; optional optimistic fill probe). `base` /
+`optimistic` are diagnostics when queue-ahead yields `n_fill≈0` under
+conservative — a diagnostic finding alone does not promote.
+
+```bash
+uv run python scripts/fill_readiness.py \
+  --journal livecfg/journal/paper.jsonl \
+  --yes-token … --probe-optimistic
+```
 
 ## Calibration target (important)
 
@@ -118,10 +126,12 @@ and a PR — never auto-merge. See `AUTONOMOUS_LOOP_PROTOCOL.md`.
 | 2026-07-26T03:25Z | Newsom+Vance quant_edge | `micro_levels=5` vs 3 | both **false** | Newsom full dn_ev negative; Vance holdout dn_ev negative; MSE≠EV |
 | 2026-07-26T03:40Z | Newsom+Vance c_tox_ev_sweep | c_tox 5.0/7.0 vs 3.5 | both **false** | ΔEV identically 0 — toxicity not binding on paper quote path |
 | 2026-07-26T03:55Z | Newsom fill_mode plumbing | conservative→base/optimistic | infra | n_fill still ~0–1 even optimistic; AS EV remains thin on this tape |
+| 2026-07-26T04:10Z | Newsom/Vance/pre12h fill_readiness | as_ev_ready gate | **false** all | Newsom n_trades=5; pre12h n_trades=74 but optimistic n_fill=0 (quotes uncrossed) |
 
 ## Freeze list (do not Tier-2 wire without multi-market EV)
 
 - flow_z / OFI / VPIN / GARCH / Kalman / cov sizing / AS+Kelly — evidence **no** or single-market only
 - micro_levels=5, toxicity-aware spreads — **mixed** MSE/toxicity only; **EV micro5=false**; **c_tox EV inert** → keep defaults
 - `flow_fv_weight=0` — forecast MSE favors zero on Newsom, but **EV finding=false** on Newsom+Vance; keep default 0.5; knob exposed for further tape
-- Need **fresh filled tape** (paper currently n_fill≈0 even under optimistic) before adverse-selection EV claims can bind; use `--fill-mode` diagnostics only
+- **AS EV paused** until tape passes `scripts/fill_readiness.py` (`as_ev_ready=true`): current livecfg paper has ~5–14 trades/market and optimistic probe still n_fill=0
+- Next: collect denser tape (more `last_trade_price`) or markets with active prints; calibration-only work can continue

@@ -963,6 +963,25 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: `scripts/c_tox_ev_sweep.py`, `tests/test_c_tox_ev_sweep.py`,
   `evidence/quant_edge/t1_139_c_tox_ev.json`
 
+### T1-140 quant_edge fill_mode + promotion_eligible gate
+- Status: `done`
+- Done when: `compare_profiles` / `evaluate_quant_edge` / `quant_edge_eval.py`
+  accept `fill_mode` (conservative default); verdict exposes `n_fill_*` and
+  `promotion_eligible` (finding ∧ conservative only); Newsom optimistic/base
+  diagnostics logged (still n_fill≈0–1); prior conservative ablations
+  reinterpreted as reward-path-only when fills blocked.
+- Evidence: compare.py + quant_edge.py + scripts; tests/test_quant_edge_eval.py;
+  `evidence/quant_edge/t1_140_fill_mode.json`
+
+### T1-141 fill_readiness gate (as_ev_ready)
+- Status: `done`
+- Done when: `assess_fill_readiness` + CLI score trade density / optional
+  optimistic fill probe; quant_edge verdict embeds `as_ev_ready` and blocks
+  `promotion_eligible` when tape is too thin; livecfg Newsom/Vance/pre12h all
+  as_ev_ready=false (Newsom n_trades=5; pre12h trades ok but n_fill_optimistic=0).
+- Evidence: `src/polymaker/replay/fill_readiness.py`, `scripts/fill_readiness.py`,
+  `tests/test_fill_readiness.py`, `evidence/quant_edge/t1_141_fill_readiness.json`
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
