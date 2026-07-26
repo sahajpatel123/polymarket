@@ -272,6 +272,48 @@ def calibrate_fair_value(
     )
 
 
+def calibrate_fair_value_multi_horizon(
+    journal: Path,
+    *,
+    yes_token: str,
+    no_token: str | None = None,
+    horizons_s: tuple[float, ...] = (5.0, 30.0, 120.0),
+    sample_every: int = 5,
+    holdout_frac: float = 0.3,
+    micro_levels: int = 3,
+) -> dict[str, Any]:
+    """Run FV calibration across several horizons; summarize micro findings."""
+    by_h: dict[str, Any] = {}
+    for h in horizons_s:
+        rep = calibrate_fair_value(
+            journal,
+            yes_token=yes_token,
+            no_token=no_token,
+            horizon_s=float(h),
+            sample_every=sample_every,
+            holdout_frac=holdout_frac,
+            micro_levels=micro_levels,
+        )
+        d = rep.as_dict()
+        by_h[str(h)] = {
+            "n": d["n"],
+            "micro_finding": d["verdict"].get("micro_finding"),
+            "kalman_finding": d["verdict"].get("kalman_finding"),
+            "blend_finding": d["verdict"].get("blend_finding"),
+            "mse_mid": (d["predictors"].get("mid") or {}).get("mse"),
+            "mse_micro": (d["predictors"].get("micro") or {}).get("mse"),
+            "micro_vs_mid": d["pairwise"].get("micro_vs_mid"),
+        }
+    micro_wins = [h for h, v in by_h.items() if v.get("micro_finding")]
+    return {
+        "horizons_s": list(horizons_s),
+        "by_horizon": by_h,
+        "micro_win_horizons": micro_wins,
+        "micro_any_horizon": len(micro_wins) > 0,
+        "micro_all_horizons": len(micro_wins) == len(horizons_s),
+    }
+
+
 def write_fv_report(report: FVCalibrationReport, path: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(report.as_dict(), indent=2, sort_keys=True) + "\n")

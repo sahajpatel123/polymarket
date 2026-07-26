@@ -904,6 +904,15 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: `scripts/fv_calibration.py`, `src/polymaker/replay/fv_calibration.py`,
   `tests/test_fv_calibration.py`; calibration.py bootstrap round 12dp
 
+### T1-133 Multi-horizon FV + covariance sizing eval
+- Status: `done`
+- Done when: `--horizons` multi-horizon FV mode exists; Newsom micro wins 30s+120s
+  (not 5s sig); Vance multi still false; cov_sizing_eval uses uncorrelated
+  budget (no false scale at corr=0); Newsom×Vance finding=false with holdout
+  corr≈−0.58 noted; Vance AS+Kelly finding=false.
+- Evidence: `calibrate_fair_value_multi_horizon`, `scripts/cov_sizing_eval.py`,
+  `src/polymaker/replay/cov_sizing_eval.py`, `tests/test_cov_sizing_eval.py`
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

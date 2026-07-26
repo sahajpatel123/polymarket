@@ -22,7 +22,9 @@ Signal-only scoring: `scripts/signal_calibration.py` → `polymaker.replay.signa
 Vol forecasting: `scripts/vol_calibration.py` → `polymaker.replay.vol_calibration`
 (GARCH vs EWMA OOS MSE + significance).
 FV predictors: `scripts/fv_calibration.py` → `polymaker.replay.fv_calibration`
-(mid vs microprice vs Kalman vs blend; OOS MSE + significance).
+(mid vs microprice vs Kalman vs blend; OOS MSE + significance; `--horizons` multi).
+Covariance sizing: `scripts/cov_sizing_eval.py` → `polymaker.replay.cov_sizing_eval`
+(tune cov vs uncorrelated budget; holdout variance reduction CI).
 
 ```bash
 uv run python scripts/quant_edge_eval.py \
@@ -85,3 +87,7 @@ and a PR — never auto-merge. See `AUTONOMOUS_LOOP_PROTOCOL.md`.
 | 2026-07-26T01:40Z | livecfg Newsom (vol_calibration) | GARCH vs EWMA MSE | **false** | n=858; MSE tied; no significant skill |
 | 2026-07-26T01:55Z | livecfg Newsom (fv_calibration) | micro vs mid | **true** | micro MSE 1.5e-7 vs mid 6.5e-7; p≈0.048; CI>0 (after CI precision fix) |
 | 2026-07-26T01:55Z | livecfg Vance (fv_calibration) | micro / kalman / blend | all **false** | micro worse than mid on Vance — mixed replication |
+| 2026-07-26T02:10Z | Newsom multi-horizon FV | micro @ 5/30/120s | **true** at 30s+120s | 5s lower MSE but not significant; strengthens Newsom micro case |
+| 2026-07-26T02:10Z | Vance multi-horizon FV | micro @ 5/30/120s | all **false** | still no Vance replication |
+| 2026-07-26T02:10Z | Newsom×Vance cov_sizing | corr-scaled notionals | **false** | tune corr=0 (no scale); holdout corr≈−0.58 material but diversification ≠ downscale finding |
+| 2026-07-26T02:10Z | Vance AS+Kelly quant_edge | use_advanced_quoting | **false** | holdout dn_ev>0 but p≈0.29 — not significant |
