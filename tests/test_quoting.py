@@ -90,6 +90,14 @@ def test_compute_fair_value_flow_nudge():
     assert compute_fair_value(0.50, 0.0, 0.01) == pytest.approx(0.50)
     assert compute_fair_value(0.50, 1.0, 0.01, weight=0.5) == pytest.approx(0.505)
     assert compute_fair_value(0.50, -1.0, 0.01, weight=0.5) == pytest.approx(0.495)
+    assert compute_fair_value(0.50, 1.0, 0.01, weight=0.0) == pytest.approx(0.50)
+
+
+def test_strategy_profile_flow_fv_weight_default():
+    from polymaker.config import StrategyProfile
+
+    assert StrategyProfile().flow_fv_weight == pytest.approx(0.5)
+    assert StrategyProfile(flow_fv_weight=0.0).flow_fv_weight == pytest.approx(0.0)
 
 
 # ── two-sided quoting ────────────────────────────────────────────────────────

@@ -925,7 +925,7 @@ class Engine:
         est.flow.decay_to(now)
         # FV preview for risk marks only — last_fv stays previous until after
         # build_targets so regime jump detection matches the shared pipeline.
-        fv = compute_fair_value(micro, est.flow.z, tick)
+        fv = compute_fair_value(micro, est.flow.z, tick, weight=p.flow_fv_weight)
 
         self.risk.update_mark(yes_token, fv)
         self.risk.update_mark(no_token, 1.0 - fv)

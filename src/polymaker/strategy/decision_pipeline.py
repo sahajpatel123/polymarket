@@ -114,7 +114,7 @@ def build_targets(
     mid = 0.5 * (yes_view.best_bid + yes_view.best_ask)
     mprice = float(micro) if micro is not None else mid
     est.flow.decay_to(now)
-    fv = compute_fair_value(mprice, est.flow.z, tick)
+    fv = compute_fair_value(mprice, est.flow.z, tick, weight=p.flow_fv_weight)
     prev_fv = est.last_fv
 
     q_max = p.q_max_usdc

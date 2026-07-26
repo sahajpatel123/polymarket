@@ -939,6 +939,14 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: fv_calibration micro_flow fields; `scripts/quant_edge_status.py`;
   logs/fv_calibration/*_flow_nudge.json; logs/toxicity_calibration/newsom_pre12h.json
 
+### T1-137 flow_fv_weight profile knob + EV ablation
+- Status: `done`
+- Done when: `StrategyProfile.flow_fv_weight` default 0.5 wired in engine +
+  decision_pipeline (behavior-preserving); quant_edge_eval of weight=0 vs 0.5
+  on Newsom+Vance both finding=false (no OOS EV lift); default unchanged.
+- Evidence: config + engine + decision_pipeline; tests/test_quoting.py;
+  logs/quant_edge_eval/flow_weight0_{newsom,vance}/report.json
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

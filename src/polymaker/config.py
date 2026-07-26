@@ -172,6 +172,9 @@ class StrategyProfile(BaseModel):
     # fair value
     micro_levels: int = 3
     flow_ewma_halflife_s: float = 120.0
+    # Weight on flow_z * tick added to microprice in compute_fair_value.
+    # Default 0.5 preserves historical behavior; 0 disables the flow nudge.
+    flow_fv_weight: float = 0.5
     # spread / skew
     gamma: float = 0.5
     delta_min_ticks: int = 2

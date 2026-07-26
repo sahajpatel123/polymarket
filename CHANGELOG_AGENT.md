@@ -314,3 +314,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-26T02:40:00Z | Tier1 | T1-135 kelly_fraction profile knob (default 0.25); toxicity_calibration Newsom=true Vance=false; kelly sweep 0.125/0.5 no EV finding | pytest test_toxicity_kelly; logs/toxicity_calibration/*.json; logs/kelly_fraction_sweep/newsom.json | merged
 
 2026-07-26T02:55:00Z | Tier1 | T1-136 flow-nudge FV ablation (hurts micro OOS MSE on Newsom); toxicity fails pre12h replicate; quant_edge_status board | pytest test_fv_calibration; logs/fv_calibration/*_flow_nudge.json; quant_edge_status | merged
+
+2026-07-26T03:08:00Z | Tier1 | T1-137 StrategyProfile.flow_fv_weight (default 0.5) wired engine+pipeline; EV ablation weight=0 finding=false on Newsom+Vance (default unchanged); freeze list in QUANTITATIVE_EDGE | pytest test_quoting/decision_pipeline/quant_edge_eval; logs/quant_edge_eval/flow_weight0_*.json | merged
