@@ -21,6 +21,8 @@ Signal-only scoring: `scripts/signal_calibration.py` → `polymaker.replay.signa
 (Brier vs tune climatology for OFI/VPIN; not a substitute for quote EV evidence).
 Vol forecasting: `scripts/vol_calibration.py` → `polymaker.replay.vol_calibration`
 (GARCH vs EWMA OOS MSE + significance).
+FV predictors: `scripts/fv_calibration.py` → `polymaker.replay.fv_calibration`
+(mid vs microprice vs Kalman vs blend; OOS MSE + significance).
 
 ```bash
 uv run python scripts/quant_edge_eval.py \
@@ -42,10 +44,10 @@ scoring rule and is no longer used.
 
 | Technique | Module | Live/replay wiring | Evidence gate |
 |-----------|--------|--------------------|---------------|
-| Microprice | `marketdata/orderbook.py` | yes | partial (in live path; needs OOS EV pack) |
+| Microprice | `marketdata/orderbook.py` | yes | **mixed** (OOS beats mid on Newsom; fails on Vance) |
 | EWMA vol / flow | `strategy/estimators.py` | yes | partial |
-| Kalman mid | `intelligence/signal_processing.py` | intel-only | no |
-| Calibration-weighted signal blend | `strategy/signal_blend.py` | **no** | no |
+| Kalman mid | `intelligence/signal_processing.py` | intel-only | **no** (worse than mid on Newsom+Vance OOS) |
+| Calibration-weighted signal blend | `strategy/signal_blend.py` | **no** | no (no clear OOS win vs mid) |
 | Avellaneda–Stoikov | `strategy/avellaneda_stoikov.py` | opt-in (`use_advanced_quoting`) | no |
 | Fractional Kelly | `strategy/kelly.py` | opt-in | no |
 | Kyle λ / Glosten–Milgrom | `strategy/kyle_lambda.py` | **fed**; not in quotes | mixed (Spearman vs \|Δmid\| unstable across windows) |
@@ -81,3 +83,5 @@ and a PR — never auto-merge. See `AUTONOMOUS_LOOP_PROTOCOL.md`.
 | 2026-07-26T01:25Z | livecfg Newsom (signal_calibration) | OFI P(up) / VPIN P(big move) | OFI **false**, VPIN **true*** | *single-market; see Vance replication row |
 | 2026-07-26T01:40Z | livecfg Vance (+pre12h) | OFI / VPIN replicate | both **false** | VPIN Newsom skill **fails replication** → not a finding |
 | 2026-07-26T01:40Z | livecfg Newsom (vol_calibration) | GARCH vs EWMA MSE | **false** | n=858; MSE tied; no significant skill |
+| 2026-07-26T01:55Z | livecfg Newsom (fv_calibration) | micro vs mid | **true** | micro MSE 1.5e-7 vs mid 6.5e-7; p≈0.048; CI>0 (after CI precision fix) |
+| 2026-07-26T01:55Z | livecfg Vance (fv_calibration) | micro / kalman / blend | all **false** | micro worse than mid on Vance — mixed replication |

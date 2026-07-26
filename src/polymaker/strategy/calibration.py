@@ -176,7 +176,7 @@ def bootstrap_confidence_interval(
     lo_idx = max(0, int(alpha * n_resamples))
     hi_idx = min(n_resamples - 1, int((1.0 - alpha) * n_resamples))
 
-    return round(mean_val, 6), round(resample_means[lo_idx], 6), round(resample_means[hi_idx], 6)
+    return round(mean_val, 12), round(resample_means[lo_idx], 12), round(resample_means[hi_idx], 12)
 
 
 @dataclass(frozen=True, slots=True)

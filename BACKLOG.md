@@ -895,6 +895,15 @@ done without evidence (script output / tests) from that cycle.
   `tests/test_vol_calibration.py`; newsom garch_finding=false; vance
   vpin_finding=false (replication fail)
 
+### T1-132 FV calibration (mid vs micro vs Kalman vs blend)
+- Status: `done`
+- Done when: fv_calibration scores predictors on OOS future-mid MSE with paired
+  significance + bootstrap CI; bootstrap CI precision fixed (12 dp) so ~1e-6
+  skills are not rounded to zero; Newsom micro_finding=true; Vance replication
+  false; Kalman/blend not promoted; inventory updated.
+- Evidence: `scripts/fv_calibration.py`, `src/polymaker/replay/fv_calibration.py`,
+  `tests/test_fv_calibration.py`; calibration.py bootstrap round 12dp
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
