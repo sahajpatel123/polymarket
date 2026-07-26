@@ -1177,6 +1177,13 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: `scripts/q_max_ev_sweep.py`, `tests/test_q_max_ev_sweep.py`,
   `evidence/quant_edge/t1_164_q_max_ev.json`
 
+### T1-165 reward_size_mult EV sweep
+- Status: `done`
+- Done when: `reward_size_ev_sweep` on Newsom/Vance; finding=false (Newsom
+  1.5+ ev_signal only, reward_d=0); keep reward_size_mult=1.0; evidence JSON.
+- Evidence: `scripts/reward_size_ev_sweep.py`, `tests/test_reward_size_ev_sweep.py`,
+  `evidence/quant_edge/t1_165_reward_size_ev.json`
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

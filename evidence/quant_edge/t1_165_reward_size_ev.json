@@ -1,0 +1,17 @@
+{
+  "id": "T1-165",
+  "change": "reward_size_mult EV sweep: 1.0/1.5/2.0/2.5 vs live_scaled baseline 1.0; finding=false",
+  "note": "Newsom 1.5/2.0/2.5: ev_signal=true (n_quote 244→189/136) but reward_accrual_delta=0 and n_fill=0 → finding=false (quote-count artifact). Vance higher mult hurts dn_ev. Keep live_scaled reward_size_mult=1.0.",
+  "journal": "livecfg/journal/paper.jsonl.pre12h.1784925687.31229",
+  "baseline_reward_size_mult": 1.0,
+  "newsom": {
+    "any_nondefault_finding": false,
+    "ev_signal_at": [1.5, 2.0, 2.5],
+    "report": "logs/reward_size_ev_sweep/newsom_cons.json"
+  },
+  "vance": {
+    "any_nondefault_finding": false,
+    "ev_signal_at": [],
+    "report": "logs/reward_size_ev_sweep/vance_cons.json"
+  }
+}
