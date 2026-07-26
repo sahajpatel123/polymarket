@@ -42,12 +42,13 @@ uv run python scripts/quant_edge_eval.py \
 ```
 
 Verdict `finding=true` only when OOS EV improves, the paired test is
-significant, and the bootstrap CI excludes zero.
+significant, the bootstrap CI excludes zero, **and** `n_fill_candidate>0`.
+Zero-fill EV lifts (same reward, fewer quotes) are tracked as `ev_signal`
+only — they are not AS findings (T1-153).
 
 `promotion_eligible` additionally requires `--fill-mode conservative`
 (default), `as_ev_ready` from the fill-readiness gate (enough
-`last_trade_price` prints), `token_pair_ok`, **and** `n_fill_candidate>0`.
-Zero-fill EV deltas (reward-path noise) are not AS promotion evidence.
+`last_trade_price` prints), and `token_pair_ok`.
 `base` / `optimistic` are diagnostics when queue-ahead yields `n_fill≈0`
 under conservative — a diagnostic finding alone does not promote.
 
@@ -66,6 +67,7 @@ uv run python scripts/quant_edge_eval.py --journal … --slug … --db livecfg/s
 uv run python scripts/band_touch_tradeoff.py --journal … --slug … --db livecfg/state.db
 uv run python scripts/queue_ahead_sweep.py --journal … --slug … --db livecfg/state.db
 uv run python scripts/through_price_tape.py --journal … --slug … --db livecfg/state.db
+uv run python scripts/reward_path_compare.py --journal … --slug … --db livecfg/state.db
 uv run python scripts/token_pair_sanity.py --journal … --yes-token … --no-token …
 uv run python scripts/quote_side_coverage.py --journal … --yes-token … --no-token …
 ```
@@ -94,7 +96,7 @@ scoring rule and is no longer used.
 | Covariance sizing | `strategy/covariance_sizing.py` | **no** | no |
 | Markout toxicity | `strategy/estimators.py` | yes (spreads/size) | **no** (correct-token Newsom+Vance Brier finding=false; prior Newsom win contaminated) |
 | Proper scoring + CI | `strategy/calibration.py` | metrics analyze | harness ready |
-| Join best bid | `strategy/quoting.py` (`join_best_bid`) | opt-in default **off** | **no** (optimistic Newsom finding only; conservative equal-price skip → 0 fills; Vance fails) |
+| Join best bid | `strategy/quoting.py` (`join_best_bid`) | opt-in default **off** | **no** (optimistic Newsom only; tape at-touch; cons equal-price skip; zero-fill EV is denominator artifact) |
 
 ## Why each exists (one line)
 
@@ -153,6 +155,7 @@ and a PR — never auto-merge. See `AUTONOMOUS_LOOP_PROTOCOL.md`.
 | 2026-07-26T06:25Z | bootstrap CI fix + join×2 | Newsom/Vance join+min_edge0 | Newsom opt **true** / Vance **false** | LCG CI bug fixed; conservative n_fill=0; promo now needs fills; join still frozen |
 | 2026-07-26T06:40Z | queue_ahead_sweep | join+min_edge0 fill modes | equal_price_blocks=**true** | 33/33 Newsom opt fills equal-price; base_ahead0=33 cons_ahead0=0 — promo blocked by design |
 | 2026-07-26T06:55Z | through_price_tape | Newsom/Vance sells vs BB | viable=**false** | 40/40 Newsom + 7/7 Vance sells at-touch (n_through=0); join in_band=1.0 |
+| 2026-07-26T07:10Z | reward_path + finding gate | join cons Newsom/Vance | **finding=false** | cons reward_delta=0, denominator_artifact; finding now needs fills; prior cons “finding” overturned |
 
 ## Freeze list (do not Tier-2 wire without multi-market EV)
 
@@ -173,4 +176,5 @@ and a PR — never auto-merge. See `AUTONOMOUS_LOOP_PROTOCOL.md`.
 - `promotion_eligible` now also requires `n_fill_candidate>0` (blocks zero-fill reward-path “findings”)
 - **Join-BB cannot promote under conservative fills** (T1-151): all optimistic join fills are equal-price; `cons_ahead0` still n_fill=0 — equal-price skip is the blocker ahead of queue=200
 - **Tape has no through-price sells** (T1-152): Newsom/Vance journals are 100% at-touch SELL prints → `conservative_join_viable=false`; wait for denser tape or escalate equal-price policy explicitly
+- **Zero-fill EV is not a finding** (T1-153): join cons reward_delta=0 with fewer quotes → `ev_signal` only; `finding` requires fills
 - Next AS path needs either through-price aggressors on denser tape, or an explicit Tier-2 decision on equal-price fill policy (do not soften conservative for a metric win)

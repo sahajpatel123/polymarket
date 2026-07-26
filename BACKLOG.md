@@ -1083,6 +1083,15 @@ done without evidence (script output / tests) from that cycle.
   `scripts/through_price_tape.py`, `tests/test_through_price_tape.py`,
   `evidence/quant_edge/t1_152_through_price_tape.json`
 
+### T1-153 finding requires fills + reward denominator artifact
+- Status: `done`
+- Done when: `finding` requires `n_fill_candidate>0` (`ev_signal` keeps raw EV
+  gate); `reward_path_compare` shows join cons reward_delta=0 with
+  denominator_artifact; join_best_bid on TECHNIQUE_INVENTORY; evidence JSON.
+- Evidence: `src/polymaker/replay/quant_edge.py`,
+  `scripts/reward_path_compare.py`, `scripts/quant_edge_status.py`,
+  `evidence/quant_edge/t1_153_finding_requires_fills.json`
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

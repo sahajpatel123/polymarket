@@ -1,0 +1,28 @@
+{
+  "id": "T1-153",
+  "change": "finding requires n_fill_candidate>0; reward_path_compare shows conservative join EV lift is denominator artifact",
+  "note": "Under conservative fill_mode, join+min_edge0 has reward_delta=0 and fewer quotes → higher ev_per_quote without fills. That is not AS evidence. finding now requires n_fill_candidate>0 (ev_signal keeps the raw EV gate). Newsom/Vance both denominator_artifact=true. join_best_bid added to TECHNIQUE_INVENTORY as evidence=no.",
+  "journal": "livecfg/journal/paper.jsonl.pre12h.1784925687.31229",
+  "reward_path": {
+    "newsom": {
+      "cons_reward_delta": 0.0,
+      "cons_ev_delta": 0.00038347,
+      "denominator_artifact": true,
+      "report": "logs/reward_path_compare/newsom.json"
+    },
+    "vance": {
+      "cons_reward_delta": 0.0,
+      "cons_ev_delta": 0.00029298,
+      "denominator_artifact": true,
+      "report": "logs/reward_path_compare/vance.json"
+    }
+  },
+  "quant_edge_eval_newsom_conservative_join": {
+    "ev_signal": true,
+    "finding": false,
+    "promotion_eligible": false,
+    "n_fill": "0->0",
+    "reward_accrual_delta": 0.0,
+    "report": "logs/quant_edge_eval/t1_153_cons_join/report.json"
+  }
+}

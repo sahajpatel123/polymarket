@@ -153,6 +153,9 @@ def test_technique_inventory_covers_core_set():
     assert by_id["markout_toxicity"]["evidence"] == "no"
     assert "flow_nudge_fv" in by_id
     assert by_id["flow_nudge_fv"]["evidence"] == "no"
+    assert "join_best_bid" in by_id
+    assert by_id["join_best_bid"]["wired"] == "opt-in"
+    assert by_id["join_best_bid"]["evidence"] == "no"
 
 
 def test_quant_edge_eval_runs(tmp_path: Path):
@@ -174,8 +177,12 @@ def test_quant_edge_eval_runs(tmp_path: Path):
     assert "full" in d and "holdout" in d and "significance" in d
     assert "verdict" in d
     assert "finding" in d["verdict"]
+    assert "ev_signal" in d["verdict"]
+    assert "reward_accrual_delta" in d["verdict"]
     assert d["verdict"]["fill_mode"] == "conservative"
     assert "promotion_eligible" in d["verdict"]
+    if d["verdict"]["n_fill_candidate"] == 0:
+        assert d["verdict"]["finding"] is False
     assert d["significance"]["n_chunks"] >= 1
     # Calibration keys present on deltas
     assert "brier_score" in d["full"]["delta"]

@@ -51,6 +51,7 @@ TECHNIQUE_INVENTORY: tuple[dict[str, str], ...] = (
     {"id": "ofi_skew", "module": "yes", "wired": "fed", "evidence": "no"},
     {"id": "covariance_sizing", "module": "yes", "wired": "no", "evidence": "no"},
     {"id": "markout_toxicity", "module": "yes", "wired": "yes", "evidence": "no"},  # correct-token Newsom/Vance Brier finding=false
+    {"id": "join_best_bid", "module": "yes", "wired": "opt-in", "evidence": "no"},  # T1-149–152: optimistic only; tape at-touch; cons equal-price skip
 )
 
 
@@ -104,9 +105,18 @@ def _window_compare(
     cal_keys = ("brier_score", "log_loss", "expected_calibration_error", "ev_per_quote_usdc")
     return {
         "window": d["window"],
-        "baseline": {k: d["baseline"].get(k) for k in METRIC_KEYS},
-        "candidate": {k: d["candidate"].get(k) for k in METRIC_KEYS},
-        "delta": {k: d["delta"].get(k) for k in METRIC_KEYS},
+        "baseline": {
+            **{k: d["baseline"].get(k) for k in METRIC_KEYS},
+            "reward_accrual_usdc": d["baseline"].get("reward_accrual_usdc") or {},
+        },
+        "candidate": {
+            **{k: d["candidate"].get(k) for k in METRIC_KEYS},
+            "reward_accrual_usdc": d["candidate"].get("reward_accrual_usdc") or {},
+        },
+        "delta": {
+            **{k: d["delta"].get(k) for k in METRIC_KEYS},
+            "reward_accrual_usdc": d["delta"].get("reward_accrual_usdc") or {},
+        },
         "calibration_delta": {k: d["delta"].get(k) for k in cal_keys},
         "baseline_replay": d["baseline_replay"],
         "candidate_replay": d["candidate_replay"],
@@ -252,7 +262,7 @@ def evaluate_quant_edge(
         and ci_width > 1e-12
         and (ci_lo > 0.0 or ci_hi < 0.0)
     )
-    finding = bool(
+    ev_signal = bool(
         oos_sign_match
         and significance.get("is_significant")
         and ci_excludes_zero
@@ -260,6 +270,9 @@ def evaluate_quant_edge(
     )
     n_fill_base = int(full.get("baseline", {}).get("n_fill") or 0)
     n_fill_cand = int(full.get("candidate", {}).get("n_fill") or 0)
+    # Zero-fill EV lifts are often reward-denominator artifacts (fewer quotes,
+    # same reward pool) — not adverse-selection evidence (T1-153).
+    finding = bool(ev_signal and n_fill_cand > 0)
     readiness = assess_fill_readiness(
         journal,
         meta,
@@ -275,12 +288,23 @@ def evaluate_quant_edge(
     if yes_id not in ("yes-token", "") and no_id not in ("no-token", ""):
         pair = assess_token_pair(journal, yes_id, no_id)
     pair_ok = True if pair is None else bool(pair.pair_ok)
+
+    def _reward_total(window: dict[str, Any], which: str) -> float:
+        block = window.get(which) or {}
+        rew = block.get("reward_accrual_usdc") or {}
+        if isinstance(rew, dict):
+            return float(sum(float(v) for v in rew.values()))
+        return float(rew or 0.0)
+
+    reward_base = _reward_total(full, "baseline")
+    reward_cand = _reward_total(full, "candidate")
+    reward_delta = reward_cand - reward_base
+
     promotion_eligible = bool(
         finding
         and fill_mode == "conservative"
         and readiness.as_ev_ready
         and pair_ok
-        and n_fill_cand > 0
     )
     verdict = {
         "oos_sign_match": oos_sign_match,
@@ -288,10 +312,14 @@ def evaluate_quant_edge(
         "is_significant": bool(significance.get("is_significant")),
         "full_ev_delta": round(full_ev_delta, 8),
         "holdout_ev_delta": round(hold_ev_delta, 8),
+        "ev_signal": ev_signal,
         "finding": finding,
         "fill_mode": fill_mode,
         "n_fill_baseline": n_fill_base,
         "n_fill_candidate": n_fill_cand,
+        "reward_accrual_baseline": round(reward_base, 6),
+        "reward_accrual_candidate": round(reward_cand, 6),
+        "reward_accrual_delta": round(reward_delta, 6),
         "as_ev_ready": readiness.as_ev_ready,
         "fill_readiness": readiness.as_dict(),
         "token_pair_ok": pair_ok,
@@ -299,9 +327,10 @@ def evaluate_quant_edge(
         "promotion_eligible": promotion_eligible,
         "note": (
             "finding=true only when OOS EV improves, paired test is significant, "
-            "and bootstrap CI excludes zero; promotion_eligible additionally "
-            "requires fill_mode=conservative, as_ev_ready, token_pair_ok, "
-            "and n_fill_candidate>0 (zero-fill EV deltas are not AS evidence)"
+            "bootstrap CI excludes zero, AND n_fill_candidate>0 (zero-fill EV "
+            "lifts are not AS findings; see ev_signal for raw EV gate). "
+            "promotion_eligible additionally requires fill_mode=conservative, "
+            "as_ev_ready, and token_pair_ok"
         ),
     }
 
