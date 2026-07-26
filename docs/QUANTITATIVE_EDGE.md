@@ -56,6 +56,11 @@ uv run python scripts/fill_readiness.py \
   --yes-token … --probe-optimistic
 ```
 
+Quote–trade gap (why fills stay zero):
+```bash
+uv run python scripts/quote_trade_gap.py --journal … --yes-token …
+```
+
 ## Calibration target (important)
 
 FV is a YES-price probability, **not** P(price goes up). Metrics now score
@@ -127,11 +132,12 @@ and a PR — never auto-merge. See `AUTONOMOUS_LOOP_PROTOCOL.md`.
 | 2026-07-26T03:40Z | Newsom+Vance c_tox_ev_sweep | c_tox 5.0/7.0 vs 3.5 | both **false** | ΔEV identically 0 — toxicity not binding on paper quote path |
 | 2026-07-26T03:55Z | Newsom fill_mode plumbing | conservative→base/optimistic | infra | n_fill still ~0–1 even optimistic; AS EV remains thin on this tape |
 | 2026-07-26T04:10Z | Newsom/Vance/pre12h fill_readiness | as_ev_ready gate | **false** all | Newsom n_trades=5; pre12h n_trades=74 but optimistic n_fill=0 (quotes uncrossed) |
+| 2026-07-26T04:25Z | Newsom pre12h quote_trade_gap | bids vs tape | **n_crossable=0** | mean_bid_gap≈+0.023; 36 sell aggressors still miss bids — not fill-sim bug |
 
 ## Freeze list (do not Tier-2 wire without multi-market EV)
 
 - flow_z / OFI / VPIN / GARCH / Kalman / cov sizing / AS+Kelly — evidence **no** or single-market only
 - micro_levels=5, toxicity-aware spreads — **mixed** MSE/toxicity only; **EV micro5=false**; **c_tox EV inert** → keep defaults
 - `flow_fv_weight=0` — forecast MSE favors zero on Newsom, but **EV finding=false** on Newsom+Vance; keep default 0.5; knob exposed for further tape
-- **AS EV paused** until tape passes `scripts/fill_readiness.py` (`as_ev_ready=true`): current livecfg paper has ~5–14 trades/market and optimistic probe still n_fill=0
-- Next: collect denser tape (more `last_trade_price`) or markets with active prints; calibration-only work can continue
+- **AS EV paused**: fill_readiness false; quote_trade_gap shows **bids ~2.3¢ below tape** (n_crossable=0) even with 36 sell aggressors — not a matcher bug
+- Next: denser/closer-to-touch quoting *or* markets where tape hits resting bids; calibration-only work can continue

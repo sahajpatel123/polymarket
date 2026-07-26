@@ -1,0 +1,33 @@
+{
+  "change": "quote_trade_gap diagnostic \u2014 bids systematically below tape",
+  "findings": {
+    "newsom": {
+      "mean_bid_gap": null,
+      "median_bid_gap": null,
+      "n_aggressor_buy": 0,
+      "n_aggressor_sell": 5,
+      "n_crossable": 0,
+      "n_fill": 0,
+      "n_quote": 63,
+      "n_trades": 5,
+      "n_trades_with_live": 0,
+      "p90_bid_gap": null,
+      "reason": "no_live_quotes_at_trade"
+    },
+    "newsom_pre12h": {
+      "mean_bid_gap": 0.023333,
+      "median_bid_gap": 0.023,
+      "n_aggressor_buy": 38,
+      "n_aggressor_sell": 36,
+      "n_crossable": 0,
+      "n_fill": 0,
+      "n_quote": 256,
+      "n_trades": 74,
+      "n_trades_with_live": 3,
+      "p90_bid_gap": 0.024,
+      "reason": "bids_below_tape_mean_gap=0.0233"
+    }
+  },
+  "id": "T1-142",
+  "note": "Maker posts BUY-only. On pre12h Newsom, 74 trades (38 buy / 36 sell aggressor) with live quotes present, but n_crossable=0 and mean bid gap \u2248 +0.023 (bids ~2.3\u00a2 below trade). Not a fill-sim bug \u2014 quotes never touch the tape. AS EV remains blocked until quotes are closer to tradeable prices or tape hits resting bids."
+}

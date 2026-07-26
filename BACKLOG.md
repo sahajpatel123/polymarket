@@ -982,6 +982,15 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: `src/polymaker/replay/fill_readiness.py`, `scripts/fill_readiness.py`,
   `tests/test_fill_readiness.py`, `evidence/quant_edge/t1_141_fill_readiness.json`
 
+
+### T1-142 quote–trade gap diagnostic (bids below tape)
+- Status: `done`
+- Done when: `measure_quote_trade_gap` explains optimistic n_fill=0; pre12h Newsom
+  shows mean_bid_gap≈+0.023, n_crossable=0 with sell aggressors present; fill_readiness
+  probe embeds gap reason; not a FillSimulator bug.
+- Evidence: `src/polymaker/replay/quote_trade_gap.py`, `scripts/quote_trade_gap.py`,
+  `tests/test_quote_trade_gap.py`, `evidence/quant_edge/t1_142_quote_trade_gap.json`
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

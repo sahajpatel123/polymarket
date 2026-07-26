@@ -11,15 +11,13 @@ fill counts) so quant_edge can mark `as_ev_ready` explicitly.
 from __future__ import annotations
 
 import json
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from polymaker.config import StrategyProfile
 from polymaker.domain import MarketMeta
-from polymaker.replay import filter_rows_for_tokens, load_journal, run_replay
-from polymaker.replay.compare import write_sliced_journal
+from polymaker.replay import filter_rows_for_tokens, load_journal
 
 
 @dataclass(frozen=True)
@@ -36,6 +34,7 @@ class FillReadiness:
     reason: str
     min_trades: int
     min_fills_optimistic: int
+    quote_trade_gap: dict[str, Any] | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -51,6 +50,7 @@ class FillReadiness:
             "reason": self.reason,
             "min_trades": self.min_trades,
             "min_fills_optimistic": self.min_fills_optimistic,
+            "quote_trade_gap": self.quote_trade_gap,
         }
 
 
@@ -95,16 +95,14 @@ def assess_fill_readiness(
 
     n_fill: int | None = None
     n_quote: int | None = None
+    gap_dict: dict[str, Any] | None = None
     if run_optimistic_probe and meta is not None and profile is not None:
-        with tempfile.TemporaryDirectory(prefix="fill_ready_") as td:
-            root = Path(td)
-            jpath = write_sliced_journal(rows, root / "journal.jsonl")
-            metrics = root / "metrics.jsonl"
-            result = run_replay(
-                jpath, meta, profile, metrics, fill_mode="optimistic"
-            )
-            n_fill = int(result.n_fill)
-            n_quote = int(result.n_quote)
+        from polymaker.replay.quote_trade_gap import measure_quote_trade_gap
+
+        gap = measure_quote_trade_gap(rows, meta, profile)
+        gap_dict = gap.as_dict()
+        n_fill = int(gap.n_fill)
+        n_quote = int(gap.n_quote)
 
     reasons: list[str] = []
     ready = True
@@ -115,6 +113,9 @@ def assess_fill_readiness(
         if n_fill is None or n_fill < min_fills_optimistic:
             ready = False
             reasons.append(f"n_fill_optimistic={n_fill}<{min_fills_optimistic}")
+        if gap_dict and int(gap_dict.get("n_crossable") or 0) == 0:
+            ready = False
+            reasons.append(f"quote_gap:{gap_dict.get('reason')}")
     if not reasons:
         reasons.append("ok")
 
@@ -131,6 +132,7 @@ def assess_fill_readiness(
         reason=";".join(reasons),
         min_trades=min_trades,
         min_fills_optimistic=min_fills_optimistic,
+        quote_trade_gap=gap_dict,
     )
 
 
