@@ -330,3 +330,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-26T04:40:00Z | Tier1 | T1-143 touchability_sweep: delta_min/c_vol/min_edge cannot create crossable quotes on pre12h Newsom (gap≈0.023 invariant); defaults unchanged | pytest test_touchability_sweep; evidence/quant_edge/t1_143_touchability_sweep.json | merged
 
 2026-07-26T04:55:00Z | Tier1 | T1-144 token_pair_sanity: prior Newsom/Vance token IDs were mispaired (mean_sum≈0.78); correct pairs sum=1.0 and restore two-sided quotes; promotion_eligible requires pair_ok | pytest test_token_pair_sanity; evidence/quant_edge/t1_144_token_pair_sanity.json | merged
+
+2026-07-26T05:10:00Z | Tier1 | T1-145 re-run AS/flow0/FV on catalog-correct Newsom+Vance tokens; pair_ok; micro finding overturned (false); AS/flow0 false; as_ev_ready still false | pytest test_quant_edge_eval; evidence/quant_edge/t1_145_correct_token_rerun.json | merged

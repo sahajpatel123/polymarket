@@ -75,7 +75,7 @@ scoring rule and is no longer used.
 
 | Technique | Module | Live/replay wiring | Evidence gate |
 |-----------|--------|--------------------|---------------|
-| Microprice | `marketdata/orderbook.py` | yes | **mixed** (Newsom OOS MSE yes, best depth=5; Vance fails; **EV micro_levels=5 finding=false** both) |
+| Microprice | `marketdata/orderbook.py` | yes | **no** (correct-token Newsom OOS MSE fails; prior Newsom win was mispaired tokens) |
 | EWMA vol / flow | `strategy/estimators.py` | yes | partial (vol); **flow_z directional: no**; **flow nudge in FV: no** (worsens micro OOS MSE); knob `flow_fv_weight` (default 0.5) |
 | Kalman mid | `intelligence/signal_processing.py` | intel-only | **no** (worse than mid on Newsom+Vance OOS) |
 | Calibration-weighted signal blend | `strategy/signal_blend.py` | **no** | no (no clear OOS win vs mid) |
@@ -138,6 +138,7 @@ and a PR — never auto-merge. See `AUTONOMOUS_LOOP_PROTOCOL.md`.
 | 2026-07-26T04:25Z | Newsom pre12h quote_trade_gap | bids vs tape | **n_crossable=0** | mean_bid_gap≈+0.023; 36 sell aggressors still miss bids — not fill-sim bug |
 | 2026-07-26T04:40Z | Newsom pre12h touchability_sweep | delta_min/c_vol/min_edge | **any_crossable=false** | gap≈0.023 invariant — spread knobs not the bottleneck |
 | 2026-07-26T04:55Z | token_pair_sanity | wrong vs catalog Newsom/Vance | **pair_ok** | Historical “Newsom” pair mean_sum=0.78 (Vance NO+Newsom YES); correct pairs sum=1.0, two-sided quotes restore |
+| 2026-07-26T05:10Z | correct-token rerun | AS / flow0 / FV micro | all **false** | pair_ok; two-sided quotes; still n_fill=0 / gap≈0.023; **micro finding overturned** |
 
 ## Freeze list (do not Tier-2 wire without multi-market EV)
 
@@ -148,4 +149,5 @@ and a PR — never auto-merge. See `AUTONOMOUS_LOOP_PROTOCOL.md`.
 - **CONTAMINATION**: prior live evals using yes=78633590…/no=54533043… mispaired Vance NO with Newsom YES (mean_sum≈0.78); treat those AS/EV/gap results as invalid
 - Correct Newsom: yes=54533043… no=87854174… (cid 0x0f49db97…); Vance: yes=40081275… no=78633590… (cid 0x18b1c135…)
 - `promotion_eligible` now requires `token_pair_ok` (YES+NO mid sum ≈ 1)
-- Next: **re-run** key quant_edge / calibration evidence on correct pairs; then revisit AS EV
+- Correct-token rerun (T1-145): AS/flow0/micro all finding=false; micro prior win **overturned**
+- AS EV still blocked (n_fill_optimistic=0); need tape that crosses resting bids

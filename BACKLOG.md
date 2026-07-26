@@ -1009,6 +1009,16 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: `src/polymaker/replay/token_pair_sanity.py`, scripts, tests,
   `evidence/quant_edge/t1_144_token_pair_sanity.json`
 
+
+### T1-145 correct-token re-run (Newsom/Vance catalog IDs)
+- Status: `done`
+- Done when: AS+Kelly, flow_fv_weight=0, FV micro, fill_readiness, quote_gap
+  re-run with catalog Newsom/Vance tokens; pair_ok; micro finding=false on
+  correct Newsom (overturns contaminated prior); inventory microprice→no;
+  evidence JSON committed.
+- Evidence: `evidence/quant_edge/t1_145_correct_token_rerun.json`;
+  logs/*_correct*
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

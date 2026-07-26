@@ -149,7 +149,7 @@ def test_technique_inventory_covers_core_set():
     assert by_id["vpin"]["evidence"] == "no"
     assert by_id["ofi_skew"]["evidence"] == "no"
     assert by_id["kyle_lambda"]["evidence"] == "mixed"
-    assert by_id["microprice"]["evidence"] == "mixed"
+    assert by_id["microprice"]["evidence"] == "no"
     assert by_id["markout_toxicity"]["evidence"] == "mixed"
     assert "flow_nudge_fv" in by_id
     assert by_id["flow_nudge_fv"]["evidence"] == "no"

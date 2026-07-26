@@ -38,7 +38,7 @@ from polymaker.strategy.calibration import (
 # Techniques tracked by this loop. "module" = pure code exists;
 # "wired" = on a live/replay quote path; "evidence" = passed OOS+CI gate.
 TECHNIQUE_INVENTORY: tuple[dict[str, str], ...] = (
-    {"id": "microprice", "module": "yes", "wired": "yes", "evidence": "mixed"},  # MSE Newsom; EV micro5=no
+    {"id": "microprice", "module": "yes", "wired": "yes", "evidence": "no"},  # correct-token Newsom OOS MSE fails; prior "mixed" was mispaired
     {"id": "ewma_fv_vol", "module": "yes", "wired": "yes", "evidence": "partial"},
     {"id": "flow_nudge_fv", "module": "yes", "wired": "yes", "evidence": "no"},
     {"id": "kalman_mid", "module": "yes", "wired": "intel-only", "evidence": "no"},
