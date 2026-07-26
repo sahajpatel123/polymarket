@@ -947,6 +947,14 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: config + engine + decision_pipeline; tests/test_quoting.py;
   logs/quant_edge_eval/flow_weight0_{newsom,vance}/report.json
 
+### T1-138 micro_levels=5 quote EV ablation + sweep script
+- Status: `done`
+- Done when: quant_edge_eval of micro_levels=5 vs 3 is finding=false on
+  Newsom and Vance (MSE win does not translate to EV); reusable
+  `scripts/micro_levels_ev_sweep.py` + smoke test; evidence summary committed.
+- Evidence: `scripts/micro_levels_ev_sweep.py`, `tests/test_micro_levels_ev_sweep.py`,
+  `evidence/quant_edge/t1_138_micro5_ev.json`
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

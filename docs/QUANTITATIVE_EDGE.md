@@ -24,6 +24,8 @@ Vol forecasting: `scripts/vol_calibration.py` → `polymaker.replay.vol_calibrat
 FV predictors: `scripts/fv_calibration.py` → `polymaker.replay.fv_calibration`
 (mid vs microprice vs Kalman vs blend; OOS MSE + significance; `--horizons` multi;
 `--sweep-levels` for micro depth).
+Micro depth EV: `scripts/micro_levels_ev_sweep.py` (quote EV of alternate
+`micro_levels` vs profile default; OOS+CI).
 Flow: `scripts/flow_calibration.py` → `polymaker.replay.flow_calibration`
 (flow_z → P(up) vs climatology).
 Toxicity: `scripts/toxicity_calibration.py` → `polymaker.replay.toxicity_calibration`.
@@ -52,7 +54,7 @@ scoring rule and is no longer used.
 
 | Technique | Module | Live/replay wiring | Evidence gate |
 |-----------|--------|--------------------|---------------|
-| Microprice | `marketdata/orderbook.py` | yes | **mixed** (Newsom OOS yes, best depth=5; Vance fails all depths) |
+| Microprice | `marketdata/orderbook.py` | yes | **mixed** (Newsom OOS MSE yes, best depth=5; Vance fails; **EV micro_levels=5 finding=false** both) |
 | EWMA vol / flow | `strategy/estimators.py` | yes | partial (vol); **flow_z directional: no**; **flow nudge in FV: no** (worsens micro OOS MSE); knob `flow_fv_weight` (default 0.5) |
 | Kalman mid | `intelligence/signal_processing.py` | intel-only | **no** (worse than mid on Newsom+Vance OOS) |
 | Calibration-weighted signal blend | `strategy/signal_blend.py` | **no** | no (no clear OOS win vs mid) |
@@ -108,9 +110,10 @@ and a PR — never auto-merge. See `AUTONOMOUS_LOOP_PROTOCOL.md`.
 | 2026-07-26T02:55Z | Newsom toxicity pre12h | temporal replicate | **false** | prior Newsom toxicity finding does not hold on earlier window |
 | 2026-07-26T03:10Z | Newsom quant_edge | `flow_fv_weight=0` vs 0.5 (`live_scaled`) | **false** | holdout dn_ev=0; p≈0.69; n_quote≈60 (with correct tick/cid) |
 | 2026-07-26T03:10Z | Vance quant_edge | `flow_fv_weight=0` vs 0.5 | **false** | holdout dn_ev=0; no OOS EV lift |
+| 2026-07-26T03:25Z | Newsom+Vance quant_edge | `micro_levels=5` vs 3 | both **false** | Newsom full dn_ev negative; Vance holdout dn_ev negative; MSE≠EV |
 
 ## Freeze list (do not Tier-2 wire without multi-market EV)
 
 - flow_z / OFI / VPIN / GARCH / Kalman / cov sizing / AS+Kelly — evidence **no** or single-market only
-- micro_levels=5, toxicity-aware spreads — **mixed**; need Vance+EV before default change
+- micro_levels=5, toxicity-aware spreads — **mixed** MSE/toxicity only; **EV micro5=false** both markets → keep default 3
 - `flow_fv_weight=0` — forecast MSE favors zero on Newsom, but **EV finding=false** on Newsom+Vance; keep default 0.5; knob exposed for further tape

@@ -1,0 +1,29 @@
+{
+  "any_finding": false,
+  "candidate": "micro_levels=5 vs baseline 3",
+  "id": "T1-138",
+  "markets": {
+    "newsom": {
+      "finding": false,
+      "full_ev_delta": -0.000226,
+      "holdout_ev_delta": 0.0,
+      "is_significant": false,
+      "n_quote_baseline": 63,
+      "n_quote_candidate": 81,
+      "oos_sign_match": false,
+      "paired_p": 0.763356
+    },
+    "vance": {
+      "finding": false,
+      "full_ev_delta": 5.3e-05,
+      "holdout_ev_delta": -0.000187,
+      "is_significant": false,
+      "n_quote_baseline": 116,
+      "n_quote_candidate": 92,
+      "oos_sign_match": false,
+      "paired_p": 0.317311
+    }
+  },
+  "note": "Newsom FV MSE preferred depth=5 earlier; quote EV ablation finds no OOS lift on Newsom or Vance \u2014 do not change StrategyProfile.micro_levels default.",
+  "promote_default": false
+}

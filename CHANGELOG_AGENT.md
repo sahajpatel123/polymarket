@@ -316,3 +316,5 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-26T02:55:00Z | Tier1 | T1-136 flow-nudge FV ablation (hurts micro OOS MSE on Newsom); toxicity fails pre12h replicate; quant_edge_status board | pytest test_fv_calibration; logs/fv_calibration/*_flow_nudge.json; quant_edge_status | merged
 
 2026-07-26T03:08:00Z | Tier1 | T1-137 StrategyProfile.flow_fv_weight (default 0.5) wired engine+pipeline; EV ablation weight=0 finding=false on Newsom+Vance (default unchanged); freeze list in QUANTITATIVE_EDGE | pytest test_quoting/decision_pipeline/quant_edge_eval; logs/quant_edge_eval/flow_weight0_*.json | merged
+
+2026-07-26T03:25:00Z | Tier1 | T1-138 micro_levels=5 EV ablation finding=false on Newsom+Vance (MSE≠EV); micro_levels_ev_sweep script + evidence JSON; keep default depth=3 | pytest test_micro_levels_ev_sweep; evidence/quant_edge/t1_138_micro5_ev.json | merged
