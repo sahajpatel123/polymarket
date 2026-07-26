@@ -1019,6 +1019,13 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: `evidence/quant_edge/t1_145_correct_token_rerun.json`;
   logs/*_correct*
 
+
+### T1-146 correct-token calibration ledger (OFI/VPIN/tox/flow)
+- Status: `done`
+- Done when: signal/toxicity/flow/FV-Vance re-run on catalog tokens; all
+  finding=false; inventory markout_toxicity→no, kyle→partial; evidence JSON.
+- Evidence: `evidence/quant_edge/t1_146_correct_calibration_ledger.json`
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

@@ -1,0 +1,60 @@
+{
+  "change": "Correct-token calibration ledger refresh (signal/tox/flow/FV Vance)",
+  "id": "T1-146",
+  "inventory_updates": {
+    "kyle_lambda": "partial (Spearman only; not quote EV)",
+    "markout_toxicity": "no (was mixed; prior Newsom tox true contaminated)",
+    "microprice": "no",
+    "ofi_skew": "no",
+    "vpin": "no"
+  },
+  "note": "After catalog-correct tokens, OFI/VPIN/toxicity/flow/micro all finding=false on Newsom+Vance. Prior single-market VPIN/toxicity \u201cwins\u201d were on mispaired tape. evidence_yes remains 0.",
+  "results": {
+    "flow_newsom": {
+      "climatology": 0.0,
+      "flow_finding": false,
+      "flow_halflife_s": 90.0,
+      "holdout_frac": 0.3,
+      "note": "finding requires Brier better than tune climatology, CI>0 skill, p<0.05"
+    },
+    "fv_vance": {
+      "any_finding": false,
+      "blend_finding": false,
+      "flow_nudge_helps_micro": false,
+      "holdout_frac": 0.3,
+      "kalman_finding": false,
+      "micro_finding": false,
+      "micro_flow_finding": false,
+      "n_holdout_events": 4713,
+      "note": "finding=true if predictor beats mid on OOS MSE with CI>0 skill and p<0.05",
+      "tune_kalman_brier_proxy": 0.0001002257597704006,
+      "tune_kalman_weight": 0.9995990969609184,
+      "tune_micro_brier_proxy": 0.0005088215561059542,
+      "tune_micro_weight": 0.9979647137755762
+    },
+    "signal_newsom": {
+      "any_finding": false,
+      "kyle_spearman": 0.907059,
+      "ofi_finding": false,
+      "vpin_finding": false
+    },
+    "signal_vance": {
+      "any_finding": false,
+      "kyle_spearman": 0.559976,
+      "ofi_finding": false,
+      "vpin_finding": false
+    },
+    "tox_newsom": {
+      "climatology": 0.0,
+      "holdout_frac": 0.3,
+      "note": "finding requires Brier better than tune climatology, CI>0 skill, p<0.05",
+      "toxicity_finding": false
+    },
+    "tox_vance": {
+      "climatology": 0.13506753376688344,
+      "holdout_frac": 0.3,
+      "note": "finding requires Brier better than tune climatology, CI>0 skill, p<0.05",
+      "toxicity_finding": false
+    }
+  }
+}

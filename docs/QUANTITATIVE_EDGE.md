@@ -81,12 +81,12 @@ scoring rule and is no longer used.
 | Calibration-weighted signal blend | `strategy/signal_blend.py` | **no** | no (no clear OOS win vs mid) |
 | Avellaneda–Stoikov | `strategy/avellaneda_stoikov.py` | opt-in (`use_advanced_quoting`) | no |
 | Fractional Kelly | `strategy/kelly.py` | opt-in (`kelly_fraction`, default 0.25) | **no** (0.125/0.5 vs 0.25: no EV finding on Newsom) |
-| Kyle λ / Glosten–Milgrom | `strategy/kyle_lambda.py` | **fed**; not in quotes | mixed (Spearman vs \|Δmid\| unstable across windows) |
+| Kyle λ / Glosten–Milgrom | `strategy/kyle_lambda.py` | **fed**; not in quotes | **partial** (Spearman vs \|Δmid\| on correct tokens; not quote EV) |
 | VPIN | `strategy/vpin.py` | **fed**; not in quotes | **no** (Newsom Brier skill did not replicate on Vance) |
 | GARCH(1,1) vol | `strategy/garch.py` | **no** | **no** (OOS MSE ≈ EWMA on Newsom; finding=false) |
 | OFI skew | `strategy/ofi.py` | **fed**; not in quotes | no (worse than climatology) |
 | Covariance sizing | `strategy/covariance_sizing.py` | **no** | no |
-| Markout toxicity | `strategy/estimators.py` | yes (spreads/size) | **mixed** (Newsom Brier yes; Vance/pre12h no; **c_tox EV inert** on paper — ΔEV=0 at 5/7) |
+| Markout toxicity | `strategy/estimators.py` | yes (spreads/size) | **no** (correct-token Newsom+Vance Brier finding=false; prior Newsom win contaminated) |
 | Proper scoring + CI | `strategy/calibration.py` | metrics analyze | harness ready |
 
 ## Why each exists (one line)
@@ -139,6 +139,7 @@ and a PR — never auto-merge. See `AUTONOMOUS_LOOP_PROTOCOL.md`.
 | 2026-07-26T04:40Z | Newsom pre12h touchability_sweep | delta_min/c_vol/min_edge | **any_crossable=false** | gap≈0.023 invariant — spread knobs not the bottleneck |
 | 2026-07-26T04:55Z | token_pair_sanity | wrong vs catalog Newsom/Vance | **pair_ok** | Historical “Newsom” pair mean_sum=0.78 (Vance NO+Newsom YES); correct pairs sum=1.0, two-sided quotes restore |
 | 2026-07-26T05:10Z | correct-token rerun | AS / flow0 / FV micro | all **false** | pair_ok; two-sided quotes; still n_fill=0 / gap≈0.023; **micro finding overturned** |
+| 2026-07-26T05:25Z | correct-token calibrations | OFI/VPIN/tox/flow/FV Vance | all **false** | prior VPIN/tox Newsom wins overturned; Kyle Spearman only (partial) |
 
 ## Freeze list (do not Tier-2 wire without multi-market EV)
 
