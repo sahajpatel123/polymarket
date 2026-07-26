@@ -30,6 +30,7 @@ Flow: `scripts/flow_calibration.py` → `polymaker.replay.flow_calibration`
 (flow_z → P(up) vs climatology).
 Toxicity: `scripts/toxicity_calibration.py` → `polymaker.replay.toxicity_calibration`.
 Toxicity spread EV: `scripts/c_tox_ev_sweep.py` (quote EV of alternate `c_tox`).
+Kyle spread EV: `scripts/kyle_ev_sweep.py` (quote EV of alternate `c_kyle`; default 0).
 Kelly fraction: `scripts/kelly_fraction_sweep.py` (requires `StrategyProfile.kelly_fraction`).
 Status board: `scripts/quant_edge_status.py`.
 Covariance sizing: `scripts/cov_sizing_eval.py` → `polymaker.replay.cov_sizing_eval`
@@ -89,7 +90,7 @@ scoring rule and is no longer used.
 | Calibration-weighted signal blend | `strategy/signal_blend.py` | **no** | no (no clear OOS win vs mid) |
 | Avellaneda–Stoikov | `strategy/avellaneda_stoikov.py` | opt-in (`use_advanced_quoting`) | no |
 | Fractional Kelly | `strategy/kelly.py` | opt-in (`kelly_fraction`, default 0.25) | **no** (0.125/0.5 vs 0.25: no EV finding on Newsom) |
-| Kyle λ / Glosten–Milgrom | `strategy/kyle_lambda.py` | **fed**; not in quotes | **partial** (Spearman vs \|Δmid\| on correct tokens; not quote EV) |
+| Kyle λ / Glosten–Milgrom | `strategy/kyle_lambda.py` | **fed**; opt-in `c_kyle` (default 0) | **partial** (Spearman vs \|Δmid\|); **quote EV=no** (T1-154 c_kyle sweep finding=false) |
 | VPIN | `strategy/vpin.py` | **fed**; not in quotes | **no** (Newsom Brier skill did not replicate on Vance) |
 | GARCH(1,1) vol | `strategy/garch.py` | **no** | **no** (OOS MSE ≈ EWMA on Newsom; finding=false) |
 | OFI skew | `strategy/ofi.py` | **fed**; not in quotes | no (worse than climatology) |
@@ -156,6 +157,7 @@ and a PR — never auto-merge. See `AUTONOMOUS_LOOP_PROTOCOL.md`.
 | 2026-07-26T06:40Z | queue_ahead_sweep | join+min_edge0 fill modes | equal_price_blocks=**true** | 33/33 Newsom opt fills equal-price; base_ahead0=33 cons_ahead0=0 — promo blocked by design |
 | 2026-07-26T06:55Z | through_price_tape | Newsom/Vance sells vs BB | viable=**false** | 40/40 Newsom + 7/7 Vance sells at-touch (n_through=0); join in_band=1.0 |
 | 2026-07-26T07:10Z | reward_path + finding gate | join cons Newsom/Vance | **finding=false** | cons reward_delta=0, denominator_artifact; finding now needs fills; prior cons “finding” overturned |
+| 2026-07-26T07:25Z | kyle_ev_sweep | c_kyle 0.5/1/2 vs 0 | **false** | Newsom+Vance cons+opt; dn_ev=0 n_fill=0; keep c_kyle=0 |
 
 ## Freeze list (do not Tier-2 wire without multi-market EV)
 
@@ -177,4 +179,5 @@ and a PR — never auto-merge. See `AUTONOMOUS_LOOP_PROTOCOL.md`.
 - **Join-BB cannot promote under conservative fills** (T1-151): all optimistic join fills are equal-price; `cons_ahead0` still n_fill=0 — equal-price skip is the blocker ahead of queue=200
 - **Tape has no through-price sells** (T1-152): Newsom/Vance journals are 100% at-touch SELL prints → `conservative_join_viable=false`; wait for denser tape or escalate equal-price policy explicitly
 - **Zero-fill EV is not a finding** (T1-153): join cons reward_delta=0 with fewer quotes → `ev_signal` only; `finding` requires fills
+- `c_kyle` knob exists (default **0**); Newsom+Vance EV sweep finding=false (T1-154) — Spearman skill ≠ quote EV
 - Next AS path needs either through-price aggressors on denser tape, or an explicit Tier-2 decision on equal-price fill policy (do not soften conservative for a metric win)

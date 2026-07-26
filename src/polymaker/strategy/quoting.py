@@ -5,7 +5,8 @@ except values passed in. Everything here is exercised directly by unit tests.
 
 Model (see the README):
   reservation  r  = FV - skew(inventory)
-  half-spread  δ  = base + c_vol·σ + c_tox·toxicity   (clamped to reward band in QUIET)
+  half-spread  δ  = base + c_vol·σ + c_tox·toxicity + c_kyle·AS(λ)
+                    (clamped to reward band in QUIET)
   YES entry bid   = r - δ                       (BUY YES, USDC-collateralized)
   NO  entry bid   = (1 - r) - δ                  (BUY NO; implied YES ask at r + δ)
   exits           = SELL limits on held inventory, walked toward the touch by urgency
@@ -57,6 +58,8 @@ class QuoteInputs:
     risk_size_scale: float = 1.0  # RiskManager may throttle size in [0,1]
     yes_exit_urgency: float = 0.0  # [0,1]; engine raises with hold time / adverse drift
     no_exit_urgency: float = 0.0
+    # Kyle λ (price impact / share); used only when profile.c_kyle > 0.
+    kyle_lambda: float = 0.0
     # Intelligence layer (DecisionFramework) — optional judgment knobs
     intel_size_scale: float = 1.0  # extra size mult from brain (0 → empty entries)
     # None = intelligence not controlling band (legacy economic target).
@@ -110,6 +113,11 @@ def construct_quotes(inp: QuoteInputs) -> TargetQuotes:
     else:
         base = econ
     delta = base + p.c_vol * inp.vol_short + p.c_tox * max(0.0, inp.toxicity)
+    if float(getattr(p, "c_kyle", 0.0) or 0.0) > 0.0 and inp.kyle_lambda > 0.0:
+        # Glosten–Milgrom-style AS half-spread proxy: c_kyle * λ * size_proxy
+        # (full round-trip AS ≈ 2λq; we add half of that scaled by c_kyle).
+        size_proxy = max(reward_floor, p.base_size_usdc / max(inp.fv, tick))
+        delta += float(p.c_kyle) * inp.kyle_lambda * size_proxy
     # Intelligence may widen half-spread (toxic/volatile); never shrink below econ.
     spread_mult = max(1.0, float(inp.intel_spread_mult or 1.0))
     delta = delta * spread_mult

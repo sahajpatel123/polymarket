@@ -45,7 +45,7 @@ TECHNIQUE_INVENTORY: tuple[dict[str, str], ...] = (
     {"id": "signal_blend_calibration", "module": "yes", "wired": "no", "evidence": "no"},
     {"id": "avellaneda_stoikov", "module": "yes", "wired": "opt-in", "evidence": "no"},
     {"id": "kelly_fractional", "module": "yes", "wired": "opt-in", "evidence": "no"},
-    {"id": "kyle_lambda", "module": "yes", "wired": "fed", "evidence": "partial"},  # Spearman vs |Δmid| on correct tokens; not quote EV
+    {"id": "kyle_lambda", "module": "yes", "wired": "fed+opt-in", "evidence": "partial"},  # Spearman vs |Δmid|; quote EV via c_kyle finding=false (T1-154)
     {"id": "vpin", "module": "yes", "wired": "fed", "evidence": "no"},
     {"id": "garch_vol", "module": "yes", "wired": "no", "evidence": "no"},
     {"id": "ofi_skew", "module": "yes", "wired": "fed", "evidence": "no"},

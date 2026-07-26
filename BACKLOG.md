@@ -1092,6 +1092,15 @@ done without evidence (script output / tests) from that cycle.
   `scripts/reward_path_compare.py`, `scripts/quant_edge_status.py`,
   `evidence/quant_edge/t1_153_finding_requires_fills.json`
 
+### T1-154 c_kyle opt-in + Kyle quote EV sweep
+- Status: `done`
+- Done when: `StrategyProfile.c_kyle` default 0; QuoteInputs/decision_pipeline
+  pass kyle_lambda; half-spread widens when c_kyle>0; Newsom+Vance EV sweep
+  finding=false; evidence JSON.
+- Evidence: `config.py`, `strategy/quoting.py`, `decision_pipeline.py`,
+  `scripts/kyle_ev_sweep.py`, `tests/test_quoting.py`,
+  `evidence/quant_edge/t1_154_kyle_ev_sweep.json`
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

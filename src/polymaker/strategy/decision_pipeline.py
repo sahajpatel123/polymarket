@@ -277,6 +277,7 @@ def build_targets(
                 profile=p,
                 now=now,
                 risk_size_scale=risk_size_scale,
+                kyle_lambda=float(getattr(est.kyle, "lambda_param", 0.0) or 0.0),
                 intel_size_scale=intel_size,
                 intel_buy_band_frac=intel_band,
                 intel_spread_mult=intel_spread,

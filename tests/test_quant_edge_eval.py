@@ -142,13 +142,13 @@ def test_technique_inventory_covers_core_set():
     ):
         assert required in ids
     by_id = {t["id"]: t for t in TECHNIQUE_INVENTORY}
-    # Fed into estimators but not yet consumed by quote math
+    # Fed into estimators; kyle also has opt-in c_kyle quote path (default off)
     assert by_id["vpin"]["wired"] == "fed"
-    assert by_id["kyle_lambda"]["wired"] == "fed"
     assert by_id["ofi_skew"]["wired"] == "fed"
     assert by_id["vpin"]["evidence"] == "no"
     assert by_id["ofi_skew"]["evidence"] == "no"
     assert by_id["kyle_lambda"]["evidence"] == "partial"
+    assert by_id["kyle_lambda"]["wired"] == "fed+opt-in"
     assert by_id["microprice"]["evidence"] == "no"
     assert by_id["markout_toxicity"]["evidence"] == "no"
     assert "flow_nudge_fv" in by_id

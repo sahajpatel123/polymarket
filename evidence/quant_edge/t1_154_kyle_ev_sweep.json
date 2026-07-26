@@ -1,0 +1,23 @@
+{
+  "id": "T1-154",
+  "change": "Opt-in StrategyProfile.c_kyle (default 0) wires Kyle λ into half-spread; EV sweep finding=false on Newsom+Vance",
+  "note": "Spearman vs |Δmid| remains partial calibration only. c_kyle 0.5/1/2 vs 0: holdout_dn_ev=0, n_fill 0→0, finding=false under conservative and optimistic. Keep default c_kyle=0. AS path still blocked on this tape.",
+  "journal": "livecfg/journal/paper.jsonl.pre12h.1784925687.31229",
+  "knob": {"c_kyle_default": 0.0, "formula": "delta += c_kyle * kyle_lambda * size_proxy"},
+  "sweeps": {
+    "newsom_conservative": {
+      "any_finding": false,
+      "values": [0.5, 1.0, 2.0],
+      "report": "logs/kyle_ev_sweep/newsom_cons.json"
+    },
+    "vance_conservative": {
+      "any_finding": false,
+      "values": [0.5, 1.0, 2.0],
+      "report": "logs/kyle_ev_sweep/vance_cons.json"
+    },
+    "newsom_optimistic_c1": {
+      "any_finding": false,
+      "report": "logs/kyle_ev_sweep/newsom_opt.json"
+    }
+  }
+}

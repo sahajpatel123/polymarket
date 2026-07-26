@@ -275,6 +275,32 @@ def test_strategy_profile_join_best_bid_default_off():
     assert StrategyProfile().join_best_bid is False
 
 
+def test_strategy_profile_c_kyle_default_off():
+    from polymaker.config import StrategyProfile
+
+    assert StrategyProfile().c_kyle == 0.0
+
+
+def test_c_kyle_widens_half_spread_when_lambda_positive(meta, profile):
+    """c_kyle>0 with kyle_lambda>0 should not tighten bids vs c_kyle=0."""
+    from polymaker.config import StrategyProfile
+
+    calm = construct_quotes(
+        _inputs(meta, StrategyProfile(c_kyle=0.0), kyle_lambda=0.01)
+    )
+    wide = construct_quotes(
+        _inputs(meta, StrategyProfile(c_kyle=2.0), kyle_lambda=0.01)
+    )
+
+    def top_yes_bid(tq):
+        buys = [q.price for q in tq.quotes if q.token_id == "yes-token" and q.side == Side.BUY]
+        return max(buys) if buys else None
+
+    c_bid, w_bid = top_yes_bid(calm), top_yes_bid(wide)
+    assert c_bid is not None and w_bid is not None
+    assert w_bid <= c_bid + 1e-12
+
+
 def test_entry_bids_never_dust_oob_on_junk_book(meta, profile):
     """Production path must not post 0.001 dust bids when best bid is junk.
 

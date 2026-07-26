@@ -180,6 +180,9 @@ class StrategyProfile(BaseModel):
     delta_min_ticks: int = 2
     c_vol: float = 1.2
     c_tox: float = 2.0
+    # Weight on Kyle λ adverse-selection half-spread add-on (price units).
+    # Default 0 keeps quotes unchanged; >0 widens δ by c_kyle * 2 * λ * size_proxy.
+    c_kyle: float = 0.0
     # vol horizons
     vol_short_halflife_s: float = 10.0
     vol_long_halflife_s: float = 900.0
