@@ -1,0 +1,115 @@
+{
+  "change": "token_pair_sanity gate \u2014 prior Newsom/Vance token IDs were swapped/mispaired",
+  "contamination": {
+    "correct_newsom": {
+      "condition_id": "0x0f49db97\u2026",
+      "mean_sum": 1.0,
+      "no": "87854174\u2026",
+      "quotes": "YES=187 NO=184",
+      "yes": "54533043\u2026"
+    },
+    "correct_vance": {
+      "condition_id": "0x18b1c135\u2026",
+      "mean_sum": 1.0,
+      "no": "78633590\u2026",
+      "yes": "40081275\u2026"
+    },
+    "historical_wrong_pair": {
+      "actual": "Vance NO + Newsom YES",
+      "labeled_as": "Newsom YES/NO",
+      "mean_sum": 0.7826,
+      "quotes": "YES=253 NO=3"
+    }
+  },
+  "id": "T1-144",
+  "newsom_correct": {
+    "frac_near_one": 1.0,
+    "max_sum": 1.0,
+    "mean_sum": 1.0,
+    "min_sum": 1.0,
+    "n_samples": 15149,
+    "no_token": "87854174148074652060467921081181402357467303721471806610111179101805869578687",
+    "pair_ok": true,
+    "reason": "ok",
+    "tol": 0.02,
+    "yes_token": "54533043819946592547517511176940999955633860128497669742211153063842200957669"
+  },
+  "note": "Prior live quant-edge reports that passed --yes-token 78633590\u2026 / --no-token 54533043\u2026 are contaminated (Vance NO paired with Newsom YES). Re-run EV/calibration with catalog tokens; promotion_eligible now requires token_pair_ok.",
+  "side_newsom_correct": {
+    "n_quote_no": 184,
+    "n_quote_yes": 187,
+    "note": "pair_ok=false or extreme YES-only quoting contaminates AS EV; fix tokens from catalog before quant_edge_eval",
+    "quote_yes_frac": 0.5040431266846361,
+    "token_pair": {
+      "frac_near_one": 1.0,
+      "max_sum": 1.0,
+      "mean_sum": 1.0,
+      "min_sum": 1.0,
+      "n_samples": 15149,
+      "no_token": "87854174148074652060467921081181402357467303721471806610111179101805869578687",
+      "pair_ok": true,
+      "reason": "ok",
+      "tol": 0.02,
+      "yes_token": "54533043819946592547517511176940999955633860128497669742211153063842200957669"
+    },
+    "trades": {
+      "trades": 74,
+      "trades_NO": 9,
+      "trades_NO_with_same_bid": 1,
+      "trades_NO_without_same_bid": 8,
+      "trades_YES": 65,
+      "trades_YES_with_same_bid": 32,
+      "trades_YES_without_same_bid": 33
+    }
+  },
+  "side_wrong": {
+    "n_quote_no": 3,
+    "n_quote_yes": 253,
+    "note": "pair_ok=false or extreme YES-only quoting contaminates AS EV; fix tokens from catalog before quant_edge_eval",
+    "quote_yes_frac": 0.98828125,
+    "token_pair": {
+      "frac_near_one": 0.0,
+      "max_sum": 0.783,
+      "mean_sum": 0.782575,
+      "min_sum": 0.782,
+      "n_samples": 34854,
+      "no_token": "54533043819946592547517511176940999955633860128497669742211153063842200957669",
+      "pair_ok": false,
+      "reason": "mean_sum=0.7826 frac_near_one=0.000",
+      "tol": 0.02,
+      "yes_token": "78633590736077251574794513664747155551297291244492840448622550955320930591622"
+    },
+    "trades": {
+      "trades": 74,
+      "trades_NO": 65,
+      "trades_NO_without_same_bid": 65,
+      "trades_YES": 9,
+      "trades_YES_with_same_bid": 3,
+      "trades_YES_without_same_bid": 6
+    }
+  },
+  "vance_correct": {
+    "frac_near_one": 1.0,
+    "max_sum": 1.0,
+    "mean_sum": 1.0,
+    "min_sum": 1.0,
+    "n_samples": 19845,
+    "no_token": "78633590736077251574794513664747155551297291244492840448622550955320930591622",
+    "pair_ok": true,
+    "reason": "ok",
+    "tol": 0.02,
+    "yes_token": "40081275558852222228080198821361202017557872256707631666334039001378518619916"
+  },
+  "wrong": {
+    "frac_near_one": 0.0,
+    "max_sum": 0.783,
+    "mean_sum": 0.782575,
+    "min_sum": 0.782,
+    "n_samples": 34854,
+    "no_token": "54533043819946592547517511176940999955633860128497669742211153063842200957669",
+    "pair_ok": false,
+    "reason": "mean_sum=0.7826 frac_near_one=0.000",
+    "tol": 0.02,
+    "yes_token": "78633590736077251574794513664747155551297291244492840448622550955320930591622"
+  }
+}

@@ -267,8 +267,19 @@ def evaluate_quant_edge(
         min_trades=min_trades_for_as,
         run_optimistic_probe=False,
     )
+    from polymaker.replay.token_pair_sanity import assess_token_pair
+
+    yes_id = meta.yes.token_id
+    no_id = meta.no.token_id
+    pair = None
+    if yes_id not in ("yes-token", "") and no_id not in ("no-token", ""):
+        pair = assess_token_pair(journal, yes_id, no_id)
+    pair_ok = True if pair is None else bool(pair.pair_ok)
     promotion_eligible = bool(
-        finding and fill_mode == "conservative" and readiness.as_ev_ready
+        finding
+        and fill_mode == "conservative"
+        and readiness.as_ev_ready
+        and pair_ok
     )
     verdict = {
         "oos_sign_match": oos_sign_match,
@@ -282,11 +293,13 @@ def evaluate_quant_edge(
         "n_fill_candidate": n_fill_cand,
         "as_ev_ready": readiness.as_ev_ready,
         "fill_readiness": readiness.as_dict(),
+        "token_pair_ok": pair_ok,
+        "token_pair": None if pair is None else pair.as_dict(),
         "promotion_eligible": promotion_eligible,
         "note": (
             "finding=true only when OOS EV improves, paired test is significant, "
             "and bootstrap CI excludes zero; promotion_eligible additionally "
-            "requires fill_mode=conservative and as_ev_ready (enough trades)"
+            "requires fill_mode=conservative, as_ev_ready, and token_pair_ok"
         ),
     }
 

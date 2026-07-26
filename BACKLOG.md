@@ -999,6 +999,16 @@ done without evidence (script output / tests) from that cycle.
 - Evidence: `scripts/touchability_sweep.py`, `tests/test_touchability_sweep.py`,
   `evidence/quant_edge/t1_143_touchability_sweep.json`
 
+
+### T1-144 token_pair_sanity + quote side coverage (mispaired tokens)
+- Status: `done`
+- Done when: `assess_token_pair` rejects mispaired YES/NO (mean mid sum ≉ 1);
+  quant_edge `promotion_eligible` requires `token_pair_ok`; documented that prior
+  live “Newsom” evals used Vance NO + Newsom YES; correct pairs restore two-sided
+  quoting (≈187/184) on pre12h tape.
+- Evidence: `src/polymaker/replay/token_pair_sanity.py`, scripts, tests,
+  `evidence/quant_edge/t1_144_token_pair_sanity.json`
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

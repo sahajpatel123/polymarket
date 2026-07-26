@@ -60,6 +60,8 @@ Quote–trade gap (why fills stay zero):
 ```bash
 uv run python scripts/quote_trade_gap.py --journal … --yes-token …
 uv run python scripts/touchability_sweep.py --journal … --yes-token …
+uv run python scripts/token_pair_sanity.py --journal … --yes-token … --no-token …
+uv run python scripts/quote_side_coverage.py --journal … --yes-token … --no-token …
 ```
 
 ## Calibration target (important)
@@ -135,6 +137,7 @@ and a PR — never auto-merge. See `AUTONOMOUS_LOOP_PROTOCOL.md`.
 | 2026-07-26T04:10Z | Newsom/Vance/pre12h fill_readiness | as_ev_ready gate | **false** all | Newsom n_trades=5; pre12h n_trades=74 but optimistic n_fill=0 (quotes uncrossed) |
 | 2026-07-26T04:25Z | Newsom pre12h quote_trade_gap | bids vs tape | **n_crossable=0** | mean_bid_gap≈+0.023; 36 sell aggressors still miss bids — not fill-sim bug |
 | 2026-07-26T04:40Z | Newsom pre12h touchability_sweep | delta_min/c_vol/min_edge | **any_crossable=false** | gap≈0.023 invariant — spread knobs not the bottleneck |
+| 2026-07-26T04:55Z | token_pair_sanity | wrong vs catalog Newsom/Vance | **pair_ok** | Historical “Newsom” pair mean_sum=0.78 (Vance NO+Newsom YES); correct pairs sum=1.0, two-sided quotes restore |
 
 ## Freeze list (do not Tier-2 wire without multi-market EV)
 
@@ -142,5 +145,7 @@ and a PR — never auto-merge. See `AUTONOMOUS_LOOP_PROTOCOL.md`.
 - micro_levels=5, toxicity-aware spreads — **mixed** MSE/toxicity only; **EV micro5=false**; **c_tox EV inert** → keep defaults
 - `flow_fv_weight=0` — forecast MSE favors zero on Newsom, but **EV finding=false** on Newsom+Vance; keep default 0.5; knob exposed for further tape
 - **AS EV paused**: fill_readiness false; quote_trade_gap shows **bids ~2.3¢ below tape** (n_crossable=0) even with 36 sell aggressors — not a matcher bug
-- Touchability sweep: **delta_min/c_vol/min_edge cannot create crossable quotes** on this tape
-- Next: markets with trades while quotes are live, or Tier-2 placement/join changes with EV evidence; calibration-only work can continue
+- **CONTAMINATION**: prior live evals using yes=78633590…/no=54533043… mispaired Vance NO with Newsom YES (mean_sum≈0.78); treat those AS/EV/gap results as invalid
+- Correct Newsom: yes=54533043… no=87854174… (cid 0x0f49db97…); Vance: yes=40081275… no=78633590… (cid 0x18b1c135…)
+- `promotion_eligible` now requires `token_pair_ok` (YES+NO mid sum ≈ 1)
+- Next: **re-run** key quant_edge / calibration evidence on correct pairs; then revisit AS EV
