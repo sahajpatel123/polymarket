@@ -43,7 +43,8 @@ def main() -> int:
         "as_path_note "
         "join_best_bid frozen: tape sells are at-touch only (T1-152); "
         "conservative equal-price skip blocks fills (T1-151); "
-        "finding requires n_fill_candidate>0 (T1-153)"
+        "finding requires n_fill_candidate>0 (T1-153); "
+        "see scripts/as_path_status.py"
     )
 
     # Latest report paths if present
@@ -56,6 +57,9 @@ def main() -> int:
         Path("logs/through_price_tape"),
         Path("logs/reward_path_compare"),
         Path("logs/queue_ahead_sweep"),
+        Path("logs/as_path_status"),
+        Path("logs/c_vol_ev_sweep"),
+        Path("logs/kyle_ev_sweep"),
     ]
     latest: list[str] = []
     for root in roots:

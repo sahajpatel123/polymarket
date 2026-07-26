@@ -1101,6 +1101,15 @@ done without evidence (script output / tests) from that cycle.
   `scripts/kyle_ev_sweep.py`, `tests/test_quoting.py`,
   `evidence/quant_edge/t1_154_kyle_ev_sweep.json`
 
+### T1-155 as_path_status board + c_vol EV sweep
+- Status: `done`
+- Done when: `as_path_status` reports ready=false on Newsom/Vance; `c_vol_ev_sweep`
+  finding=false; freeze list consolidated; evidence JSON.
+- Evidence: `src/polymaker/replay/as_path_status.py`,
+  `scripts/as_path_status.py`, `scripts/c_vol_ev_sweep.py`,
+  `tests/test_as_path_status.py`,
+  `evidence/quant_edge/t1_155_as_path_c_vol.json`
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last

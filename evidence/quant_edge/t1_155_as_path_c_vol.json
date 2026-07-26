@@ -1,0 +1,14 @@
+{
+  "id": "T1-155",
+  "change": "as_path_status board + c_vol EV sweep; consolidate AS freeze list",
+  "note": "AS path any_ready=false on Newsom/Vance pre12h (n_through=0). c_vol 0.5/1.2/2.0/3.0 vs live_scaled: finding=false, dn_ev=0 both markets. Keep c_vol default. Freeze list rewritten to remove stale join finding=true bullets.",
+  "as_path": {
+    "any_ready": false,
+    "report": "logs/as_path_status/pre12h.json"
+  },
+  "c_vol_sweep": {
+    "baseline_live_scaled": 1.5,
+    "newsom": {"any_nondefault_finding": false, "values": [0.5, 1.2, 2.0, 3.0], "report": "logs/c_vol_ev_sweep/newsom_cons.json"},
+    "vance": {"any_nondefault_finding": false, "values": [0.5, 1.2, 2.0, 3.0], "report": "logs/c_vol_ev_sweep/vance_cons.json"}
+  }
+}

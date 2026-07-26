@@ -31,6 +31,8 @@ Flow: `scripts/flow_calibration.py` → `polymaker.replay.flow_calibration`
 Toxicity: `scripts/toxicity_calibration.py` → `polymaker.replay.toxicity_calibration`.
 Toxicity spread EV: `scripts/c_tox_ev_sweep.py` (quote EV of alternate `c_tox`).
 Kyle spread EV: `scripts/kyle_ev_sweep.py` (quote EV of alternate `c_kyle`; default 0).
+Vol spread EV: `scripts/c_vol_ev_sweep.py` (quote EV of alternate `c_vol`).
+AS path board: `scripts/as_path_status.py`.
 Kelly fraction: `scripts/kelly_fraction_sweep.py` (requires `StrategyProfile.kelly_fraction`).
 Status board: `scripts/quant_edge_status.py`.
 Covariance sizing: `scripts/cov_sizing_eval.py` → `polymaker.replay.cov_sizing_eval`
@@ -85,7 +87,7 @@ scoring rule and is no longer used.
 | Technique | Module | Live/replay wiring | Evidence gate |
 |-----------|--------|--------------------|---------------|
 | Microprice | `marketdata/orderbook.py` | yes | **no** (correct-token Newsom OOS MSE fails; prior Newsom win was mispaired tokens) |
-| EWMA vol / flow | `strategy/estimators.py` | yes | partial (vol); **flow_z directional: no**; **flow nudge in FV: no** (worsens micro OOS MSE); knob `flow_fv_weight` (default 0.5) |
+| EWMA vol / flow | `strategy/estimators.py` | yes | partial (vol forecast); **c_vol quote EV=no** (T1-155); **flow_z directional: no**; **flow nudge in FV: no**; knob `flow_fv_weight` (default 0.5) |
 | Kalman mid | `intelligence/signal_processing.py` | intel-only | **no** (worse than mid on Newsom+Vance OOS) |
 | Calibration-weighted signal blend | `strategy/signal_blend.py` | **no** | no (no clear OOS win vs mid) |
 | Avellaneda–Stoikov | `strategy/avellaneda_stoikov.py` | opt-in (`use_advanced_quoting`) | no |
@@ -158,26 +160,22 @@ and a PR — never auto-merge. See `AUTONOMOUS_LOOP_PROTOCOL.md`.
 | 2026-07-26T06:55Z | through_price_tape | Newsom/Vance sells vs BB | viable=**false** | 40/40 Newsom + 7/7 Vance sells at-touch (n_through=0); join in_band=1.0 |
 | 2026-07-26T07:10Z | reward_path + finding gate | join cons Newsom/Vance | **finding=false** | cons reward_delta=0, denominator_artifact; finding now needs fills; prior cons “finding” overturned |
 | 2026-07-26T07:25Z | kyle_ev_sweep | c_kyle 0.5/1/2 vs 0 | **false** | Newsom+Vance cons+opt; dn_ev=0 n_fill=0; keep c_kyle=0 |
+| 2026-07-26T07:40Z | as_path_status + c_vol_ev | Newsom/Vance | ready=**false** / EV **false** | AS board blocked; c_vol 0.5–3.0 dn_ev=0; freeze list cleaned |
 
 ## Freeze list (do not Tier-2 wire without multi-market EV)
 
-- flow_z / OFI / VPIN / GARCH / Kalman / cov sizing / AS+Kelly — evidence **no** or single-market only
-- micro_levels=5, toxicity-aware spreads — **mixed** MSE/toxicity only; **EV micro5=false**; **c_tox EV inert** → keep defaults
-- `flow_fv_weight=0` — forecast MSE favors zero on Newsom, but **EV finding=false** on Newsom+Vance; keep default 0.5; knob exposed for further tape
-- **AS EV paused**: fill_readiness false; quote_trade_gap shows **bids ~2.3¢ below tape** (n_crossable=0) even with 36 sell aggressors — not a matcher bug
-- **CONTAMINATION**: prior live evals using yes=78633590…/no=54533043… mispaired Vance NO with Newsom YES (mean_sum≈0.78); treat those AS/EV/gap results as invalid
-- Correct Newsom: yes=54533043… no=87854174… (cid 0x0f49db97…); Vance: yes=40081275… no=78633590… (cid 0x18b1c135…)
-- `promotion_eligible` now requires `token_pair_ok` (YES+NO mid sum ≈ 1)
-- Correct-token rerun (T1-145): AS/flow0/micro all finding=false; micro prior win **overturned**
-- AS EV blocked by **passive reward-band placement** (~4¢ below touch; rewards_max_spread=5.5) — not token pairing
-- Prefer `--slug`/`resolve_market_tokens` over raw token IDs
-- Narrowing `rewards_max_spread` alone **does not** create crossable quotes (T1-148)
-- `join_best_bid` knob exists (default **False**); alone does not unlock fills — **min_edge_ticks** caps bids below BB when BB≈mid≈FV (T1-149)
-- `join_best_bid=true` + `min_edge_ticks=0` unlocks optimistic fills (n_fill=33) with positive OOS EV on Newsom pre12h but **finding=false** (degenerate CI) → still freeze; need conservative multi-market EV before Tier-2 default
-- Bootstrap CI fixed (T1-150): old LCG collapsed CI when `n_chunks` was a power of 2; Newsom optimistic join now finding=true, Vance finding=false — **still freeze** (no multi-market + conservative fills)
-- `promotion_eligible` now also requires `n_fill_candidate>0` (blocks zero-fill reward-path “findings”)
-- **Join-BB cannot promote under conservative fills** (T1-151): all optimistic join fills are equal-price; `cons_ahead0` still n_fill=0 — equal-price skip is the blocker ahead of queue=200
-- **Tape has no through-price sells** (T1-152): Newsom/Vance journals are 100% at-touch SELL prints → `conservative_join_viable=false`; wait for denser tape or escalate equal-price policy explicitly
-- **Zero-fill EV is not a finding** (T1-153): join cons reward_delta=0 with fewer quotes → `ev_signal` only; `finding` requires fills
-- `c_kyle` knob exists (default **0**); Newsom+Vance EV sweep finding=false (T1-154) — Spearman skill ≠ quote EV
-- Next AS path needs either through-price aggressors on denser tape, or an explicit Tier-2 decision on equal-price fill policy (do not soften conservative for a metric win)
+**AS path (current tape):** blocked. Sell aggressors are at-touch only
+(`n_through=0`); conservative equal-price skip ⇒ join cannot promote; finding
+requires fills. Board: `scripts/as_path_status.py`. Unblock only via denser
+through-price tape or an explicit Tier-2 equal-price fill-policy PR — do not
+soften the conservative matcher for a metric.
+
+**Technique freeze (defaults stay):**
+- flow_z / OFI / VPIN / GARCH / Kalman / cov sizing / AS+Kelly — evidence **no**
+- micro_levels=5, `c_tox`, `c_kyle`, `flow_fv_weight=0` — EV finding=false
+- `join_best_bid` (default off) — optimistic Newsom-only; not multi-market / not conservative-fill
+- `c_vol` — see T1-155 sweep; keep profile default unless finding+fills
+
+**Token hygiene:** prefer `--slug`; prior mispaired Newsom/Vance tokens invalid
+(mean_sum≈0.78). Correct Newsom yes=54533043… no=87854174…; Vance yes=40081275…
+no=78633590…. `promotion_eligible` needs `token_pair_ok` + conservative + fills.
