@@ -1,0 +1,35 @@
+{
+  "id": "T1-152",
+  "change": "through_price_tape diagnostic: sell aggressors are 100% at-touch on Newsom/Vance journals — conservative join not viable on this tape",
+  "note": "Conservative fills require trade_price < bid. Pre12h Newsom: 40/40 sells at BB (n_through=0); Vance 7/7 at-touch; recent paper.jsonl Newsom 3/3 at-touch. Join+min_edge0 keeps in_band_frac=1.0 (reward uptime not the tradeoff). AS promotion under conservative needs denser through-price tape or Tier-2 equal-price policy — do not soften fill model for a metric.",
+  "journal_pre12h": "livecfg/journal/paper.jsonl.pre12h.1784925687.31229",
+  "results": {
+    "newsom_pre12h": {
+      "n_through": 0,
+      "n_at_touch": 40,
+      "n_above_touch": 0,
+      "conservative_join_viable": false,
+      "reward_baseline_in_band": 1.0,
+      "reward_join_in_band": 1.0,
+      "join_n_fill_optimistic": 33,
+      "report": "logs/through_price_tape/newsom.json"
+    },
+    "vance_pre12h": {
+      "n_through": 0,
+      "n_at_touch": 7,
+      "conservative_join_viable": false,
+      "report": "logs/through_price_tape/vance.json"
+    },
+    "newsom_paper": {
+      "n_through": 0,
+      "n_at_touch": 3,
+      "conservative_join_viable": false,
+      "report": "logs/through_price_tape/newsom_paper.json"
+    }
+  },
+  "harness": {
+    "module": "src/polymaker/replay/through_price_tape.py",
+    "script": "scripts/through_price_tape.py",
+    "tests": "tests/test_through_price_tape.py"
+  }
+}

@@ -1073,6 +1073,16 @@ done without evidence (script output / tests) from that cycle.
   `tests/test_queue_fill_modes.py`, `tests/test_queue_ahead_sweep.py`,
   `evidence/quant_edge/t1_151_queue_ahead_equal_price.json`
 
+### T1-152 through-price tape (conservative join viability)
+- Status: `done`
+- Done when: `through_price_tape` classifies SELL vs book BB; Newsom/Vance
+  journals show n_through=0 (at-touch only); join reward in_band stays 1.0;
+  documents AS path blocked until through-price tape or Tier-2 equal-price
+  policy; evidence JSON.
+- Evidence: `src/polymaker/replay/through_price_tape.py`,
+  `scripts/through_price_tape.py`, `tests/test_through_price_tape.py`,
+  `evidence/quant_edge/t1_152_through_price_tape.json`
+
 ## Tier 2 — strategy / execution (PR only; never auto-merge)
 
 Requires T1-01 + T1-02, ≥24h paper runtime and ≥500 new quotes since last
