@@ -28,7 +28,6 @@ def _policy(capital: float = 1000.0, **overrides) -> ...:
         max_drawdown_kill_pct=overrides.get("max_drawdown_kill_pct", 0.25),
         per_market_loss_pct=overrides.get("per_market_loss_pct", 0.05),
         per_trade_loss_pct=overrides.get("per_trade_loss_pct", 0.005),
-        target_daily_growth_pct=overrides.get("target_daily_growth_pct", 0.10),
         min_reward_pct_per_day=overrides.get("min_reward_pct_per_day", 0.005),
         max_concurrent_markets=overrides.get("max_concurrent_markets", 8),
     )

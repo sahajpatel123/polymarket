@@ -9,18 +9,22 @@
 
 ## 0. Honest Scope Note (read first)
 
-- Target: **10–13% daily**. That is **~100× annual**. No realistic market-making
-  edge on Polymarket today reliably produces that, even with an LLM. This system will
-  extract *as much* as is extractable from the available data, but the *expected*
-  daily return given real-world spread/fill economics is closer to **0.5–4%/day**
-  on a working book. The system is honest about this; it tracks **realized** PnL
-  against the *aspirational* target and never overpromises in code.
+- There is **no target growth, no profit cap, no "you've made enough"**.
+  The bot earns as much as it can, subject only to the loss-side caps
+  (daily loss kill, drawdown kill, per-market loss, per-trade loss).
+  Every cap is a percentage of *current* capital, so the bot can
+  compound without a ceiling.
+- The user's aspirational daily range of 10–13% is logged and
+  compared against realized PnL for visibility, but the system has no
+  mechanism to "stop at 13%". A 50% day is just as welcome as a
+  10% day.
 - LLM is **not magic** — it gives better context (news, narrative, regime), not
   alpha. The mathematical edge (microprice, inventory skew, regime) still does the
   actual quoting. LLM suggests, math decides, risk enforces.
-- The system is designed so the **target is a goal**, not a guarantee. It will
-  *try* to get there by removing every non-edge drag (bad market selection,
-  stale inventories, mis-sized layers) — and tell you honestly when it can't.
+- All caps are fractions of capital. The system is honest about what
+  it can extract: even with an LLM, the realistic edge is closer to
+  0.5–4%/day on a working book. The system tracks realized vs.
+  aspirational but never overpromises in code.
 
 ---
 
@@ -40,8 +44,8 @@ from `POLYMAKER_CAPITAL_USDC` + live market state + LLM context.
 Optional overrides (rarely needed):
 ```env
 POLYMAKER_RISK_PROFILE=balanced  # conservative | balanced | aggressive
-POLYMAKER_TARGET_DAILY_PCT=10.0  # aspirational target (informational, not enforced)
 POLYMAKER_MAX_MARKETS=8          # hard cap on concurrent markets
+# Note: there is NO target/profit cap. The bot earns without ceiling.
 ```
 
 ---
@@ -133,15 +137,15 @@ Replaces fixed `base_size_usdc` with:
 - Hard loss-per-trade: `pct_of_allocation * loss_pct * fv_distance`
 - Always rounds to exchange min and reward min
 
-### 3.4 `intelligence/policy.py` — %-Based Risk Policy
+### 3.4 `intelligence/policy.py` — %-Based Risk Policy (loss-only)
 
-Replaces absolute `daily_loss_kill_usdc` etc. with percentages:
+Replaces absolute `daily_loss_kill_usdc` etc. with percentages.
+There is **no** `target_*` field. The bot earns without ceiling.
 ```
 daily_loss_kill_pct   = 0.10   # -10% of capital in a day = halt
 max_drawdown_kill_pct = 0.25   # -25% from peak = halt + review
 per_market_loss_pct   = 0.05   # -5% of capital in one market = reduce-only
 per_trade_loss_pct    = 0.005  # -0.5% of capital = tight stop on a single fill
-target_daily_growth_pct = 0.10  # aspirational — log only, not enforced
 ```
 
 All computed from `POLYMAKER_CAPITAL_USDC` at boot and on hot-reload.
@@ -212,10 +216,10 @@ daily_loss_kill_pct = 0.10
 max_drawdown_kill_pct = 0.25
 per_market_loss_pct = 0.05
 per_trade_loss_pct = 0.005
-target_daily_growth_pct = 0.10
 risk_profile = "balanced"
 max_concurrent_markets = 8
 min_reward_pct_per_day = 0.005   # skip markets with less than 0.5%/day expected
+# NO target_growth field. The bot earns without ceiling.
 ```
 
 **`config/strategy.toml`** stays for **baseline profile shape** (spread math, regime thresholds). Bot can override within %-bounds from policy.
@@ -279,6 +283,9 @@ polymaker capital                   # show capital allocation breakdown
 
 ## 9. What This Does NOT Do (honesty)
 
+- Does not cap profits. There is no "you've made enough" threshold.
+  A 50% day is welcome. The user's 10-13% aspirational range is
+  logged but not enforced.
 - Does not guarantee 10-13% daily. It will try, measure, and report honestly.
 - Does not replace the math. Math quotes; LLM suggests.
 - Does not trade on news alone. LLM is a *narrative* input to the math, not a signal.
@@ -295,10 +302,13 @@ If you set `POLYMAKER_CAPITAL_USDC=500`, the bot will:
 - **Every 30 min** narrate to you what it's doing and why
 - **Every day** show you exactly what it made, what it lost, and what it wants to change
 - **On every bad day** automatically reduce risk, then ask the LLM why, then tell you
+- **Earn as much as it can** without a profit cap, only loss-side stops
 - **Never** risk more than the % caps you set
 - **Never** silently change its own risk policy
 
-That's the actual contract. The 10-13% is a *target*, not a guarantee.
+That's the actual contract. No profit ceiling. No fixed-target
+logic. The bot compounds as much as the markets allow, gated only
+by the loss caps.
 
 ---
 

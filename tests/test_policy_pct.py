@@ -4,6 +4,9 @@ The policy is the single source of truth for risk. Every other module
 sizing/orchestrating capital reads from it. These tests verify the
 math is correct, the env overrides work, and the resolved values
 match the percentages they came from.
+
+Importantly: there is no profit cap and no target growth field. The
+bot earns without ceiling. Tests here cover only the loss-side caps.
 """
 
 from __future__ import annotations
@@ -15,7 +18,6 @@ import pytest
 from polymaker.intelligence.policy import (
     DEFAULT_DAILY_LOSS_KILL_PCT,
     DEFAULT_MAX_PER_MARKET_PCT,
-    DEFAULT_TARGET_DAILY_GROWTH_PCT,
     VALID_RISK_PROFILES,
     RiskPolicy,
     RiskProfile,
@@ -29,7 +31,6 @@ def test_risk_profile_balanced_defaults():
     p = RiskProfile.from_name("balanced")
     assert p.size_mult == 1.0
     assert p.loss_kill_mult == 1.0
-    assert p.target_mult == 1.0
     assert p.max_markets == 8
 
 
@@ -62,6 +63,27 @@ def test_all_valid_profiles_construct():
         assert p.loss_kill_mult > 0
 
 
+# ── RiskPolicy has NO target/profit-cap field ───────────────────────
+
+
+def test_policy_has_no_target_field():
+    """The bot earns without ceiling. No target growth, ever."""
+    p = RiskPolicy()
+    fields = {f.name for f in p.__dataclass_fields__.values()}
+    assert "target_daily_growth_pct" not in fields
+    assert "target_pct" not in fields
+    assert "profit_cap_pct" not in fields
+    assert "max_profit_usdc" not in fields
+
+
+def test_resolved_has_no_target_field():
+    """The resolved view also has no profit cap."""
+    r = RiskPolicy().resolve(100.0)
+    fields = {f.name for f in r.__dataclass_fields__.values()}
+    assert "target_daily_growth_usdc" not in fields
+    assert "max_profit_usdc" not in fields
+
+
 # ── RiskPolicy defaults and env overrides ────────────────────────────
 
 
@@ -69,7 +91,6 @@ def test_policy_default_factory_values():
     p = RiskPolicy()
     assert p.max_per_market_pct == DEFAULT_MAX_PER_MARKET_PCT
     assert p.daily_loss_kill_pct == DEFAULT_DAILY_LOSS_KILL_PCT
-    assert p.target_daily_growth_pct == DEFAULT_TARGET_DAILY_GROWTH_PCT
     assert p.max_concurrent_markets == 8
     assert p.profile_name == "balanced"
 
@@ -127,8 +148,6 @@ def test_policy_aggressive_profile_grows_caps():
     p = RiskPolicy.from_env("aggressive")
     expected = 2.0 * DEFAULT_DAILY_LOSS_KILL_PCT
     assert abs(p.daily_loss_kill_pct - expected) < 1e-9
-    expected_target = 2.0 * DEFAULT_TARGET_DAILY_GROWTH_PCT
-    assert abs(p.target_daily_growth_pct - expected_target) < 1e-9
 
 
 def test_policy_max_markets_override():
@@ -165,7 +184,6 @@ def test_resolve_pct_to_usdc():
         max_drawdown_kill_pct=0.25,
         per_market_loss_pct=0.05,
         per_trade_loss_pct=0.005,
-        target_daily_growth_pct=0.10,
         min_reward_pct_per_day=0.005,
     )
     r = p.resolve(capital_usdc=1000.0)
@@ -176,7 +194,6 @@ def test_resolve_pct_to_usdc():
     assert abs(r.max_drawdown_kill_usdc - 250.0) < 1e-9
     assert abs(r.per_market_loss_usdc - 50.0) < 1e-9
     assert abs(r.per_trade_loss_usdc - 5.0) < 1e-9
-    assert abs(r.target_daily_growth_usdc - 100.0) < 1e-9
     assert abs(r.min_reward_per_day_usdc - 5.0) < 1e-9
 
 
