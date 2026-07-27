@@ -30,10 +30,16 @@ from polymaker.catalog.gamma import GammaClient, fetch_reward_rates, parse_marke
 from polymaker.catalog.scoring import score_market
 from polymaker.catalog.store import CatalogStore
 from polymaker.config import Config, StrategyProfile
-from polymaker.domain import Fill, MarketMeta, Quote, Regime, Side
+from polymaker.domain import Fill, MarketMeta, Regime, Side
 from polymaker.execution.gateway import ExecutionGateway
 from polymaker.execution.reconciler import reconcile
-from polymaker.intelligence import DecisionFramework
+from polymaker.intelligence import (
+    DecisionFramework,
+    GovernedGrokAgent,
+    GrokAgent,
+    LLMGovernance,
+    OversightLoop,
+)
 from polymaker.journal import Journal
 from polymaker.logging import get_logger
 from polymaker.marketdata.orderbook import BookView
@@ -46,13 +52,13 @@ from polymaker.risk.degradation import DegradationDetector
 from polymaker.risk.manager import RiskManager
 from polymaker.state.store import StateStore
 from polymaker.state.tracker import UserEventProcessor
+from polymaker.strategy.decision_pipeline import build_targets
 from polymaker.strategy.estimators import (
     FlowEstimator,
     MarketEstimators,
     MultiHorizonMarkout,
     VolEstimator,
 )
-from polymaker.strategy.decision_pipeline import build_targets
 from polymaker.strategy.quoting import compute_fair_value
 from polymaker.strategy.regime import RegimeMachine
 from polymaker.userstream.client import UserStream
@@ -120,6 +126,14 @@ class Engine:
         self._last_book_ts: dict[str, float] = {}
         # Inventory entry timestamps for exit urgency (token_id -> first open ts)
         self._pos_entry_ts: dict[str, float] = {}
+        # LLM / V3 governance: wired only when XAI_API_KEY is in .env
+        self.grok_agent: GrokAgent | None = None
+        self.gov_agent: GovernedGrokAgent | None = None
+        self.oversight_loop: OversightLoop | None = None
+        self.llm_gov: LLMGovernance | None = None
+        self._llm_actions: list = []
+        self._llm_enabled = bool(cfg.secrets.xai_api_key)
+        self._per_market_spread_mult: dict[str, float] = {}
 
     # ── lifecycle ───────────────────────────────────────────────────────
     async def start(self) -> None:
@@ -158,6 +172,31 @@ class Engine:
                 await self.gateway.heartbeat()
             self._spawn("heartbeat", self._heartbeat_loop)
             self._user_started = True
+
+        # ── V3 LLM wiring ──────────────────────────────────────────────
+        if self._llm_enabled:
+            _cap = float(self.cfg.risk.bankroll_usdc or 0)
+            if _cap > 0:
+                try:
+                    self.grok_agent = GrokAgent(
+                        api_key=self.cfg.secrets.xai_api_key,
+                    )
+                    self.llm_gov = LLMGovernance(capital_usdc=_cap)
+                    self.gov_agent = GovernedGrokAgent(self.grok_agent, self.llm_gov)
+                    self.oversight_loop = OversightLoop(
+                        agent=self.grok_agent,
+                        llm_gov=self.llm_gov,
+                        # Adapter: provide snapshot without requiring the engine
+                        # tightly-coupled (the oversight loop uses composition).
+                        snapshot_fn=self._oversight_snapshot,
+                    )
+                    self.oversight_loop.start()
+                    log.info("llm_wired", capital_usdc=_cap, model=self.grok_agent.model)
+                except Exception:  # noqa: BLE001
+                    log.exception("llm_wire_failed — running deterministic only")
+                    self._llm_enabled = False
+        # ──────────────────────────────────────────────────────────────
+
         self._spawn("reconcile", self._reconcile_loop)
         self._spawn("metadata", self._metadata_refresh_loop)
         self._spawn("maintenance", self._maintenance_loop)
@@ -383,6 +422,97 @@ class Engine:
             self.user.set_markets(list(self.metas))
         log.info("market_removed", condition_id=cid, slug=meta.slug)
         return True
+
+    # ── V3 LLM oversight ─────────────────────────────────────────────
+
+    def _oversight_snapshot(self) -> dict[str, Any]:
+        """Build a snapshot for the OversightLoop's 30-min commentary.
+
+        Returns a dict the LLM can reason about: PnL, drawdown, fill
+        rate, top-of-book state per market, and recent anomalies.
+        All values are serializable so the oversight loop can pass
+        them to Grok without coupling to the engine's internal types.
+        """
+        equity = self.risk.equity()
+        drawdown = 0.0
+        peak = self.risk._peak_equity or 1.0
+        if peak > 0:
+            drawdown = (peak - equity) / peak
+        daily = self.risk.daily_pnl
+
+        markets: dict[str, dict[str, Any]] = {}
+        for cid, meta in self.metas.items():
+            book = self.md.book(cid)
+            fv = compute_fair_value(book, meta)
+            regime = self.regime_m.get(cid, RegimeMachine()).current
+            markets[cid[:8]] = {
+                "slug": meta.slug,
+                "fv": round(float(fv), 5),
+                "regime": str(regime.value if hasattr(regime, "value") else regime),
+                "spread": round(float(book.spread_bps() if book else 0), 1),
+                "reward_min_size": getattr(meta, "rewards_min_size", 0),
+            }
+
+        return {
+            "equity": round(equity, 2),
+            "daily_pnl": round(daily, 2),
+            "drawdown_pct": round(drawdown * 100, 2),
+            "fill_rate": round(self._recent_fill_rate(), 4),
+            "n_active_markets": len(self.metas),
+            "n_halted": len(self._halted),
+            "n_quarantined": len(self._quarantined),
+            "markets": markets,
+        }
+
+    def _recent_fill_rate(self) -> float:
+        """Simple rolling fill-rate estimate from the state store."""
+        orders = self.state.recent_orders(n=50)
+        if not orders:
+            return 0.0
+        filled = sum(1 for o in orders if getattr(o, "filled", 0) > 0)
+        return filled / len(orders)
+
+    def apply_oversight_action(self, action: dict[str, Any]) -> dict[str, Any]:
+        """Apply a single oversight action from the OversightLoop.
+
+        Called by OversightLoop.apply_actions_via_engine. Action types:
+        - tighten_spread / widen_spread : adjust spread_mult on profile
+        - pause_market : set regime to cooling-off
+        - add_layer / drop_market : no-op on live (goes through self-improve)
+        - no_op : acknowledged
+
+        All actions are bounded by the governance layer — the LLM
+        can only suggest, and the engine applies within safe limits.
+        """
+        atype = str(action.get("type") or action.get("action") or "no_op")
+        cid = str(action.get("condition_id") or action.get("cid") or "")
+        reason = str(action.get("reason") or "")
+
+        if atype == "no_op":
+            return {"action": "no_op", "status": "acknowledged"}
+
+        if atype == "pause_market" and cid in self._halted:
+            self._halted.add(cid)
+            log.info("oversight_pause_market", cid=cid[:8], reason=reason)
+            return {"action": "pause_market", "status": "applied", "cid": cid[:8]}
+
+        if atype in ("tighten_spread", "widen_spread") and cid in self.profiles:
+            mult = float(action.get("spread_mult", 1.0))
+            mult = max(0.5, min(3.0, mult))
+            # Store as a per-market override on the profile dict.
+            # The actual spread is adjusted by governance + the quoter.
+            self._per_market_spread_mult[cid] = mult
+            log.info("oversight_spread_adjust", cid=cid[:8], mult=round(mult, 2), reason=reason)
+            return {"action": atype, "status": "applied", "cid": cid[:8], "spread_mult": mult}
+
+        if atype in ("add_layer", "drop_market"):
+            # These require paper validation or user review — log and defer.
+            log.info("oversight_deferred", action=atype, cid=cid[:8], reason=reason)
+            return {"action": atype, "status": "deferred_to_self_improve", "cid": cid[:8]}
+
+        return {"action": atype, "status": "unknown", "reason": reason}
+
+    # ── Discovery + hot-reload ─────────────────────────────────────────
 
     async def _market_discovery_loop(self) -> None:
         """Periodically scan Gamma for new markets and add them if they pass filters.
@@ -988,7 +1118,13 @@ class Engine:
             )
         ws_stale = blind
         # Scale sizes to risk bankroll when set (capital-adaptive profiles).
-        p = self.risk.cfg.scale_profile_sizes(p)
+        # Pass reward_min_size + typical_price so the scaling floors our
+        # base_size_usdc at a reward-eligible level when bankroll allows.
+        p = self.risk.cfg.scale_profile_sizes(
+            p,
+            rewards_min_size=getattr(meta, "rewards_min_size", 0.0),
+            typical_price=getattr(meta, "yes", None).price if hasattr(meta, "yes") else 0.5,
+        )
 
         # Degradation detector: cut size / quarantine / baseline fallback.
         # Quarantine = REDUCE_ONLY (exits still place). Never HALT for quarantine

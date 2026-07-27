@@ -37,6 +37,7 @@ reduce_only_hours   = 24
 halt_before_hours   = 2
 # --- exits ---
 merge_min_size      = 20.0
+use_intelligence    = true
 
 
 [profiles.political-longdated]
@@ -146,6 +147,7 @@ reduce_only_hours   = 24
 halt_before_hours   = 2
 # --- exits ---
 merge_min_size      = 20.0
+use_intelligence    = true
 
 
 # aggressive_30: fixed $30 toy profile (legacy). Prefer live_scaled with

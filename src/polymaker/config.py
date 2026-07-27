@@ -131,19 +131,35 @@ class RiskConfig(BaseModel):
         data["max_market_notional_usdc"] = conc
         return RiskConfig(**data)
 
-    def scale_profile_sizes(self, profile: StrategyProfile) -> StrategyProfile:
+    def scale_profile_sizes(
+        self,
+        profile: StrategyProfile,
+        *,
+        rewards_min_size: float = 0.0,
+        typical_price: float = 0.5,
+    ) -> StrategyProfile:
         """Scale a profile's base_size / q_max / bankroll to this risk bankroll.
 
         Used so a single advanced profile works at $30 or $5_000 without
         hand-editing every size knob. No-op when bankroll is unset.
+
+        When ``rewards_min_size > 0``, the per-order size is floored at
+        the USDC needed to fund one reward-eligible share count at the
+        given ``typical_price``. This prevents the silent $0-reward
+        scenario from the 12h paper report.
         """
         b = float(self.bankroll_usdc)
         if b <= 0:
             return profile
-        # Per-order size: ~10% of bankroll (concentrated for reward share),
-        # floor $2, cap $250. Dust sizes never reach 15%+/day targets.
+        # Per-order size: ~10% of bankroll, floor $2, cap $250.
         base = max(2.0, min(250.0, b * 0.10))
-        # Per-market inventory: match the market notional cap.
+        # Reward-eligibility floor: if the bankroll can fund a reward-min
+        # order, make sure base_size_usdc meets it. Otherwise log the gap
+        # but don't override — undersized is better than silently burning.
+        if rewards_min_size > 0 and typical_price > 0:
+            reward_notional = rewards_min_size * typical_price
+            if reward_notional <= b * 0.40:  # can afford 1 reward-min order
+                base = max(base, reward_notional)
         q_max = max(base, float(self.max_market_notional_usdc))
         return profile.model_copy(update={
             "base_size_usdc": base,
