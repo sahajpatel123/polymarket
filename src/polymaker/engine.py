@@ -152,6 +152,92 @@ class Engine:
         self._last_review_ts: float = 0.0
         self._discovery_agent: MarketDiscovery | None = None
 
+    def wire_llm_stack(
+        self,
+        *,
+        agent: Any | None = None,
+        force_capital_usdc: float | None = None,
+    ) -> bool:
+        """Wire governed Grok + oversight + discovery on the live/paper path.
+
+        Called from :meth:`start`. Extracted so unit tests can drive the
+        **shipped** wiring with a mock agent (no network).
+
+        Returns True when LLM stack is active. Conditions:
+        - ``XAI_API_KEY`` present (or a mock ``agent`` injected), and
+        - bankroll_usdc > 0 (or ``force_capital_usdc``).
+
+        On any failure, leaves deterministic path intact and returns False.
+        """
+        if agent is None and not self._llm_enabled:
+            log.info("llm_wire_skipped", reason="no_xai_api_key")
+            return False
+        _cap = float(
+            force_capital_usdc
+            if force_capital_usdc is not None
+            else (self.cfg.risk.bankroll_usdc or 0)
+        )
+        if _cap <= 0:
+            log.info("llm_wire_skipped", reason="bankroll_unset")
+            self._llm_enabled = False
+            return False
+        try:
+            if agent is not None:
+                self.grok_agent = agent  # type: ignore[assignment]
+            else:
+                self.grok_agent = GrokAgent(api_key=self.cfg.secrets.xai_api_key)
+            self.llm_gov = LLMGovernance(capital_usdc=_cap)
+            self.gov_agent = GovernedGrokAgent(self.grok_agent, self.llm_gov)  # type: ignore[arg-type]
+
+            _mem_path = Path(self.cfg.paths.db).parent / "agent_memory.db"
+            self.memory = AgentMemory(db_path=str(_mem_path))
+            _recent = self.memory.get_recent(20)
+            log.info("memory_loaded", n_recent=len(_recent))
+
+            _hist_path = Path(self.cfg.paths.db).parent / "profile_history.db"
+            self.profile_hist = ProfileHistory(str(_hist_path))
+
+            self.self_improver = SelfImprover(
+                history=self.profile_hist,
+                memory=self.memory,  # type: ignore[arg-type]
+                profile_name=next(iter(self.cfg.profiles), "default"),
+            )
+            if self.cfg.profiles:
+                _first = self.cfg.profiles[next(iter(self.cfg.profiles))]
+                if hasattr(self.self_improver, "set_live_profile"):
+                    self.self_improver.set_live_profile(
+                        _first.model_dump() if hasattr(_first, "model_dump") else {}
+                    )
+
+            self._discovery_agent = MarketDiscovery(
+                agent=self.grok_agent,  # type: ignore[arg-type]
+                memory=self.memory,
+                capital_usdc=_cap,
+            )
+            self.oversight_loop = OversightLoop(
+                agent=self.grok_agent,  # type: ignore[arg-type]
+                memory=self.memory,
+                snapshot_provider=self._oversight_snapshot,
+            )
+            self._llm_enabled = True
+            model = getattr(self.grok_agent, "model", "mock")
+            log.info(
+                "llm_wired",
+                capital_usdc=_cap,
+                model=model,
+                memory_n=len(_recent),
+            )
+            return True
+        except Exception:  # noqa: BLE001
+            log.exception("llm_wire_failed — running deterministic only")
+            self._llm_enabled = False
+            self.grok_agent = None
+            self.gov_agent = None
+            self.llm_gov = None
+            self.oversight_loop = None
+            self._discovery_agent = None
+            return False
+
     # ── lifecycle ───────────────────────────────────────────────────────
     async def start(self) -> None:
         self._running = True
@@ -190,58 +276,8 @@ class Engine:
             self._spawn("heartbeat", self._heartbeat_loop)
             self._user_started = True
 
-        # ── V3 LLM wiring ──────────────────────────────────────────────
-        if self._llm_enabled:
-            _cap = float(self.cfg.risk.bankroll_usdc or 0)
-            if _cap > 0:
-                try:
-                    self.grok_agent = GrokAgent(
-                        api_key=self.cfg.secrets.xai_api_key,
-                    )
-                    self.llm_gov = LLMGovernance(capital_usdc=_cap)
-                    self.gov_agent = GovernedGrokAgent(self.grok_agent, self.llm_gov)
-
-                    # Memory: load previous insights for warm LLM context
-                    _mem_path = Path(self.cfg.paths.db).parent / "agent_memory.db"
-                    self.memory = AgentMemory(db_path=str(_mem_path))
-                    _recent = self.memory.recent(20)
-                    log.info("memory_loaded", n_recent=len(_recent))
-
-                    # Profile history: track every mutation for rollback
-                    _hist_path = Path(self.cfg.paths.db).parent / "profile_history.db"
-                    self.profile_hist = ProfileHistory(str(_hist_path))
-
-                    # Self-improver: auto-cycle
-                    self.self_improver = SelfImprover(
-                        history=self.profile_hist,
-                        memory=self.memory,
-                        profile_name=next(iter(self.cfg.profiles), "default"),
-                    )
-                    _first_profile = self.cfg.profiles[next(iter(self.cfg.profiles))]
-                    self.self_improver.set_live_profile(
-                        _first_profile.model_dump() if hasattr(_first_profile, "model_dump") else {}
-                    )
-
-                    # LLM-ranked market discovery
-                    self._discovery_agent = MarketDiscovery(
-                        agent=self.grok_agent,
-                        memory=self.memory,
-                    )
-
-                    # Oversight: 30-min commentary + action queue
-                    self.oversight_loop = OversightLoop(
-                        agent=self.grok_agent,
-                        llm_gov=self.llm_gov,
-                        snapshot_fn=self._oversight_snapshot,
-                    )
-
-                    log.info("llm_wired",
-                             capital_usdc=_cap,
-                             model=self.grok_agent.model,
-                             memory_n=len(_recent))
-                except Exception:  # noqa: BLE001
-                    log.exception("llm_wire_failed — running deterministic only")
-                    self._llm_enabled = False
+        # ── V3 LLM wiring (governed Grok when key + bankroll present) ──
+        self.wire_llm_stack()
         # ──────────────────────────────────────────────────────────────
 
         self._spawn("reconcile", self._reconcile_loop)
@@ -491,24 +527,31 @@ class Engine:
         All values are serializable so the oversight loop can pass
         them to Grok without coupling to the engine's internal types.
         """
-        equity = self.risk.equity()
+        equity = float(self.risk.equity)
+        day_start = float(self.risk.day_start_equity or equity or 1.0)
+        daily = float(self.risk.daily_pnl)
         drawdown = 0.0
-        peak = self.risk._peak_equity or 1.0
-        if peak > 0:
-            drawdown = (peak - equity) / peak
-        daily = self.risk.daily_pnl
+        if day_start > 0 and equity < day_start:
+            drawdown = (day_start - equity) / day_start
 
         markets: dict[str, dict[str, Any]] = {}
         for cid, meta in self.metas.items():
-            book = self.md.book(cid)
-            fv = compute_fair_value(book, meta)
-            regime = self.regime_m.get(cid, RegimeMachine()).current
+            yes_book = self.md.book(meta.yes.token_id)
+            micro = yes_book.microprice(1) if yes_book is not None else None
+            fv = float(micro) if micro is not None else 0.5
+            rm = self.regime_m.get(cid)
+            regime = getattr(rm, "regime", None) or getattr(rm, "state", None) or Regime.QUIET
             gate = self._reward_eligibility.get(cid)
+            spread = 0.0
+            if yes_book is not None:
+                v = yes_book.view()
+                if v.best_bid is not None and v.best_ask is not None:
+                    spread = max(0.0, float(v.best_ask) - float(v.best_bid))
             markets[cid[:8]] = {
                 "slug": meta.slug,
-                "fv": round(float(fv), 5),
+                "fv": round(fv, 5),
                 "regime": str(regime.value if hasattr(regime, "value") else regime),
-                "spread": round(float(book.spread_bps() if book else 0), 1),
+                "spread": round(spread, 4),
                 "reward_min_size": getattr(meta, "rewards_min_size", 0),
                 "reward_eligible": None if gate is None else gate.eligible,
                 "capital_skip": None if gate is None else gate.skip,
@@ -529,12 +572,15 @@ class Engine:
         }
 
     def _recent_fill_rate(self) -> float:
-        """Simple rolling fill-rate estimate from the state store."""
-        orders = self.state.recent_orders(n=50)
+        """Simple rolling fill-rate estimate from resting + fill history."""
+        orders = list(getattr(self.state, "orders", {}).values())
         if not orders:
             return 0.0
-        filled = sum(1 for o in orders if getattr(o, "filled", 0) > 0)
-        return filled / len(orders)
+        filled = sum(
+            1 for o in orders
+            if float(getattr(o, "filled_size", 0) or 0) > 0
+        )
+        return filled / max(1, len(orders))
 
     def apply_oversight_action(self, action: dict[str, Any]) -> dict[str, Any]:
         """Apply a single oversight action from the OversightLoop.
@@ -672,7 +718,21 @@ class Engine:
             try:
                 candidates = self.catalog.top(limit=50)
                 if candidates:
-                    result = await self._discovery_agent.rank_candidates(candidates)
+                    # Extract just the MarketMeta from tuples, then build a
+                    # dict sequence that rank_candidates expects.
+                    metas = []
+                    for row in candidates:
+                        if isinstance(row, tuple):
+                            meta = row[0]  # (MarketMeta, MarketScore)
+                        else:
+                            meta = row
+                        metas.append({
+                            "slug": meta.slug if hasattr(meta, "slug") else "",
+                            "condition_id": meta.condition_id if hasattr(meta, "condition_id") else "",
+                            "question": meta.question if hasattr(meta, "question") else "",
+                            "rewards_min_size": getattr(meta, "rewards_min_size", 0),
+                        })
+                    result = await self._discovery_agent.rank_candidates(metas)
                     rankings = getattr(result, "rankings", [])
                     if rankings:
                         log.info(
