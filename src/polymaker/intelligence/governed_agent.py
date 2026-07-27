@@ -69,6 +69,7 @@ class GovernedGrokAgent:
         temperature: float = 0.2,
         kind: str = "chat",
         context: dict[str, Any] | None = None,
+        confidence: float = 0.0,
         extra_body: dict[str, Any] | None = None,
     ) -> GovernedResponse:
         started = time.time()
@@ -88,6 +89,7 @@ class GovernedGrokAgent:
             response=llm_payload,
             llm_started_at=started,
             context=context,
+            confidence=confidence,
         )
         return GovernedResponse(
             agent_response=resp,
@@ -104,6 +106,7 @@ class GovernedGrokAgent:
         kind: str = "tool",
         description: str = "",
         context: dict[str, Any] | None = None,
+        confidence: float = 0.0,
     ) -> GovernedResponse:
         started = time.time()
         parsed, resp = await self._agent.chat_json_tool(
@@ -113,8 +116,6 @@ class GovernedGrokAgent:
             kind=kind,
             description=description,
         )
-        # Wrap the parsed dict in an ``actions`` envelope so the
-        # governance layer's direction / size / risk checks fire.
         response_payload: dict[str, Any]
         if isinstance(parsed, dict):
             response_payload = {"actions": parsed}
@@ -125,6 +126,7 @@ class GovernedGrokAgent:
             response=response_payload,
             llm_started_at=started,
             context=context,
+            confidence=confidence,
         )
         return GovernedResponse(
             agent_response=resp,

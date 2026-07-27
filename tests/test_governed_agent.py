@@ -82,22 +82,27 @@ def test_wrapped_chat_caps_size_in_tool_call(tmp_path):
     agent = _mock_agent("", tool_calls=[tc])
     gov = _gov(tmp_path)
     wrapped = GovernedGrokAgent(agent, gov)
-    result = asyncio.run(wrapped.chat([{"role": "user", "content": "p"}]))
+    # Pass confidence so size scaling kicks in.
+    result = asyncio.run(wrapped.chat(
+        [{"role": "user", "content": "p"}], confidence=1.0
+    ))
     assert result.governance.approved is True
-    # size_pct was capped to 0.5 in the LLM payload that was logged.
     with gov.log_path.open() as fh:
         row = json.loads(fh.readline())
+    # size_pct = min(0.9, 0.5, 0.5*1.0) = 0.5
     assert row["actions"]["size_pct"] == 0.5
 
 
-def test_wrapped_chat_strips_forbidden_risk_param(tmp_path):
+def test_wrapped_chat_rejects_forbidden_risk_param(tmp_path):
+    """signature_type is not in SAFE_KNOBS, so it's in rejected_keys."""
     tc = ToolCall(id="tc1", name="quote", arguments={"signature_type": 0, "spread_mult": 1.1})
     agent = _mock_agent("", tool_calls=[tc])
     gov = _gov(tmp_path)
     wrapped = GovernedGrokAgent(agent, gov)
     result = asyncio.run(wrapped.chat([{"role": "user", "content": "p"}]))
     assert result.governance.approved is True
-    assert "signature_type" in result.governance.stripped_keys
+    assert "signature_type" in result.governance.rejected_keys
+    assert "signature_type" not in result.governance.actions
 
 
 # ── Chat JSON tool path ────────────────────────────────────────────
