@@ -12,6 +12,8 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import json
 from pathlib import Path
 from typing import Any
 
@@ -290,6 +292,334 @@ def cancel_all(config_dir: str = typer.Option("config", help="config directory")
 
     asyncio.run(_go())
     console.print("[green]Sent cancel-all.[/green]")
+
+
+# ── V3: self-improve / review / explain / capital / memory ─────────────────
+
+
+def _v3_db(config_dir: str) -> str:
+    cfg = Config.load(config_dir)
+    return cfg.paths.db
+
+
+def _load_profile_dict(config_dir: str, name: str | None = None) -> dict[str, Any]:
+    cfg = Config.load(config_dir)
+    if name and name in cfg.profiles:
+        return cfg.profiles[name].model_dump()
+    if cfg.profiles:
+        first = next(iter(cfg.profiles.values()))
+        return first.model_dump()
+    return {}
+
+
+def _memory_text(it: Any) -> str:
+    if isinstance(it, str):
+        return it
+    for attr in ("text", "content"):
+        v = getattr(it, attr, None)
+        if v:
+            return str(v)
+    line = getattr(it, "as_prompt_line", None)
+    if callable(line):
+        return str(line())
+    return str(it)
+
+
+@app.command()
+def improve(
+    config_dir: str = typer.Option("config", help="config directory"),
+    paper: bool = typer.Option(False, "--paper", help="paper mode (standalone; no live posts)"),
+    force: bool = typer.Option(
+        True, "--force/--no-force",
+        help="run even if metrics look healthy (default: true for standalone)",
+    ),
+    profile: str = typer.Option("", help="strategy profile name (default: first loaded)"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="ask LLM / build draft but do not mutate live profile"),
+    accept_paper: bool = typer.Option(
+        False, "--accept-paper",
+        help="treat paper validation as passed (operator override; use with care)",
+    ),
+    rollback_ts: float = typer.Option(0.0, "--rollback-ts", help="if >0, roll profile_history back to this unix ts and exit"),
+) -> None:
+    """Run one self-improvement cycle (standalone; engine need not be running)."""
+    from polymaker.intelligence.profile_history import ProfileHistory
+    from polymaker.intelligence.review import load_memory
+    from polymaker.intelligence.self_eval import SelfEvaluation
+    from polymaker.intelligence.self_improve import (
+        AppliedOverridesStore,
+        DraftStore,
+        SelfImprover,
+    )
+
+    _ = paper
+    db = _v3_db(config_dir)
+    hist = ProfileHistory(db)
+    cfg = Config.load(config_dir)
+    pname = profile if profile else (next(iter(cfg.profiles), "default"))
+
+    if rollback_ts > 0:
+        try:
+            restored = hist.rollback(rollback_ts, profile_name=profile or None)
+        except ValueError as exc:
+            console.print(f"[red]rollback failed:[/red] {exc}")
+            hist.close()
+            raise typer.Exit(1) from exc
+        AppliedOverridesStore(Path(config_dir) / "applied_overrides.json").write(
+            pname, restored, reason=f"rollback to_ts={rollback_ts}"
+        )
+        console.print(f"[green]Rolled back[/green] to ts≤{rollback_ts}")
+        console.print(restored)
+        hist.close()
+        return
+
+    live = _load_profile_dict(config_dir, profile or None)
+    mem = load_memory(db)
+    ev = SelfEvaluation()
+    drafts = DraftStore(Path(config_dir) / "drafts")
+    applied = AppliedOverridesStore(Path(config_dir) / "applied_overrides.json")
+    validator = (lambda _d: True) if accept_paper else None
+    improver = SelfImprover(
+        history=hist, memory=mem, paper_validator=validator, profile_name=pname,
+        draft_store=drafts, applied_store=applied,
+    )
+    improver.set_live_profile(live)
+    try:
+        result = improver.run(ev, force=force, dry_run=dry_run)
+    except Exception as exc:
+        console.print(f"[red]improve failed:[/red] {exc}")
+        hist.close()
+        raise typer.Exit(1) from exc
+
+    console.print(f"[bold]triggered:[/bold] {result.triggered}  [bold]reason:[/bold] {result.reason}")
+    if result.errors:
+        console.print(f"[yellow]errors:[/yellow] {result.errors}")
+    if result.suggestion:
+        console.print(f"[bold]diagnosis:[/bold] {result.suggestion.diagnosis}")
+        console.print(f"[bold]suggestion:[/bold] {result.suggestion.suggestion}")
+        console.print(f"[bold]expected_impact_pct:[/bold] {result.suggestion.expected_impact_pct}")
+        console.print(f"[bold]paper_validation_required:[/bold] {result.suggestion.paper_validation_required}")
+        if result.suggestion.stripped_keys:
+            console.print(f"[yellow]stripped forbidden keys:[/yellow] {result.suggestion.stripped_keys}")
+    if result.diff:
+        console.print("[bold]diff:[/bold]")
+        for k, (a, b) in result.diff.items():
+            console.print(f"  {k}: {a!r} → {b!r}")
+    console.print(
+        f"[bold]applied:[/bold] {result.applied}  [bold]promoted:[/bold] {result.promoted}  "
+        f"[bold]rejected:[/bold] {result.rejected}  [bold]dry_run:[/bold] {result.dry_run}"
+    )
+    hist.close()
+
+
+@app.command()
+def review(
+    config_dir: str = typer.Option("config", help="config directory"),
+    paper: bool = typer.Option(False, "--paper", help="paper mode (standalone)"),
+    out_dir: str = typer.Option("", help="override reviews directory (default: <config_dir>/daily_reviews)"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="call LLM but skip writing report / memory"),
+) -> None:
+    """Run end-of-day review now (standalone; writes livecfg/daily_reviews/)."""
+    from datetime import UTC, datetime
+
+    from polymaker.intelligence.profile_history import ProfileHistory
+    from polymaker.intelligence.review import gather_day_summary, load_memory, run_daily_review
+
+    _ = paper
+    db = _v3_db(config_dir)
+    mem = load_memory(db)
+    day = datetime.now(UTC).strftime("%Y-%m-%d")
+    day_start = datetime.strptime(day, "%Y-%m-%d").replace(tzinfo=UTC).timestamp()
+    actions: list[str] = []
+    try:
+        hist = ProfileHistory(db)
+        actions = hist.self_improve_actions_today(day_start)
+        hist.close()
+    except Exception:
+        pass
+    summary = gather_day_summary(db, date_utc=day, memory=mem, self_improve_actions=actions)
+    reviews = out_dir or str(Path(config_dir) / "daily_reviews")
+    try:
+        result = run_daily_review(summary, memory=mem, reviews_dir=reviews, dry_run=dry_run)
+    except Exception as exc:
+        console.print(f"[red]review failed:[/red] {exc}")
+        raise typer.Exit(1) from exc
+    console.print(f"[bold]grade:[/bold] {result.grade}")
+    if result.report_path:
+        console.print(f"[bold]report:[/bold] {result.report_path}")
+        console.print(f"[dim]also:[/dim] {Path(reviews) / 'LATEST.md'}")
+    if result.errors:
+        console.print(f"[yellow]errors:[/yellow] {result.errors}")
+    for i, p in enumerate(result.top_3_problems, 1):
+        console.print(f"  problem {i}: {p}")
+    for i, w in enumerate(result.top_3_wins, 1):
+        console.print(f"  win {i}: {w}")
+
+
+@app.command()
+def explain(
+    cid: str = typer.Argument(..., help="condition id (market) to explain"),
+    config_dir: str = typer.Option("config", help="config directory"),
+    paper: bool = typer.Option(False, "--paper", help="paper mode (standalone)"),
+) -> None:
+    """LLM narrative for the current state of a market (standalone)."""
+    from polymaker.intelligence.review import load_memory
+    from polymaker.intelligence.self_improve import call_grok_reasoning
+
+    _ = paper
+    db = _v3_db(config_dir)
+    mem = load_memory(db)
+    question, tick, rewards_daily = "", None, None
+    try:
+        from polymaker.catalog.store import CatalogStore
+        store = CatalogStore(db)
+        meta = store.get(cid)
+        if meta is None:
+            for m, _sc in store.top(500):
+                if m.condition_id == cid:
+                    meta = m
+                    break
+        if meta is not None:
+            question = meta.question
+            tick = meta.tick_size
+            rewards_daily = meta.rewards_daily_rate
+        store.close()
+    except Exception:
+        pass
+    positions: list[dict[str, Any]] = []
+    open_orders = 0
+    try:
+        from polymaker.state.store import StateStore
+        st = StateStore(db)
+        snap = st.snapshot()
+        open_orders = int(snap.get("open_orders") or 0)
+        for tok, p in list((snap.get("positions") or {}).items())[:20]:
+            positions.append({"token": tok[:20], "size": p.get("size"), "avg_price": p.get("avg_price")})
+        st.close()
+    except Exception:
+        pass
+    recent = [_memory_text(x) for x in mem.recent(8)]
+    system = (
+        "You are Polymaker's explainability layer. Return JSON with keys: "
+        "narrative (str), regime_guess (str), risks (array of str), suggested_action (str)."
+    )
+    user = json.dumps({
+        "condition_id": cid, "question": question, "tick_size": tick,
+        "rewards_daily_rate": rewards_daily, "open_orders": open_orders,
+        "positions": positions, "memory": recent,
+    }, default=str)
+    try:
+        data = call_grok_reasoning(system=system, user=user)
+    except Exception as exc:
+        console.print(f"[red]explain failed:[/red] {exc}")
+        raise typer.Exit(1) from exc
+    console.print(f"[bold]market:[/bold] {cid}")
+    if question:
+        console.print(f"[dim]{question}[/dim]")
+    console.print(data.get("narrative", data))
+    if data.get("regime_guess"):
+        console.print(f"[bold]regime_guess:[/bold] {data['regime_guess']}")
+    for r in data.get("risks") or []:
+        console.print(f"  risk: {r}")
+    if data.get("suggested_action"):
+        console.print(f"[bold]suggested_action:[/bold] {data['suggested_action']}")
+
+
+@app.command()
+def capital(
+    config_dir: str = typer.Option("config", help="config directory"),
+    paper: bool = typer.Option(False, "--paper", help="paper mode"),
+) -> None:
+    """Show current capital allocation breakdown."""
+    import os
+    _ = paper
+    capital_usdc = float(os.environ.get("POLYMAKER_CAPITAL_USDC", "0") or 0)
+    console.print(f"[bold]POLYMAKER_CAPITAL_USDC:[/bold] {capital_usdc}")
+    try:
+        from polymaker.intelligence.orchestrator import (  # type: ignore
+            load_capital_usdc,
+            plan_allocations,
+        )
+        cap = float(load_capital_usdc())
+        console.print(f"[bold]resolved capital:[/bold] {cap}")
+        try:
+            console.print(f"[bold]allocation plan:[/bold] {plan_allocations([])}")
+        except TypeError:
+            console.print("[dim]orchestrator present; pass live candidates via engine for full plan.[/dim]")
+        return
+    except Exception:
+        pass
+    try:
+        cfg = Config.load(config_dir)
+        enabled = [m for m in cfg.markets if getattr(m, "enabled", True)]
+        if not enabled:
+            console.print("[yellow]No enabled markets; capital idle.[/yellow]")
+            return
+        each = capital_usdc / len(enabled) if capital_usdc > 0 else 0.0
+        table = Table(title="Capital allocation (equal-weight fallback)")
+        table.add_column("slug")
+        table.add_column("profile")
+        table.add_column("usdc", justify="right")
+        table.add_column("pct", justify="right")
+        pct = 100.0 / len(enabled)
+        for m in enabled:
+            table.add_row(m.slug or "?", m.profile, f"{each:.2f}", f"{pct:.1f}%")
+        console.print(table)
+        console.print("[dim]Install Agent-3 orchestrator for score-weighted allocation.[/dim]")
+    except Exception as exc:
+        console.print(f"[yellow]capital view limited:[/yellow] {exc}")
+
+
+memory_app = typer.Typer(name="memory", help="Show or search agent memory items.", no_args_is_help=True)
+app.add_typer(memory_app, name="memory")
+
+
+@memory_app.callback(invoke_without_command=True)
+def memory_root(
+    ctx: typer.Context,
+    config_dir: str = typer.Option("config", help="config directory"),
+    limit: int = typer.Option(20, help="rows to show"),
+    paper: bool = typer.Option(False, "--paper", help="paper mode"),
+) -> None:
+    """Show recent memory items (default when no subcommand)."""
+    if ctx.invoked_subcommand is not None:
+        return
+    _ = paper
+    from polymaker.intelligence.review import load_memory
+    mem = load_memory(_v3_db(config_dir))
+    items = mem.recent(limit)
+    if not items:
+        console.print("[dim]No memory items yet.[/dim]")
+        return
+    for it in items:
+        ts = getattr(it, "ts", 0)
+        kind = getattr(it, "kind", "")
+        conf = getattr(it, "confidence", None)
+        prefix = f"[dim]{ts:.0f}[/dim]"
+        if kind:
+            prefix += f" [{kind}]"
+        if conf is not None:
+            with contextlib.suppress(TypeError, ValueError):
+                prefix += f" c={float(conf):.2f}"
+        console.print(f"{prefix}  {_memory_text(it)}")
+
+
+@memory_app.command("search")
+def memory_search(
+    q: str = typer.Argument(..., help="search query"),
+    config_dir: str = typer.Option("config", help="config directory"),
+    limit: int = typer.Option(20, help="max matches"),
+    paper: bool = typer.Option(False, "--paper", help="paper mode"),
+) -> None:
+    """Search memory for a query string."""
+    _ = paper
+    from polymaker.intelligence.review import load_memory
+    mem = load_memory(_v3_db(config_dir))
+    items = mem.search(q, limit=limit)
+    if not items:
+        console.print(f"[dim]No memory matches for {q!r}.[/dim]")
+        return
+    for it in items:
+        console.print(_memory_text(it))
 
 
 if __name__ == "__main__":
