@@ -59,3 +59,13 @@ def test_memory_search_help() -> None:
     assert result.exit_code == 0
     assert "search" in result.stdout.lower()
     assert "q" in result.stdout.lower() or "query" in result.stdout.lower()
+
+
+def test_improve_and_review_dry_run_flags() -> None:
+    r1 = runner.invoke(app, ["improve", "--help"])
+    assert r1.exit_code == 0
+    assert "--dry-run" in r1.stdout
+    assert "--rollback-ts" in r1.stdout
+    r2 = runner.invoke(app, ["review", "--help"])
+    assert r2.exit_code == 0
+    assert "--dry-run" in r2.stdout

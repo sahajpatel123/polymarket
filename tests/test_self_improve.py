@@ -152,11 +152,12 @@ def test_draft_paper_reject_flow(tmp_path: Path) -> None:
 
     def llm(**_kwargs):
         return {
-            "diagnosis": "try AS",
-            "suggestion": "turn on advanced quoting",
+            "diagnosis": "deeper micro",
+            "suggestion": "raise micro_levels",
             "expected_impact_pct": 5.0,
             "paper_validation_required": True,
-            "profile_overrides": {"use_advanced_quoting": True},
+            # micro_levels is neither forbidden nor immediate-safe → paper path
+            "profile_overrides": {"micro_levels": 5},
         }
 
     improver = SelfImprover(
@@ -164,15 +165,36 @@ def test_draft_paper_reject_flow(tmp_path: Path) -> None:
         llm=llm,
         paper_validator=lambda _d: False,
     )
-    live = {"use_advanced_quoting": False, "gamma": 0.5}
+    live = {"micro_levels": 3, "gamma": 0.5}
     improver.set_live_profile(live)
     result = improver.run(_decaying_eval())
     assert result.rejected
     assert not result.promoted
     assert not result.applied
-    assert improver.live_profile["use_advanced_quoting"] is False
+    assert improver.live_profile["micro_levels"] == 3
     assert improver.draft_profile is not None
-    assert improver.draft_profile["use_advanced_quoting"] is True
+    assert improver.draft_profile["micro_levels"] == 5
+    hist.close()
+
+
+def test_forbidden_only_yields_no_safe_overrides(tmp_path: Path) -> None:
+    hist = ProfileHistory(tmp_path / "h.db")
+
+    def llm(**_kwargs):
+        return {
+            "diagnosis": "try AS",
+            "suggestion": "turn on advanced quoting",
+            "expected_impact_pct": 5.0,
+            "paper_validation_required": True,
+            "profile_overrides": {"use_advanced_quoting": True},
+        }
+
+    improver = SelfImprover(history=hist, llm=llm)
+    improver.set_live_profile({"use_advanced_quoting": False, "gamma": 0.5})
+    result = improver.run(_decaying_eval())
+    assert not result.promoted
+    assert "no_safe_overrides" in result.errors
+    assert "use_advanced_quoting" in (result.suggestion.stripped_keys if result.suggestion else [])
     hist.close()
 
 
@@ -225,3 +247,56 @@ def test_no_trigger_when_healthy(tmp_path: Path) -> None:
     assert not result.triggered
     assert called["n"] == 0
     hist.close()
+
+
+def test_parse_llm_json_fence_and_preamble() -> None:
+    from polymaker.intelligence.self_improve import parse_llm_json
+    raw = "Here you go:\n```json\n{\"diagnosis\": \"x\", \"suggestion\": \"y\"}\n```\n"
+    data = parse_llm_json(raw)
+    assert data["diagnosis"] == "x"
+
+
+def test_coerce_and_strip_advanced() -> None:
+    from polymaker.intelligence.self_improve import coerce_overrides, strip_forbidden
+    live = {"gamma": 0.5, "layers": 3, "join_best_bid": False}
+    coerced = coerce_overrides(live, {"gamma": "0.8", "layers": "2", "join_best_bid": "true"})
+    assert coerced["gamma"] == 0.8
+    assert coerced["layers"] == 2
+    assert coerced["join_best_bid"] is True
+    clean, stripped = strip_forbidden({"gamma": 1.0, "use_advanced_quoting": True, "q_max_usdc": 9})
+    assert "gamma" in clean
+    assert "use_advanced_quoting" in stripped
+    assert "q_max_usdc" in stripped
+
+
+def test_dry_run_does_not_promote(tmp_path: Path) -> None:
+    from polymaker.intelligence.profile_history import ProfileHistory
+    from polymaker.intelligence.self_improve import SelfImprover
+
+    hist = ProfileHistory(tmp_path / "h.db")
+
+    def llm(**_k):
+        return {
+            "diagnosis": "d", "suggestion": "widen", "expected_impact_pct": 1.0,
+            "paper_validation_required": False, "profile_overrides": {"c_vol": 2.5},
+        }
+
+    improver = SelfImprover(history=hist, llm=llm)
+    improver.set_live_profile({"c_vol": 1.2})
+    result = improver.run(_low_hit_rate_eval(), dry_run=True)
+    assert result.dry_run
+    assert not result.promoted
+    assert improver.live_profile["c_vol"] == 1.2
+    assert result.diff["c_vol"] == (1.2, 2.5)
+    hist.close()
+
+
+def test_draft_store_roundtrip(tmp_path: Path) -> None:
+    from polymaker.intelligence.self_improve import DraftStore
+    store = DraftStore(tmp_path / "drafts")
+    store.save("live_scaled", {"gamma": 0.9}, meta={"reason": "test"})
+    loaded = store.load("live_scaled")
+    assert loaded is not None
+    assert loaded["draft"]["gamma"] == 0.9
+    store.clear("live_scaled")
+    assert store.load("live_scaled") is None

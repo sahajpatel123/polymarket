@@ -71,3 +71,16 @@ def test_rollback_missing_raises(tmp_path: Path) -> None:
     except ValueError:
         pass
     hist.close()
+
+
+def test_human_diff_and_count(tmp_path: Path) -> None:
+    from polymaker.intelligence.profile_history import ProfileHistory
+    hist = ProfileHistory(tmp_path / "ph.db")
+    hist.append(old_profile={"a": 1}, new_profile={"a": 2}, source="manual", reason="t", ts=10.0)
+    assert hist.count() == 1
+    latest = hist.latest()
+    assert latest is not None
+    assert "a:" in latest.human_diff()
+    by_id = hist.get_by_id(latest.id)
+    assert by_id is not None and by_id.id == latest.id
+    hist.close()

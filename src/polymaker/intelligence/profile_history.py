@@ -47,6 +47,11 @@ class ProfileChange:
             if old.get(k) != new.get(k)
         }
 
+    def human_diff(self) -> str:
+        """One-line-per-key human readable diff."""
+        parts = [f"{k}: {a!r} → {b!r}" for k, (a, b) in self.diff().items()]
+        return "; ".join(parts) if parts else "(no changes)"
+
 
 class ProfileHistory:
     """SQLite-backed append-only log of strategy profile mutations."""
@@ -54,8 +59,12 @@ class ProfileHistory:
     def __init__(self, db_path: str | Path) -> None:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(self.db_path))
+        self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
+        try:
+            self._conn.execute("PRAGMA journal_mode=WAL")
+        except sqlite3.Error:
+            pass
         self._conn.execute(
             """
             CREATE TABLE IF NOT EXISTS profile_history (
@@ -71,13 +80,20 @@ class ProfileHistory:
             """
         )
         self._conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_profile_history_ts "
-            "ON profile_history(ts)"
+            "CREATE INDEX IF NOT EXISTS idx_profile_history_ts ON profile_history(ts)"
+        )
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_profile_history_name "
+            "ON profile_history(profile_name)"
         )
         self._conn.commit()
 
     def close(self) -> None:
         self._conn.close()
+
+    def count(self) -> int:
+        row = self._conn.execute("SELECT COUNT(*) n FROM profile_history").fetchone()
+        return int(row["n"]) if row else 0
 
     def append(
         self,
@@ -101,10 +117,10 @@ class ProfileHistory:
             """,
             (
                 when,
-                json.dumps(old_profile, sort_keys=True),
-                json.dumps(new_profile, sort_keys=True),
+                json.dumps(old_profile, sort_keys=True, default=str),
+                json.dumps(new_profile, sort_keys=True, default=str),
                 source,
-                reason,
+                reason[:2000],
                 1 if paper_validated else 0,
                 profile_name,
             ),
@@ -112,19 +128,45 @@ class ProfileHistory:
         self._conn.commit()
         return int(cur.lastrowid)
 
-    def list_recent(self, n: int = 20) -> list[ProfileChange]:
+    def list_recent(
+        self, n: int = 20, *, profile_name: str | None = None
+    ) -> list[ProfileChange]:
         """Return the n most recent changes (newest first)."""
-        rows = self._conn.execute(
+        if profile_name:
+            rows = self._conn.execute(
+                """
+                SELECT id, ts, old_profile_json, new_profile_json, source, reason,
+                       paper_validated, profile_name
+                FROM profile_history
+                WHERE profile_name = ?
+                ORDER BY ts DESC, id DESC
+                LIMIT ?
+                """,
+                (profile_name, max(0, int(n))),
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                """
+                SELECT id, ts, old_profile_json, new_profile_json, source, reason,
+                       paper_validated, profile_name
+                FROM profile_history
+                ORDER BY ts DESC, id DESC
+                LIMIT ?
+                """,
+                (max(0, int(n)),),
+            ).fetchall()
+        return [self._row(r) for r in rows]
+
+    def get_by_id(self, row_id: int) -> ProfileChange | None:
+        row = self._conn.execute(
             """
             SELECT id, ts, old_profile_json, new_profile_json, source, reason,
                    paper_validated, profile_name
-            FROM profile_history
-            ORDER BY ts DESC, id DESC
-            LIMIT ?
+            FROM profile_history WHERE id = ?
             """,
-            (max(0, int(n)),),
-        ).fetchall()
-        return [self._row(r) for r in rows]
+            (int(row_id),),
+        ).fetchone()
+        return self._row(row) if row is not None else None
 
     def get_at(self, ts: float) -> ProfileChange | None:
         """Return the latest change at or before ``ts``, or None."""
@@ -141,8 +183,8 @@ class ProfileHistory:
         ).fetchone()
         return self._row(row) if row is not None else None
 
-    def latest(self) -> ProfileChange | None:
-        rows = self.list_recent(1)
+    def latest(self, *, profile_name: str | None = None) -> ProfileChange | None:
+        rows = self.list_recent(1, profile_name=profile_name)
         return rows[0] if rows else None
 
     def rollback(
@@ -152,26 +194,15 @@ class ProfileHistory:
         reason: str = "rollback",
         profile_name: str | None = None,
     ) -> dict[str, Any]:
-        """Roll profile state back to the snapshot recorded at/before ``to_ts``.
-
-        Appends a new history row whose ``new_profile`` is the historical
-        ``old_profile`` (or ``new_profile`` of the matched row if that was the
-        state at that time — we restore the *old* side of that change, i.e.
-        the profile that was live just before that change).
-
-        Returns the restored profile dict.
-        """
+        """Restore the profile that was live just before the change at ``to_ts``."""
         target = self.get_at(to_ts)
         if target is None:
             raise ValueError(f"no profile_history entry at or before ts={to_ts}")
 
-        # Restore the profile that was active *before* the change at to_ts
-        # (old_profile_json). If the operator wants the post-change state,
-        # they can pass a slightly later timestamp.
         restored = target.old_profile
-        current = self.latest()
-        current_profile = current.new_profile if current is not None else {}
         name = profile_name or target.profile_name
+        current = self.latest(profile_name=name)
+        current_profile = current.new_profile if current is not None else {}
         self.append(
             old_profile=current_profile,
             new_profile=restored,
@@ -181,6 +212,22 @@ class ProfileHistory:
             profile_name=name,
         )
         return restored
+
+    def self_improve_actions_today(self, day_start_ts: float) -> list[str]:
+        """Human-readable self_improve reasons since ``day_start_ts``."""
+        rows = self._conn.execute(
+            """
+            SELECT reason, paper_validated FROM profile_history
+            WHERE source = 'self_improve' AND ts >= ?
+            ORDER BY ts ASC
+            """,
+            (float(day_start_ts),),
+        ).fetchall()
+        out: list[str] = []
+        for r in rows:
+            flag = "paper-ok" if r["paper_validated"] else "applied/reject"
+            out.append(f"{flag}: {r['reason']}")
+        return out
 
     @staticmethod
     def _row(r: sqlite3.Row) -> ProfileChange:
