@@ -137,29 +137,39 @@ class RiskConfig(BaseModel):
         *,
         rewards_min_size: float = 0.0,
         typical_price: float = 0.5,
+        exchange_min_shares: float = 5.0,
     ) -> StrategyProfile:
         """Scale a profile's base_size / q_max / bankroll to this risk bankroll.
 
         Used so a single advanced profile works at $30 or $5_000 without
         hand-editing every size knob. No-op when bankroll is unset.
 
-        When ``rewards_min_size > 0``, the per-order size is floored at
-        the USDC needed to fund one reward-eligible share count at the
-        given ``typical_price``. This prevents the silent $0-reward
-        scenario from the 12h paper report.
+        When ``rewards_min_size > 0`` and capital can fund a reward-eligible
+        two-sided cycle, base_size is floored via
+        :func:`decide_maker_reward_eligibility`. When capital cannot fund
+        the floor, sizes are left at the bankroll heuristic — the engine
+        must call the same gate and **skip** the market rather than quote
+        undersized for $0 rewards.
         """
+        from polymaker.benchmark.capital import decide_maker_reward_eligibility
+
         b = float(self.bankroll_usdc)
         if b <= 0:
             return profile
-        # Per-order size: ~10% of bankroll, floor $2, cap $250.
-        base = max(2.0, min(250.0, b * 0.10))
-        # Reward-eligibility floor: if the bankroll can fund a reward-min
-        # order, make sure base_size_usdc meets it. Otherwise log the gap
-        # but don't override — undersized is better than silently burning.
-        if rewards_min_size > 0 and typical_price > 0:
-            reward_notional = rewards_min_size * typical_price
-            if reward_notional <= b * 0.40:  # can afford 1 reward-min order
-                base = max(base, reward_notional)
+        gate = decide_maker_reward_eligibility(
+            bankroll_usdc=b,
+            rewards_min_size=float(rewards_min_size or 0.0),
+            exchange_min_shares=float(exchange_min_shares or 5.0),
+            typical_price=float(typical_price or 0.5),
+            layers=int(getattr(profile, "layers", 1) or 1),
+            reward_size_mult=float(getattr(profile, "reward_size_mult", 1.0) or 1.0),
+            default_base_size_usdc=float(profile.base_size_usdc or 0.0),
+        )
+        if gate.eligible and gate.recommended_base_size_usdc > 0:
+            base = gate.recommended_base_size_usdc
+        else:
+            # Unset eligibility (no min) or skip-path: bankroll heuristic only.
+            base = max(2.0, min(250.0, b * 0.10))
         q_max = max(base, float(self.max_market_notional_usdc))
         return profile.model_copy(update={
             "base_size_usdc": base,

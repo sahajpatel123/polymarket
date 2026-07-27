@@ -26,6 +26,10 @@ from polymaker.alerts import (
     WS_DISCONNECT,
     Alerter,
 )
+from polymaker.benchmark.capital import (
+    MakerRewardEligibility,
+    decide_maker_reward_eligibility,
+)
 from polymaker.catalog.gamma import GammaClient, fetch_reward_rates, parse_market
 from polymaker.catalog.scoring import score_market
 from polymaker.catalog.store import CatalogStore
@@ -38,8 +42,12 @@ from polymaker.intelligence import (
     GovernedGrokAgent,
     GrokAgent,
     LLMGovernance,
+    MarketDiscovery,
     OversightLoop,
 )
+from polymaker.intelligence.memory import AgentMemory
+from polymaker.intelligence.profile_history import ProfileHistory
+from polymaker.intelligence.self_improve import SelfImprover
 from polymaker.journal import Journal
 from polymaker.logging import get_logger
 from polymaker.marketdata.orderbook import BookView
@@ -100,6 +108,8 @@ class Engine:
         self._token_cid: dict[str, str] = {}
         self._locks: dict[str, asyncio.Lock] = {}  # per-market: serialize recompute vs reconcile
         self._halted: set[str] = set()  # markets closed/resolved/not-accepting
+        # condition_id → last capital/reward eligibility decision (skip vs floor)
+        self._reward_eligibility: dict[str, MakerRewardEligibility] = {}
         # supervised tasks: name -> (factory, task) so a dead task restarts
         self._task_specs: dict[str, Any] = {}
         self._tasks: dict[str, asyncio.Task[Any]] = {}
@@ -134,6 +144,13 @@ class Engine:
         self._llm_actions: list = []
         self._llm_enabled = bool(cfg.secrets.xai_api_key)
         self._per_market_spread_mult: dict[str, float] = {}
+        # V3: long-term memory + self-improve + review
+        self.memory: AgentMemory | None = None
+        self.profile_hist: ProfileHistory | None = None
+        self.self_improver: SelfImprover | None = None
+        self._last_improve_ts: float = 0.0
+        self._last_review_ts: float = 0.0
+        self._discovery_agent: MarketDiscovery | None = None
 
     # ── lifecycle ───────────────────────────────────────────────────────
     async def start(self) -> None:
@@ -183,15 +200,41 @@ class Engine:
                     )
                     self.llm_gov = LLMGovernance(capital_usdc=_cap)
                     self.gov_agent = GovernedGrokAgent(self.grok_agent, self.llm_gov)
+
+                    # Memory: load previous insights for warm LLM context
+                    _mem_path = Path(self.cfg.paths.db).parent / "agent_memory.db"
+                    self.memory = AgentMemory(db_path=str(_mem_path))
+                    _recent = self.memory.recent(20)
+                    log.info("memory_loaded", n_recent=len(_recent))
+
+                    # Profile history: track every mutation for rollback
+                    _hist_path = Path(self.cfg.paths.db).parent / "profile_history.db"
+                    self.profile_hist = ProfileHistory(str(_hist_path))
+
+                    # Self-improver: auto-cycle
+                    self.self_improver = SelfImprover(
+                        history=self.profile_hist,
+                        memory=self.memory,
+                        profile_name=next(iter(self.cfg.profiles), "default"),
+                    )
+
+                    # LLM-ranked market discovery
+                    self._discovery_agent = MarketDiscovery(
+                        agent=self.grok_agent,
+                        memory=self.memory,
+                    )
+
+                    # Oversight: 30-min commentary + action queue
                     self.oversight_loop = OversightLoop(
                         agent=self.grok_agent,
                         llm_gov=self.llm_gov,
-                        # Adapter: provide snapshot without requiring the engine
-                        # tightly-coupled (the oversight loop uses composition).
                         snapshot_fn=self._oversight_snapshot,
                     )
-                    self.oversight_loop.start()
-                    log.info("llm_wired", capital_usdc=_cap, model=self.grok_agent.model)
+
+                    log.info("llm_wired",
+                             capital_usdc=_cap,
+                             model=self.grok_agent.model,
+                             memory_n=len(_recent))
                 except Exception:  # noqa: BLE001
                     log.exception("llm_wire_failed — running deterministic only")
                     self._llm_enabled = False
@@ -209,6 +252,17 @@ class Engine:
         # Hot-reload: watch markets.toml for manual edits.
         if self.cfg.engine.auto_discovery_hot_reload:
             self._spawn("hot_reload", self._hot_reload_loop)
+
+        # ── V3 LLM supervised loops (Grok 4.5) ────────────────────────
+        if self._llm_enabled and self.oversight_loop is not None:
+            self._spawn("oversight", self._oversight_loop_task)
+            self._spawn("improve", self._improve_loop)
+            self._spawn("review", self._review_loop)
+            if self._discovery_agent is not None:
+                self._spawn("llm_discovery", self._llm_discovery_loop)
+            log.info("llm_supervised_tasks_started")
+        # ──────────────────────────────────────────────────────────────
+
         self._spawn("supervisor", self._supervise)
         self.risk.reset_day()
         log.info(
@@ -445,14 +499,19 @@ class Engine:
             book = self.md.book(cid)
             fv = compute_fair_value(book, meta)
             regime = self.regime_m.get(cid, RegimeMachine()).current
+            gate = self._reward_eligibility.get(cid)
             markets[cid[:8]] = {
                 "slug": meta.slug,
                 "fv": round(float(fv), 5),
                 "regime": str(regime.value if hasattr(regime, "value") else regime),
                 "spread": round(float(book.spread_bps() if book else 0), 1),
                 "reward_min_size": getattr(meta, "rewards_min_size", 0),
+                "reward_eligible": None if gate is None else gate.eligible,
+                "capital_skip": None if gate is None else gate.skip,
+                "capital_reason": "" if gate is None else gate.reason,
             }
 
+        n_cap_skip = sum(1 for g in self._reward_eligibility.values() if g.skip)
         return {
             "equity": round(equity, 2),
             "daily_pnl": round(daily, 2),
@@ -461,6 +520,7 @@ class Engine:
             "n_active_markets": len(self.metas),
             "n_halted": len(self._halted),
             "n_quarantined": len(self._quarantined),
+            "n_capital_skip": n_cap_skip,
             "markets": markets,
         }
 
@@ -511,6 +571,123 @@ class Engine:
             return {"action": atype, "status": "deferred_to_self_improve", "cid": cid[:8]}
 
         return {"action": atype, "status": "unknown", "reason": reason}
+
+    # ── V3 supervised loops ─────────────────────────────────────────
+
+    async def _oversight_loop_task(self) -> None:
+        """Run the OversightLoop and drain actions into the engine."""
+        if self.oversight_loop is None:
+            return
+        while self._running:
+            try:
+                snapshot = self._oversight_snapshot()
+                await self.oversight_loop.run_once(snapshot)
+                actions = self.oversight_loop.drain_actions()
+                for a in actions:
+                    result = self.apply_oversight_action({
+                        "type": a.type,
+                        "condition_id": a.market or "",
+                        "reason": a.reason,
+                    })
+                    log.info("oversight_action_applied", result=result)
+            except Exception:
+                log.exception("oversight_loop_error")
+            await asyncio.sleep(1800)  # 30 min
+
+    async def _improve_loop(self) -> None:
+        """Auto self-improve: every 6h or on strategy decay."""
+        if self.self_improver is None:
+            return
+        while self._running:
+            try:
+                should_run = False
+                reason = "time"
+                now = time.time()
+                if now - self._last_improve_ts > 21600:
+                    should_run = True
+                if should_run and self._last_improve_ts < now - 300:
+                    eval_ = self._build_self_evaluation()
+                    try:
+                        result = self.self_improver.run(eval_, force=True)
+                        if result.triggered and result.suggestion:
+                            log.info("improve_suggestion",
+                                     diagnosis=result.suggestion.diagnosis,
+                                     suggestion=result.suggestion.suggestion)
+                            if self.llm_gov is not None:
+                                _ = self.llm_gov.critique_prompt(
+                                    suggestion=result.suggestion.suggestion,
+                                    actions=result.suggestion.profile_overrides,
+                                    context={"reason": reason},
+                                )
+                            if self.memory is not None:
+                                self.memory.add(
+                                    content=f"self_improve[{reason}]: {result.suggestion.diagnosis}",
+                                    kind="insight", confidence=0.7,
+                                )
+                    except Exception:
+                        log.exception("improve_loop_error")
+                    self._last_improve_ts = now
+                await asyncio.sleep(600)
+            except Exception:
+                log.exception("improve_loop_error")
+
+    async def _review_loop(self) -> None:
+        """Auto daily review at ~23:55 UTC."""
+        from polymaker.intelligence.review import (
+            gather_day_summary,
+            render_markdown,
+            run_daily_review,
+            should_run_eod_review,
+        )
+        if self.memory is None:
+            return
+        while self._running:
+            try:
+                if should_run_eod_review():
+                    summary = gather_day_summary(
+                        db_path=self.cfg.paths.db,
+                        memory=self.memory,
+                    )
+                    result = run_daily_review(
+                        summary=summary,
+                        memory=self.memory,
+                        api_key=self.cfg.secrets.xai_api_key,
+                    )
+                    _md = render_markdown(summary, result)
+                    log.info("daily_review_complete", grade=result.grade)
+                    self._last_review_ts = time.time()
+                await asyncio.sleep(300)
+            except Exception:
+                log.exception("review_loop_error")
+
+    async def _llm_discovery_loop(self) -> None:
+        """LLM-ranked market discovery every 30 min."""
+        if self._discovery_agent is None:
+            return
+        while self._running:
+            try:
+                candidates = self.catalog.list_active(limit=50)
+                if candidates:
+                    result = await self._discovery_agent.rank_candidates(candidates)
+                    rankings = getattr(result, "rankings", [])
+                    if rankings:
+                        log.info(
+                            "llm_discovery_ranked",
+                            n_total=len(candidates),
+                            n_top=len(rankings),
+                        )
+                await asyncio.sleep(1800)  # 30 min
+            except Exception:
+                log.exception("llm_discovery_loop_error")
+                await asyncio.sleep(60)
+
+    def _build_self_evaluation(self) -> Any:
+        """Build a minimal SelfEvaluation from engine state for self-improve."""
+        from polymaker.intelligence.self_eval import SelfEvaluation
+
+        eval_ = SelfEvaluation()
+        eval_.update(pnl=self.risk.daily_pnl, regime="QUIET", offset="BUY_2")
+        return eval_
 
     # ── Discovery + hot-reload ─────────────────────────────────────────
 
@@ -642,6 +819,37 @@ class Engine:
                     "base_size_usdc": min(profile.base_size_usdc, max(2.0, cap * 0.25)),
                     "bankroll_usdc": cap,
                 })
+            # Refuse markets we cannot fund at rewardsMinSize (two-sided).
+            gate_bankroll = cap if cap > 0 else bankroll
+            typ_px = 0.5
+            if meta.best_bid > 0 and meta.best_ask > 0:
+                typ_px = 0.5 * (meta.best_bid + meta.best_ask)
+            gate = decide_maker_reward_eligibility(
+                bankroll_usdc=gate_bankroll,
+                rewards_min_size=float(meta.rewards_min_size or 0.0),
+                exchange_min_shares=float(meta.min_order_size or 5.0),
+                typical_price=typ_px,
+                layers=int(mkt_profile.layers or 1),
+                reward_size_mult=float(mkt_profile.reward_size_mult or 1.0),
+                default_base_size_usdc=float(mkt_profile.base_size_usdc or 0.0),
+            )
+            self._reward_eligibility[meta.condition_id] = gate
+            if gate.skip:
+                log.info(
+                    "auto_market_skip_capital",
+                    condition_id=meta.condition_id,
+                    slug=meta.slug,
+                    reason=gate.reason,
+                    bankroll_usdc=gate.bankroll_usdc,
+                    rewards_min_size=meta.rewards_min_size,
+                )
+                continue
+            if gate.eligible and gate.recommended_base_size_usdc > 0:
+                mkt_profile = mkt_profile.model_copy(update={
+                    "base_size_usdc": max(
+                        mkt_profile.base_size_usdc, gate.recommended_base_size_usdc
+                    ),
+                })
             ok = await self.add_market(meta, mkt_profile)
             if ok:
                 added += 1
@@ -651,6 +859,7 @@ class Engine:
                     slug=meta.slug,
                     score=round(score_market(meta).score, 4),
                     allocated_usdc=round(cap, 2),
+                    reward_eligible=gate.eligible,
                 )
 
         # Remove markets that are no longer accepting orders (closed/resolved)
@@ -1018,6 +1227,29 @@ class Engine:
                 wake = min(wake, 10.0)
         return max(1.0, wake)
 
+    async def _cancel_market_orders(
+        self, cid: str, meta: MarketMeta, *, reason: str = ""
+    ) -> None:
+        """Pull all resting orders for a market (capital skip / force flat quotes)."""
+        live = self.state.orders_for(meta.yes.token_id) + self.state.orders_for(meta.no.token_id)
+        if not live:
+            return
+        oids = [o.order_id for o in live]
+        ok = await self.gateway.cancel(oids)
+        if ok:
+            for o in live:
+                if self.paper:
+                    self._fill_sim.cancel(o.order_id)
+                self.state.remove_order(o.order_id)
+            log.info(
+                "market_orders_cancelled",
+                condition_id=cid,
+                n=len(oids),
+                reason=reason,
+            )
+        else:
+            await self._refresh_token_orders(meta, grace_s=10.0)
+
     async def _recompute(self, cid: str) -> None:
         lock = self._locks.get(cid)
         if lock is None:
@@ -1117,14 +1349,61 @@ class Engine:
                 critical=any(k in rd.reason for k in ("daily_loss", "kill", "error_rate")),
             )
         ws_stale = blind
+
+        # Capital-aware reward eligibility: floor size when affordable, else
+        # skip this market with an explicit reason (no silent $0-reward quotes).
+        typical_px = float(micro) if micro is not None else 0.5
+        bankroll = float(self.cfg.risk.bankroll_usdc or 0.0)
+        if bankroll <= 0:
+            bankroll = float(getattr(p, "bankroll_usdc", 0.0) or 0.0)
+        reward_gate = decide_maker_reward_eligibility(
+            bankroll_usdc=bankroll,
+            rewards_min_size=float(getattr(meta, "rewards_min_size", 0.0) or 0.0),
+            exchange_min_shares=float(getattr(meta, "min_order_size", 5.0) or 5.0),
+            typical_price=typical_px,
+            layers=int(getattr(p, "layers", 1) or 1),
+            reward_size_mult=float(getattr(p, "reward_size_mult", 1.0) or 1.0),
+            default_base_size_usdc=float(getattr(p, "base_size_usdc", 0.0) or 0.0),
+        )
+        self._reward_eligibility[cid] = reward_gate
+        if reward_gate.skip:
+            log.info(
+                "market_skip_capital",
+                condition_id=cid,
+                cid=cid[:8],
+                reason=reward_gate.reason,
+                rewards_min_size=reward_gate.min_shares,
+                bankroll_usdc=reward_gate.bankroll_usdc,
+                required_two_sided_usdc=reward_gate.required_two_sided_usdc,
+            )
+            self.metrics.emit(
+                "capital_skip",
+                ts=now,
+                condition_id=cid,
+                reason=reward_gate.reason,
+                bankroll_usdc=reward_gate.bankroll_usdc,
+                min_order_notional_usdc=reward_gate.min_order_notional_usdc,
+                required_two_sided_usdc=reward_gate.required_two_sided_usdc,
+                paper=self.paper,
+            )
+            await self._cancel_market_orders(cid, meta, reason="capital_ineligible")
+            return
+
         # Scale sizes to risk bankroll when set (capital-adaptive profiles).
         # Pass reward_min_size + typical_price so the scaling floors our
         # base_size_usdc at a reward-eligible level when bankroll allows.
         p = self.risk.cfg.scale_profile_sizes(
             p,
             rewards_min_size=getattr(meta, "rewards_min_size", 0.0),
-            typical_price=getattr(meta, "yes", None).price if hasattr(meta, "yes") else 0.5,
+            typical_price=typical_px,
+            exchange_min_shares=float(getattr(meta, "min_order_size", 5.0) or 5.0),
         )
+        if reward_gate.eligible and reward_gate.recommended_base_size_usdc > 0:
+            p = p.model_copy(update={
+                "base_size_usdc": max(
+                    p.base_size_usdc, reward_gate.recommended_base_size_usdc
+                ),
+            })
 
         # Degradation detector: cut size / quarantine / baseline fallback.
         # Quarantine = REDUCE_ONLY (exits still place). Never HALT for quarantine
