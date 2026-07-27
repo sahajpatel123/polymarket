@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 from pathlib import Path
 from typing import Any
@@ -345,7 +346,9 @@ def improve(
     from polymaker.intelligence.review import load_memory
     from polymaker.intelligence.self_eval import SelfEvaluation
     from polymaker.intelligence.self_improve import (
-        AppliedOverridesStore, DraftStore, SelfImprover,
+        AppliedOverridesStore,
+        DraftStore,
+        SelfImprover,
     )
 
     _ = paper
@@ -417,6 +420,7 @@ def review(
 ) -> None:
     """Run end-of-day review now (standalone; writes livecfg/daily_reviews/)."""
     from datetime import UTC, datetime
+
     from polymaker.intelligence.profile_history import ProfileHistory
     from polymaker.intelligence.review import gather_day_summary, load_memory, run_daily_review
 
@@ -531,7 +535,10 @@ def capital(
     capital_usdc = float(os.environ.get("POLYMAKER_CAPITAL_USDC", "0") or 0)
     console.print(f"[bold]POLYMAKER_CAPITAL_USDC:[/bold] {capital_usdc}")
     try:
-        from polymaker.intelligence.orchestrator import load_capital_usdc, plan_allocations  # type: ignore
+        from polymaker.intelligence.orchestrator import (  # type: ignore
+            load_capital_usdc,
+            plan_allocations,
+        )
         cap = float(load_capital_usdc())
         console.print(f"[bold]resolved capital:[/bold] {cap}")
         try:
@@ -549,8 +556,10 @@ def capital(
             return
         each = capital_usdc / len(enabled) if capital_usdc > 0 else 0.0
         table = Table(title="Capital allocation (equal-weight fallback)")
-        table.add_column("slug"); table.add_column("profile")
-        table.add_column("usdc", justify="right"); table.add_column("pct", justify="right")
+        table.add_column("slug")
+        table.add_column("profile")
+        table.add_column("usdc", justify="right")
+        table.add_column("pct", justify="right")
         pct = 100.0 / len(enabled)
         for m in enabled:
             table.add_row(m.slug or "?", m.profile, f"{each:.2f}", f"{pct:.1f}%")
@@ -589,10 +598,8 @@ def memory_root(
         if kind:
             prefix += f" [{kind}]"
         if conf is not None:
-            try:
+            with contextlib.suppress(TypeError, ValueError):
                 prefix += f" c={float(conf):.2f}"
-            except (TypeError, ValueError):
-                pass
         console.print(f"{prefix}  {_memory_text(it)}")
 
 

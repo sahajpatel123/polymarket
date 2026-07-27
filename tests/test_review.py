@@ -98,8 +98,12 @@ def test_from_llm_truncates_lists() -> None:
 
 def test_should_run_eod_and_latest(tmp_path: Path) -> None:
     from datetime import UTC, datetime
+
     from polymaker.intelligence.review import (
-        DaySummary, ReviewResult, gather_day_summary, persist_review, should_run_eod_review,
+        ReviewResult,
+        gather_day_summary,
+        persist_review,
+        should_run_eod_review,
     )
     assert should_run_eod_review(datetime(2026, 7, 27, 23, 56, tzinfo=UTC)) is True
     assert should_run_eod_review(datetime(2026, 7, 27, 12, 0, tzinfo=UTC)) is False

@@ -7,10 +7,11 @@ import logging
 import re
 import sqlite3
 import time
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Callable, Protocol
+from typing import Any, Protocol
 
 from polymaker.intelligence.self_improve import (
     REASONING_MODEL,

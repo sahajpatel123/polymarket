@@ -6,6 +6,7 @@ SQLite so operators can inspect diffs and roll back to a prior snapshot.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import sqlite3
 import time
@@ -61,10 +62,8 @@ class ProfileHistory:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
-        try:
+        with contextlib.suppress(sqlite3.Error):
             self._conn.execute("PRAGMA journal_mode=WAL")
-        except sqlite3.Error:
-            pass
         self._conn.execute(
             """
             CREATE TABLE IF NOT EXISTS profile_history (

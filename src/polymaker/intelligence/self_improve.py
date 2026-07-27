@@ -18,9 +18,10 @@ import re
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Protocol
+from typing import Any, Protocol
 
 from polymaker.intelligence.profile_history import ProfileHistory
 from polymaker.intelligence.self_eval import SelfEvaluation
@@ -273,8 +274,9 @@ def call_grok_reasoning(
         raise RuntimeError("XAI_API_KEY not set in environment / .env")
 
     try:
-        from polymaker.intelligence.agent import GrokAgent  # type: ignore
         import asyncio
+
+        from polymaker.intelligence.agent import GrokAgent  # type: ignore
         agent = GrokAgent(api_key=key, model=model)
         async def _ago() -> dict[str, Any]:
             resp = await agent.chat([
