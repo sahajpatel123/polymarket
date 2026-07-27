@@ -44,11 +44,20 @@ MAX_REQ_PER_MIN = 60
 MAX_RETRIES = 3
 RETRY_BASE_S = 0.5
 
-# Model id substrings that indicate a reasoning-capable SKU.
-_REASONING_MARKERS = ("reasoning", "grok-4")
-
-
 MetricsSink = Callable[[dict[str, Any]], None]
+
+
+def is_reasoning_model(model: str) -> bool:
+    """True for reasoning-capable xAI SKUs (reject non-reasoning variants)."""
+    lower = model.strip().lower()
+    # Explicit non-reasoning labels must never pass (even if they contain
+    # the substring "reasoning", e.g. "non-reasoning-chat").
+    if "non-reasoning" in lower or "nonreasoning" in lower:
+        return False
+    if "reasoning" in lower:
+        return True
+    # grok-4 family is reasoning-capable per product defaults
+    return lower.startswith("grok-4") or lower.startswith("grok4")
 
 
 @dataclass
@@ -160,8 +169,7 @@ def resolve_model(env: dict[str, str] | None = None) -> str:
     e = env if env is not None else os.environ
     model = (e.get("XAI_MODEL") or e.get("POLYMAKER_XAI_MODEL") or DEFAULT_MODEL).strip()
     allow = (e.get("XAI_ALLOW_NON_REASONING") or "").strip() in ("1", "true", "yes")
-    lower = model.lower()
-    if not allow and not any(m in lower for m in _REASONING_MARKERS):
+    if not allow and not is_reasoning_model(model):
         raise ValueError(
             f"model {model!r} does not look like a reasoning SKU; "
             f"default is {DEFAULT_MODEL}. Set XAI_ALLOW_NON_REASONING=1 to override."
