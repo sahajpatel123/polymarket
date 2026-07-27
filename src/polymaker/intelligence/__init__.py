@@ -18,6 +18,11 @@ Components:
 - RiskState: dynamic stop-loss, adaptive position limits
 - SelfEvaluation: calibration, decay detection, PnL attribution
 - SmartExecutor: timing, anti-gaming, iceberg sizing
+- GrokAgent: xAI Grok 4.5 reasoning client (tool-calling)
+- AgentMemory: long-term SQLite memory
+- OversightLoop: 30-min commentary + action queue
+- MarketDiscovery: LLM-ranked Gamma market selection
+- prompts: versioned LLM prompt templates
 
 All components are pure functions / state machines — no I/O. The
 engine feeds them raw data and queries decisions.
@@ -41,10 +46,23 @@ from polymaker.intelligence.adaptive_spread import (
     AdaptiveSpreadParams,
     MarketFillStats,
 )
+from polymaker.intelligence.agent import (
+    DEFAULT_MODEL,
+    AgentResponse,
+    GrokAgent,
+    TokenUsage,
+    ToolCall,
+    function_tool,
+)
 from polymaker.intelligence.decision import (
     DecisionFramework,
     IntelligenceState,
     TradingDecision,
+)
+from polymaker.intelligence.discovery import (
+    DiscoveryResult,
+    MarketDiscovery,
+    RankedMarket,
 )
 from polymaker.intelligence.execution import (
     AntiGamingDetector,
@@ -60,6 +78,7 @@ from polymaker.intelligence.info_theory import (
     KLDivergenceTracker,
     TransferEntropyTracker,
 )
+from polymaker.intelligence.memory import AgentMemory
 from polymaker.intelligence.microstructure import (
     MicrostructureFeatures,
     MicrostructureTracker,
@@ -71,10 +90,16 @@ from polymaker.intelligence.microstructure import (
     compute_opportunity_score,
     compute_realized_vol,
 )
+from polymaker.intelligence.oversight import (
+    OversightAction,
+    OversightLoop,
+    OversightReport,
+)
 from polymaker.intelligence.portfolio import (
     MarketAllocationState,
     PortfolioState,
 )
+from polymaker.intelligence.prompts import PROMPT_VERSION
 from polymaker.intelligence.regime_detector import (
     FeatureExtractor,
     MarketFeatures,
@@ -145,4 +170,19 @@ __all__ = [
     "compute_opportunity_score",
     "compute_realized_vol",
     "detect_regime",
+    # V3 LLM layer
+    "AgentMemory",
+    "AgentResponse",
+    "DEFAULT_MODEL",
+    "DiscoveryResult",
+    "GrokAgent",
+    "MarketDiscovery",
+    "OversightAction",
+    "OversightLoop",
+    "OversightReport",
+    "PROMPT_VERSION",
+    "RankedMarket",
+    "TokenUsage",
+    "ToolCall",
+    "function_tool",
 ]
