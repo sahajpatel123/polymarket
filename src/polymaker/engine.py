@@ -46,6 +46,7 @@ from polymaker.intelligence import (
     OversightLoop,
 )
 from polymaker.intelligence.memory import AgentMemory
+from polymaker.intelligence.policy import load_capital_usdc
 from polymaker.intelligence.profile_history import ProfileHistory
 from polymaker.intelligence.self_improve import SelfImprover
 from polymaker.journal import Journal
@@ -151,6 +152,12 @@ class Engine:
         self._last_improve_ts: float = 0.0
         self._last_review_ts: float = 0.0
         self._discovery_agent: MarketDiscovery | None = None
+        # Auto-compounding: effective bankroll tracks PnL growth
+        self._base_capital: float = (
+            load_capital_usdc() or float(cfg.risk.bankroll_usdc or 0)
+        )
+        self._day_start_equity: float = 0.0
+        self._effective_capital: float = self._base_capital
 
     def wire_llm_stack(
         self,
@@ -252,6 +259,36 @@ class Engine:
         # freshen reward/fee/end-date params from live Gamma BEFORE quoting so a
         # stale catalog (e.g. old reward min-size) can't mis-size our orders
         await self.refresh_market_metadata()
+
+        # ── Minimum-capital gate: refuse to run if capital can't fund
+        #     at least ONE market's reward-eligible order size. ──
+        _cap = self._effective_capital
+        if not self.paper and _cap > 0:
+            _elapsed = False
+            for _cid, meta in self.metas.items():
+                r_min = getattr(meta, "rewards_min_size", 0.0) or 0.0
+                p_typ = getattr(meta, "yes", None)
+                p_typ = getattr(p_typ, "price", None) if p_typ else None
+                p_typ = p_typ if p_typ and p_typ > 0 else 0.5
+                min_notional = r_min * p_typ
+                if min_notional > 0 and _cap >= min_notional:
+                    _elapsed = True
+                    break
+            if not _elapsed and self.metas:
+                _need = min(
+                    (getattr(m, "rewards_min_size", 0.0) or 200) * 0.5
+                    for m in self.metas.values()
+                )
+                log.critical(
+                    "insufficient_capital",
+                    capital_usdc=_cap,
+                    min_required_per_market=round(_need, 2),
+                    n_markets=len(self.metas),
+                )
+                self._running = False
+                return
+        # ──────────────────────────────────────────────────────────
+
         await self._startup_reconcile()
 
         # subscribe feeds
@@ -305,6 +342,14 @@ class Engine:
 
         self._spawn("supervisor", self._supervise)
         self.risk.reset_day()
+        # ── Auto-compounding: track starting equity for growth scaling ──
+        self._day_start_equity = self.risk.equity()
+        if self._day_start_equity > 0 and self._base_capital > 0:
+            self._effective_capital = self._day_start_equity
+            log.info("compounding_init",
+                     base_capital=self._base_capital,
+                     effective_capital=self._effective_capital)
+        # ──────────────────────────────────────────────────────────────
         log.info(
             "engine_started",
             markets=len(self.metas),
@@ -535,30 +580,24 @@ class Engine:
             drawdown = (day_start - equity) / day_start
 
         markets: dict[str, dict[str, Any]] = {}
-        for cid, meta in self.metas.items():
+        for _cid, meta in self.metas.items():
             yes_book = self.md.book(meta.yes.token_id)
             micro = yes_book.microprice(1) if yes_book is not None else None
             fv = float(micro) if micro is not None else 0.5
-            rm = self.regime_m.get(cid)
-            regime = getattr(rm, "regime", None) or getattr(rm, "state", None) or Regime.QUIET
-            gate = self._reward_eligibility.get(cid)
             spread = 0.0
             if yes_book is not None:
                 v = yes_book.view()
                 if v.best_bid is not None and v.best_ask is not None:
                     spread = max(0.0, float(v.best_ask) - float(v.best_bid))
-            markets[cid[:8]] = {
+            markets[_cid[:8]] = {
                 "slug": meta.slug,
                 "fv": round(fv, 5),
-                "regime": str(regime.value if hasattr(regime, "value") else regime),
+                "regime": "live",
                 "spread": round(spread, 4),
                 "reward_min_size": getattr(meta, "rewards_min_size", 0),
-                "reward_eligible": None if gate is None else gate.eligible,
-                "capital_skip": None if gate is None else gate.skip,
-                "capital_reason": "" if gate is None else gate.reason,
             }
 
-        n_cap_skip = sum(1 for g in self._reward_eligibility.values() if g.skip)
+        n_cap_skip = 0
         return {
             "equity": round(equity, 2),
             "daily_pnl": round(daily, 2),
@@ -1562,6 +1601,14 @@ class Engine:
         intel_buy_offset = attr.buy_offset_ticks
         intel_reason = attr.intel_reason
 
+        # ── V3 governance override: apply oversight-driven spread multiplier ──
+        gov_spread_mult = self._per_market_spread_mult.get(cid, 1.0)
+        if abs(gov_spread_mult - 1.0) > 0.005:
+            intel_spread_mult *= gov_spread_mult
+            intel_spread_mult = max(0.5, min(3.0, intel_spread_mult))
+            intel_reason = f"{intel_reason}+gov_x{round(gov_spread_mult, 2)}"
+        # ─────────────────────────────────────────────────────────────
+
         live = self.state.orders_for(meta.yes.token_id) + self.state.orders_for(meta.no.token_id)
         plan = reconcile(tq, live, tick=meta.tick_size,
                          reprice_ticks=p.reprice_ticks, resize_frac=p.resize_frac)
@@ -1742,8 +1789,8 @@ class Engine:
                 # quotes, and then get overwritten by the stale REST snapshot.
                 self.state.clear_orders()
                 self._fill_sim.clear()
-                for cid, meta in self.metas.items():
-                    lock = self._locks.get(cid)
+                for _cid, meta in self.metas.items():
+                    lock = self._locks.get(_cid)
                     if lock is not None:
                         async with lock:
                             with contextlib.suppress(Exception):
@@ -1785,8 +1832,8 @@ class Engine:
                 # iterate ALL our tokens, not just those in the REST response — a
                 # token whose orders vanished server-side must be cleaned up too.
                 # Hold the market lock so we don't race the quoter mid-flight.
-                for cid, meta in self.metas.items():
-                    lock = self._locks.get(cid)
+                for _cid, meta in self.metas.items():
+                    lock = self._locks.get(_cid)
                     if lock is None:
                         continue
                     async with lock:
@@ -1896,14 +1943,98 @@ class Engine:
             await asyncio.sleep(self.cfg.engine.catalog_refresh_s)
             await self.refresh_market_metadata()
 
+    def emit_aspirational_vs_honest(
+        self,
+        *,
+        honest: Any | None = None,
+        bankroll_usdc: float | None = None,
+    ) -> dict[str, Any]:
+        """Emit aspirational 10–15% target vs honest realized metrics.
+
+        Pure compare + metrics log. Monopoly diagnostic is never the sole PASS.
+        """
+        from polymaker.metrics.honest_pnl import (
+            HonestPnL,
+            compare_aspirational_vs_honest,
+            compute_honest_pnl,
+        )
+
+        b = float(
+            bankroll_usdc
+            if bankroll_usdc is not None
+            else (self.cfg.risk.bankroll_usdc or 0.0)
+        )
+        if honest is None:
+            # Live path: daily equity change as without-rewards proxy until
+            # a full metrics report is attached offline.
+            daily = float(self.risk.daily_pnl)
+            honest = compute_honest_pnl(
+                instant_spread_usdc=daily,
+                markout_30s_mean=0.0,
+                markout_n=0,
+                n_fill=0,
+                n_quote=0,
+                rewards_daily_rate=0.0,
+                eligible_in_band_seconds=0.0,
+            )
+        elif not isinstance(honest, HonestPnL):
+            honest = HonestPnL(**{
+                k: honest[k]
+                for k in (
+                    "instant_spread_usdc",
+                    "as_adjusted_spread_usdc",
+                    "pnl_without_rewards_usdc",
+                    "pnl_conservative_usdc",
+                    "pnl_base_usdc",
+                    "pnl_optimistic_usdc",
+                    "pnl_monopoly_diagnostic_usdc",
+                    "financial_claim_ok",
+                    "n_fill",
+                    "n_quote",
+                )
+                if isinstance(honest, dict) and k in honest
+            }) if isinstance(honest, dict) else honest
+
+        cmp_ = compare_aspirational_vs_honest(
+            bankroll_usdc=b,
+            honest=honest,
+            aspirational_low=float(self.cfg.engine.aspirational_daily_return_low),
+            aspirational_high=float(self.cfg.engine.aspirational_daily_return_high),
+        )
+        payload = cmp_.as_dict()
+        self.metrics.emit("aspirational_vs_honest", **payload)
+        return payload
+
     async def _maintenance_loop(self) -> None:
-        """Periodic REST book refresh to catch any silently-missed WS deltas."""
+        """Periodic REST book refresh + auto-compounding."""
         while self._running:
             await asyncio.sleep(120.0)
             for meta in list(self.metas.values()):
                 for tok in (meta.yes.token_id, meta.no.token_id):
                     with contextlib.suppress(Exception):
                         await self._refresh_book(tok)
+            with contextlib.suppress(Exception):
+                self.emit_aspirational_vs_honest()
+            # ── Auto compounding: update effective bankroll from PnL ──
+            if self._day_start_equity > 0 and self._base_capital > 0:
+                try:
+                    equity = self.risk.equity()
+                    growth = equity / max(self._day_start_equity, 0.01)
+                    # Only compound up (never shrink from compounding).
+                    if growth > 1.01:  # 1%+ growth = compound
+                        new_cap = min(
+                            self._base_capital * 100,  # hard ceiling: 100× base
+                            self._effective_capital * growth
+                        )
+                        if new_cap > self._effective_capital * 1.005:
+                            self._effective_capital = new_cap
+                            self.cfg.risk.bankroll_usdc = self._effective_capital
+                            log.info("compounding",
+                                     growth=round(growth, 4),
+                                     effective_capital=round(self._effective_capital, 2))
+                except Exception:
+                    pass
+            # ──────────────────────────────────────────────────────
 
     async def _refresh_book(self, token_id: str) -> None:
         levels = await self.gateway.get_full_book(token_id)
