@@ -217,6 +217,10 @@ class Engine:
                         memory=self.memory,
                         profile_name=next(iter(self.cfg.profiles), "default"),
                     )
+                    _first_profile = self.cfg.profiles[next(iter(self.cfg.profiles))]
+                    self.self_improver.set_live_profile(
+                        _first_profile.model_dump() if hasattr(_first_profile, "model_dump") else {}
+                    )
 
                     # LLM-ranked market discovery
                     self._discovery_agent = MarketDiscovery(
@@ -666,7 +670,7 @@ class Engine:
             return
         while self._running:
             try:
-                candidates = self.catalog.list_active(limit=50)
+                candidates = self.catalog.top(limit=50)
                 if candidates:
                     result = await self._discovery_agent.rank_candidates(candidates)
                     rankings = getattr(result, "rankings", [])
