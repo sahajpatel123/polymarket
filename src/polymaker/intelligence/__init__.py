@@ -70,6 +70,7 @@ from polymaker.intelligence.execution import (
     OrderTimingOptimizer,
     SmartExecutor,
 )
+from polymaker.intelligence.governed_agent import GovernedGrokAgent, GovernedResponse
 from polymaker.intelligence.info_theory import (
     AutocorrelationTracker,
     EntropyTracker,
@@ -77,6 +78,16 @@ from polymaker.intelligence.info_theory import (
     InformationProcessor,
     KLDivergenceTracker,
     TransferEntropyTracker,
+)
+from polymaker.intelligence.llm_governance import (
+    DEFAULT_DEAD_LLM_TIMEOUT_S,
+    DEFAULT_LLM_DAILY_LOSS_PCT,
+    DEFAULT_LLM_SIZE_MULT,
+    FORBIDDEN_LLM_FIELDS,
+    FORBIDDEN_LLM_PARAMS,
+    GovernanceDecision,
+    LLMDailyLoss,
+    LLMGovernance,
 )
 from polymaker.intelligence.memory import AgentMemory
 from polymaker.intelligence.microstructure import (
@@ -186,7 +197,15 @@ __all__ = [
     "EntropyTracker",
     "FeatureExtractor",
     "FORBIDDEN_KEYS",
+    "FORBIDDEN_LLM_FIELDS",
+    "FORBIDDEN_LLM_PARAMS",
+    "DEFAULT_DEAD_LLM_TIMEOUT_S",
+    "DEFAULT_LLM_DAILY_LOSS_PCT",
+    "DEFAULT_LLM_SIZE_MULT",
+    "GovernanceDecision",
     "GrokAgent",
+    "GovernedGrokAgent",
+    "GovernedResponse",
     "IcebergSizer",
     "ImprovementSuggestion",
     "ImproveResult",
@@ -195,6 +214,8 @@ __all__ = [
     "IntelligenceState",
     "KLDivergenceTracker",
     "KalmanMidPrice",
+    "LLMDailyLoss",
+    "LLMGovernance",
     "LocalMemoryStore",
     "MarketAllocation",
     "MarketAllocationState",
