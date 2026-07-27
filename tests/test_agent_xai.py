@@ -65,10 +65,22 @@ def _completion(
 
 @pytest.mark.asyncio
 async def test_default_model_is_reasoning() -> None:
+    from polymaker.intelligence.agent import is_reasoning_model
+
     assert "reasoning" in DEFAULT_MODEL
+    assert is_reasoning_model(DEFAULT_MODEL)
     assert resolve_model({"XAI_MODEL": DEFAULT_MODEL}) == DEFAULT_MODEL
     with pytest.raises(ValueError):
         resolve_model({"XAI_MODEL": "grok-mini-chat"})
+    # Must not treat "non-reasoning-*" as a reasoning SKU (substring trap)
+    with pytest.raises(ValueError):
+        resolve_model({"XAI_MODEL": "non-reasoning-chat"})
+    assert not is_reasoning_model("non-reasoning-chat")
+    # Explicit override still allowed when user opts in
+    assert (
+        resolve_model({"XAI_MODEL": "grok-mini-chat", "XAI_ALLOW_NON_REASONING": "1"})
+        == "grok-mini-chat"
+    )
 
 
 @pytest.mark.asyncio
