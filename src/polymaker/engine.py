@@ -108,7 +108,10 @@ class Engine:
         self._merging: set[str] = set()
         self._token_cid: dict[str, str] = {}
         self._locks: dict[str, asyncio.Lock] = {}  # per-market: serialize recompute vs reconcile
-        self._halted: set[str] = set()  # markets closed/resolved/not-accepting
+        self._halted: set[str] = set()  # markets closed/resolved/not-accepting (Gamma)
+        # Ops/LLM pause — independent of Gamma; must NOT be cleared by metadata refresh
+        self._llm_paused: set[str] = set()
+        self._pending_pause_cancels: set[str] = set()
         # condition_id → last capital/reward eligibility decision (skip vs floor)
         self._reward_eligibility: dict[str, MakerRewardEligibility] = {}
         # supervised tasks: name -> (factory, task) so a dead task restarts
@@ -152,6 +155,9 @@ class Engine:
         self._last_improve_ts: float = 0.0
         self._last_review_ts: float = 0.0
         self._discovery_agent: MarketDiscovery | None = None
+        # LLM-ranked selection (last discovery rankings + governed facade)
+        self._llm_rankings: list[Any] = []
+        self._gov_facade: Any | None = None
         # Auto-compounding: effective bankroll tracks PnL growth
         self._base_capital: float = (
             load_capital_usdc() or float(cfg.risk.bankroll_usdc or 0)
@@ -216,13 +222,18 @@ class Engine:
                         _first.model_dump() if hasattr(_first, "model_dump") else {}
                     )
 
+            # Facade: same chat_json_tool shape as GrokAgent, but every
+            # structured call is logged/sanitized through LLMGovernance.
+            facade = _GovernedJsonFacade(self.grok_agent, self.llm_gov)
+            self._gov_facade = facade
+
             self._discovery_agent = MarketDiscovery(
-                agent=self.grok_agent,  # type: ignore[arg-type]
+                agent=facade,  # type: ignore[arg-type]
                 memory=self.memory,
                 capital_usdc=_cap,
             )
             self.oversight_loop = OversightLoop(
-                agent=self.grok_agent,  # type: ignore[arg-type]
+                agent=facade,  # type: ignore[arg-type]
                 memory=self.memory,
                 snapshot_provider=self._oversight_snapshot,
             )
@@ -339,6 +350,10 @@ class Engine:
                 self._spawn("llm_discovery", self._llm_discovery_loop)
             log.info("llm_supervised_tasks_started")
         # ──────────────────────────────────────────────────────────────
+
+        # Auto-balancer: shift capital toward high-reward markets every 10 min.
+        # Runs even without LLM — it's pure math on reward accrual data.
+        self._spawn("rebalancer", self._capital_rebalance_loop)
 
         self._spawn("supervisor", self._supervise)
         self.risk.reset_day()
@@ -553,6 +568,8 @@ class Engine:
         self._dirty.pop(cid, None)
         self._locks.pop(cid, None)
         self._halted.discard(cid)
+        self._llm_paused.discard(cid)
+        self._pending_pause_cancels.discard(cid)
         for tok in (meta.yes.token_id, meta.no.token_id):
             self._token_cid.pop(tok, None)
         # Tell the market data service to drop the subscription
@@ -605,6 +622,7 @@ class Engine:
             "fill_rate": round(self._recent_fill_rate(), 4),
             "n_active_markets": len(self.metas),
             "n_halted": len(self._halted),
+            "n_llm_paused": len(self._llm_paused),
             "n_quarantined": len(self._quarantined),
             "n_capital_skip": n_cap_skip,
             "markets": markets,
@@ -621,41 +639,174 @@ class Engine:
         )
         return filled / max(1, len(orders))
 
+    @staticmethod
+    def pack_oversight_action(action: Any) -> dict[str, Any]:
+        """Pack an OversightAction (or dict) into the apply_oversight_action payload.
+
+        Production path: used by :meth:`run_oversight_cycle_once`. Must pass
+        ``params`` / ``spread_mult`` so widen/tighten are not no-ops.
+        """
+        if isinstance(action, dict):
+            atype = str(action.get("type") or action.get("action") or "no_op")
+            cid = str(
+                action.get("condition_id")
+                or action.get("cid")
+                or action.get("market")
+                or ""
+            )
+            reason = str(action.get("reason") or "")
+            params = dict(action.get("params") or {})
+            spread_mult = action.get("spread_mult")
+            if spread_mult is None:
+                spread_mult = params.get("mult", params.get("spread_mult"))
+            out: dict[str, Any] = {
+                "type": atype,
+                "condition_id": cid,
+                "reason": reason,
+                "params": params,
+            }
+            if spread_mult is not None:
+                out["spread_mult"] = float(spread_mult)
+            for k in ("side", "direction", "buy_this_market"):
+                if k in action:
+                    out[k] = action[k]
+            return out
+
+        # OversightAction dataclass
+        params = dict(getattr(action, "params", None) or {})
+        mult = params.get("mult", params.get("spread_mult"))
+        payload: dict[str, Any] = {
+            "type": str(getattr(action, "type", "no_op")),
+            "condition_id": str(getattr(action, "market", None) or ""),
+            "reason": str(getattr(action, "reason", "") or ""),
+            "params": params,
+        }
+        if mult is not None:
+            payload["spread_mult"] = float(mult)
+        return payload
+
     def apply_oversight_action(self, action: dict[str, Any]) -> dict[str, Any]:
         """Apply a single oversight action from the OversightLoop.
 
-        Called by OversightLoop.apply_actions_via_engine. Action types:
+        Called by :meth:`run_oversight_cycle_once` after
+        :meth:`pack_oversight_action`. Action types:
         - tighten_spread / widen_spread : adjust spread_mult on profile
-        - pause_market : set regime to cooling-off
-        - add_layer / drop_market : no-op on live (goes through self-improve)
+        - pause_market : ops/LLM pause (``_llm_paused``; survives Gamma refresh)
+        - resume_market : clear ops pause (optional)
+        - add_layer / drop_market : deferred (self-improve / paper)
         - no_op : acknowledged
 
-        All actions are bounded by the governance layer — the LLM
-        can only suggest, and the engine applies within safe limits.
+        Directional fields are hard-rejected. Knob nudges go through
+        :class:`LLMGovernance` when wired.
         """
         atype = str(action.get("type") or action.get("action") or "no_op")
-        cid = str(action.get("condition_id") or action.get("cid") or "")
+        cid = str(
+            action.get("condition_id")
+            or action.get("cid")
+            or action.get("market")
+            or ""
+        )
         reason = str(action.get("reason") or "")
+        params = dict(action.get("params") or {})
+
+        # Hard reject directional steer at apply time (AC2).
+        for bad in ("side", "direction", "buy_this_market", "buy_yes", "buy_no"):
+            if bad in action or bad in params:
+                log.warning("oversight_directional_rejected", type=atype, field=bad)
+                return {
+                    "action": atype,
+                    "status": "rejected_directional",
+                    "reason": f"directional_field:{bad}",
+                }
 
         if atype == "no_op":
             return {"action": "no_op", "status": "acknowledged"}
 
-        if atype == "pause_market" and cid in self._halted:
-            self._halted.add(cid)
+        # Ops/LLM pause: durable set, not Gamma ``_halted`` (metadata refresh
+        # discards accepting markets from ``_halted`` and would wipe a pause).
+        if atype == "pause_market":
+            if not cid:
+                return {"action": "pause_market", "status": "unknown", "reason": "missing_cid"}
+            self._llm_paused.add(cid)
+            self._pending_pause_cancels.add(cid)
+            self._wake_cid(cid)  # force recompute ASAP → empty targets while paused
             log.info("oversight_pause_market", cid=cid[:8], reason=reason)
-            return {"action": "pause_market", "status": "applied", "cid": cid[:8]}
+            return {
+                "action": "pause_market",
+                "status": "applied",
+                "cid": cid[:8],
+                "needs_cancel": True,
+            }
 
-        if atype in ("tighten_spread", "widen_spread") and cid in self.profiles:
-            mult = float(action.get("spread_mult", 1.0))
+        if atype == "resume_market":
+            if not cid:
+                return {"action": "resume_market", "status": "unknown", "reason": "missing_cid"}
+            self._llm_paused.discard(cid)
+            self._pending_pause_cancels.discard(cid)
+            self._wake_cid(cid)
+            log.info("oversight_resume_market", cid=cid[:8], reason=reason)
+            return {"action": "resume_market", "status": "applied", "cid": cid[:8]}
+
+        if atype in ("tighten_spread", "widen_spread"):
+            if cid and cid not in self.profiles:
+                return {
+                    "action": atype,
+                    "status": "unknown",
+                    "reason": f"unknown_market:{cid[:8]}",
+                }
+            # Prefer explicit spread_mult, then params.mult / params.spread_mult
+            raw_mult = action.get("spread_mult")
+            if raw_mult is None:
+                raw_mult = params.get("mult", params.get("spread_mult", 1.0))
+            try:
+                mult = float(raw_mult)
+            except (TypeError, ValueError):
+                mult = 1.0
+            # tighten → compress toward 0.5; widen → expand toward 3.0 when
+            # the LLM only sent a relative mult without absolute value.
+            if atype == "tighten_spread" and mult >= 1.0 and "spread_mult" not in action:
+                mult = max(0.5, 1.0 / mult) if mult > 0 else 0.75
             mult = max(0.5, min(3.0, mult))
-            # Store as a per-market override on the profile dict.
-            # The actual spread is adjusted by governance + the quoter.
+
+            # Governance gate for knob (logs + clamps when LLM gov is live).
+            if self.llm_gov is not None:
+                import time as _time
+
+                decision = self.llm_gov.check_and_log(
+                    prompt=f"oversight_apply:{atype}:{cid[:8]}",
+                    response={"actions": {"spread_mult": mult}},
+                    llm_started_at=_time.time(),
+                    context={"kind": "oversight_apply", "condition_id": cid, "type": atype},
+                    confidence=1.0,
+                )
+                if not decision.approved:
+                    return {
+                        "action": atype,
+                        "status": "rejected_by_governance",
+                        "reason": decision.rejection_reason,
+                    }
+                if "spread_mult" in decision.actions:
+                    with contextlib.suppress(TypeError, ValueError):
+                        mult = float(decision.actions["spread_mult"])
+                    mult = max(0.5, min(3.0, mult))
+
+            if not cid:
+                return {"action": atype, "status": "unknown", "reason": "missing_cid"}
             self._per_market_spread_mult[cid] = mult
-            log.info("oversight_spread_adjust", cid=cid[:8], mult=round(mult, 2), reason=reason)
-            return {"action": atype, "status": "applied", "cid": cid[:8], "spread_mult": mult}
+            log.info(
+                "oversight_spread_adjust",
+                cid=cid[:8],
+                mult=round(mult, 2),
+                reason=reason,
+            )
+            return {
+                "action": atype,
+                "status": "applied",
+                "cid": cid[:8],
+                "spread_mult": mult,
+            }
 
         if atype in ("add_layer", "drop_market"):
-            # These require paper validation or user review — log and defer.
             log.info("oversight_deferred", action=atype, cid=cid[:8], reason=reason)
             return {"action": atype, "status": "deferred_to_self_improve", "cid": cid[:8]}
 
@@ -663,22 +814,61 @@ class Engine:
 
     # ── V3 supervised loops ─────────────────────────────────────────
 
+    def is_quoting_halted(self, cid: str) -> bool:
+        """True if market must not place new maker quotes.
+
+        Combines Gamma closed/not-accepting (``_halted``) with durable ops/LLM
+        pause (``_llm_paused``). Metadata refresh may clear ``_halted`` for
+        accepting markets but never clears ``_llm_paused``.
+        """
+        return cid in self._halted or cid in self._llm_paused
+
+    async def flush_pause_cancels(self) -> int:
+        """Cancel resting orders for markets pending ops/LLM pause.
+
+        Called from the oversight cycle after :meth:`apply_oversight_action`
+        marks ``needs_cancel``. Safe to call repeatedly.
+        """
+        n = 0
+        for cid in list(self._pending_pause_cancels):
+            self._pending_pause_cancels.discard(cid)
+            meta = self.metas.get(cid)
+            if meta is None:
+                continue
+            await self._cancel_market_orders(cid, meta, reason="llm_pause")
+            n += 1
+        return n
+
+    async def run_oversight_cycle_once(self) -> list[dict[str, Any]]:
+        """One production oversight cycle: snapshot → LLM → pack → apply.
+
+        Extracted so unit tests drive the **same** packing/apply path as
+        :meth:`_oversight_loop_task` (no special-cased test payload).
+        Pause actions cancel resting orders before return.
+        """
+        if self.oversight_loop is None:
+            return []
+        snapshot = self._oversight_snapshot()
+        await self.oversight_loop.run_once(snapshot)
+        actions = self.oversight_loop.drain_actions(include_dry_run=False)
+        results: list[dict[str, Any]] = []
+        for a in actions:
+            payload = self.pack_oversight_action(a)
+            result = self.apply_oversight_action(payload)
+            log.info("oversight_action_applied", result=result)
+            results.append(result)
+        # Immediate cancel for pause_market (do not wait for incidental recompute)
+        if self._pending_pause_cancels:
+            await self.flush_pause_cancels()
+        return results
+
     async def _oversight_loop_task(self) -> None:
         """Run the OversightLoop and drain actions into the engine."""
         if self.oversight_loop is None:
             return
         while self._running:
             try:
-                snapshot = self._oversight_snapshot()
-                await self.oversight_loop.run_once(snapshot)
-                actions = self.oversight_loop.drain_actions()
-                for a in actions:
-                    result = self.apply_oversight_action({
-                        "type": a.type,
-                        "condition_id": a.market or "",
-                        "reason": a.reason,
-                    })
-                    log.info("oversight_action_applied", result=result)
+                await self.run_oversight_cycle_once()
             except Exception:
                 log.exception("oversight_loop_error")
             await asyncio.sleep(1800)  # 30 min
@@ -749,40 +939,270 @@ class Engine:
             except Exception:
                 log.exception("review_loop_error")
 
+    async def run_llm_discovery_cycle_once(self) -> list[Any]:
+        """One discovery cycle: rank candidates → selection input for trade list.
+
+        Returns applied rankings (may be empty). Unit-testable production path.
+        """
+        if self._discovery_agent is None:
+            return []
+        candidates = self.catalog.top(limit=50)
+        if not candidates:
+            return []
+        metas: list[Any] = []
+        meta_by_cid: dict[str, Any] = {}
+        for row in candidates:
+            meta = row[0] if isinstance(row, tuple) else row
+            cid = getattr(meta, "condition_id", "") or ""
+            if cid:
+                meta_by_cid[cid] = meta
+            metas.append({
+                "slug": getattr(meta, "slug", "") or "",
+                "condition_id": cid,
+                "question": getattr(meta, "question", "") or "",
+                "rewards_min_size": getattr(meta, "rewards_min_size", 0),
+                "rewards_daily_rate": getattr(meta, "rewards_daily_rate", 0),
+                "liquidity_num": getattr(meta, "liquidity_num", 0),
+                "min_order_size": getattr(meta, "min_order_size", 5.0),
+                "best_bid": getattr(meta, "best_bid", 0.0),
+                "best_ask": getattr(meta, "best_ask", 0.0),
+            })
+        result = await self._discovery_agent.rank_candidates(metas)
+        rankings = list(getattr(result, "rankings", []) or [])
+        self._llm_rankings = rankings
+        if rankings:
+            log.info(
+                "llm_discovery_ranked",
+                n_total=len(candidates),
+                n_top=len(rankings),
+            )
+            await self._apply_llm_rankings(rankings, meta_by_cid)
+        return rankings
+
+    async def _apply_llm_rankings(
+        self,
+        rankings: list[Any],
+        meta_by_cid: dict[str, Any],
+    ) -> int:
+        """Feed MarketDiscovery rankings into trade-list add / capital preference.
+
+        AC1: LLM ranking is selection input, not log-only.
+        - Reward capital gate must pass.
+        - ``suggested_size_pct`` capped via governance when available.
+        - Adds missing markets up to auto_discovery_max_markets.
+        """
+        bankroll = float(
+            self.cfg.risk.bankroll_usdc
+            or self._effective_capital
+            or 0.0
+        )
+        if bankroll <= 0:
+            log.info("llm_selection_skip", reason="bankroll_unset")
+            return 0
+        profile_name = self.cfg.engine.auto_discovery_profile
+        profile = self.cfg.profiles.get(profile_name)
+        if profile is None and self.cfg.profiles:
+            profile = next(iter(self.cfg.profiles.values()))
+        if profile is None:
+            profile = StrategyProfile()
+        max_markets = int(self.cfg.engine.auto_discovery_max_markets or 20)
+        added = 0
+        for rank in rankings:
+            cid = str(getattr(rank, "condition_id", "") or "")
+            if not cid:
+                continue
+            meta = meta_by_cid.get(cid) or self.catalog.get(cid)
+            if meta is None:
+                continue
+            conf = float(getattr(rank, "confidence", 0.0) or 0.0)
+            size_pct = float(getattr(rank, "suggested_size_pct", 0.0) or 0.0)
+            size_pct = max(0.0, min(1.0, size_pct))
+
+            # Governance: size_pct + market_selection eligibility
+            if self.llm_gov is not None:
+                typ_px = 0.5
+                bb = float(getattr(meta, "best_bid", 0) or 0)
+                ba = float(getattr(meta, "best_ask", 0) or 0)
+                if bb > 0 and ba > 0:
+                    typ_px = 0.5 * (bb + ba)
+                per_cap = float(self.cfg.risk.max_market_notional_usdc or bankroll * 0.35)
+                decision = self.llm_gov.check_and_log(
+                    prompt=f"llm_select:{cid[:8]}",
+                    response={"actions": {"size_pct": size_pct}},
+                    llm_started_at=time.time(),
+                    context={
+                        "kind": "market_selection",
+                        "condition_id": cid,
+                        "rewards_min_size": float(getattr(meta, "rewards_min_size", 0) or 0),
+                        "typical_price": typ_px,
+                        "per_market_cap_usdc": per_cap,
+                    },
+                    confidence=conf,
+                )
+                if not decision.approved:
+                    log.info(
+                        "llm_selection_rejected",
+                        condition_id=cid,
+                        reason=decision.rejection_reason,
+                    )
+                    continue
+                if "size_pct" in decision.actions:
+                    with contextlib.suppress(TypeError, ValueError):
+                        size_pct = float(decision.actions["size_pct"])
+                elif decision.size_pct_after_cap > 0:
+                    size_pct = decision.size_pct_after_cap
+
+            gate = decide_maker_reward_eligibility(
+                bankroll_usdc=bankroll,
+                rewards_min_size=float(getattr(meta, "rewards_min_size", 0) or 0),
+                exchange_min_shares=float(getattr(meta, "min_order_size", 5) or 5),
+                typical_price=(
+                    0.5 * (float(getattr(meta, "best_bid", 0) or 0)
+                           + float(getattr(meta, "best_ask", 0) or 0))
+                    if float(getattr(meta, "best_bid", 0) or 0) > 0
+                    else 0.5
+                ),
+                layers=int(getattr(profile, "layers", 1) or 1),
+                reward_size_mult=float(getattr(profile, "reward_size_mult", 1.0) or 1.0),
+            )
+            self._reward_eligibility[cid] = gate
+            if gate.skip:
+                log.info(
+                    "llm_selection_skip_capital",
+                    condition_id=cid,
+                    reason=gate.reason,
+                )
+                continue
+
+            alloc = max(bankroll * max(size_pct, 0.05), gate.recommended_base_size_usdc)
+            self._discovery_capital[cid] = min(alloc, bankroll * 0.4)
+
+            if cid in self.metas:
+                # Already trading: refresh size preference on profile
+                cur = self.profiles.get(cid, profile)
+                self.profiles[cid] = cur.model_copy(update={
+                    "base_size_usdc": max(
+                        cur.base_size_usdc,
+                        gate.recommended_base_size_usdc or cur.base_size_usdc,
+                    ),
+                    "bankroll_usdc": self._discovery_capital[cid],
+                })
+                continue
+
+            if len(self.metas) + added >= max_markets:
+                break
+            mkt_profile = profile.model_copy(update={
+                "q_max_usdc": min(
+                    profile.q_max_usdc,
+                    self._discovery_capital[cid],
+                ),
+                "base_size_usdc": max(
+                    profile.base_size_usdc,
+                    gate.recommended_base_size_usdc or profile.base_size_usdc,
+                ),
+                "bankroll_usdc": self._discovery_capital[cid],
+            })
+            ok = await self.add_market(meta, mkt_profile)
+            if ok:
+                added += 1
+                log.info(
+                    "llm_selection_added",
+                    condition_id=cid,
+                    slug=getattr(meta, "slug", ""),
+                    size_pct=round(size_pct, 3),
+                    allocated_usdc=round(self._discovery_capital[cid], 2),
+                )
+        return added
+
     async def _llm_discovery_loop(self) -> None:
-        """LLM-ranked market discovery every 30 min."""
+        """LLM-ranked market discovery every 30 min → trade-list selection."""
         if self._discovery_agent is None:
             return
         while self._running:
             try:
-                candidates = self.catalog.top(limit=50)
-                if candidates:
-                    # Extract just the MarketMeta from tuples, then build a
-                    # dict sequence that rank_candidates expects.
-                    metas = []
-                    for row in candidates:
-                        if isinstance(row, tuple):
-                            meta = row[0]  # (MarketMeta, MarketScore)
-                        else:
-                            meta = row
-                        metas.append({
-                            "slug": meta.slug if hasattr(meta, "slug") else "",
-                            "condition_id": meta.condition_id if hasattr(meta, "condition_id") else "",
-                            "question": meta.question if hasattr(meta, "question") else "",
-                            "rewards_min_size": getattr(meta, "rewards_min_size", 0),
-                        })
-                    result = await self._discovery_agent.rank_candidates(metas)
-                    rankings = getattr(result, "rankings", [])
-                    if rankings:
-                        log.info(
-                            "llm_discovery_ranked",
-                            n_total=len(candidates),
-                            n_top=len(rankings),
-                        )
+                await self.run_llm_discovery_cycle_once()
                 await asyncio.sleep(1800)  # 30 min
             except Exception:
                 log.exception("llm_discovery_loop_error")
                 await asyncio.sleep(60)
+
+    async def _capital_rebalance_loop(self) -> None:
+        """Shift capital toward markets with highest reward accrual.
+
+        Every 10 min, compute reward-per-dollar for each active market
+        and redistribute unallocated capital + trim the lowest performers.
+        Runs even without LLM — it's pure arithmetic on the metrics log.
+        """
+        import json
+
+        while self._running:
+            await asyncio.sleep(600)  # 10 min
+            try:
+                if len(self.metas) <= 1:
+                    continue
+
+                # Read the last ~100 reward accrual events from metrics
+                reward_map: dict[str, float] = {}
+                metrics_path = Path(self.cfg.paths.log_dir) / (
+                    "metrics-paper.jsonl" if self.paper else "metrics-live.jsonl"
+                )
+                if not metrics_path.exists():
+                    continue
+                # Parse last N lines efficiently (tail-read)
+                lines: list[str] = []
+                with metrics_path.open() as fh:
+                    fh.seek(0, 2)  # seek to end
+                    pos = fh.tell()
+                    while pos > 0 and len(lines) < 200:
+                        pos = max(0, pos - 8192)
+                        fh.seek(pos)
+                        chunk = fh.read(min(8192, fh.tell() - pos if fh.tell() > 0 else 8192))
+                        lines = chunk.splitlines() + lines
+                        if pos == 0:
+                            break
+                        fh.seek(pos)
+
+                for raw in lines[-200:]:
+                    try:
+                        obj = json.loads(raw)
+                    except json.JSONDecodeError:
+                        continue
+                    if obj.get("event") != "mark":
+                        continue
+                    cid = obj.get("condition_id", "")
+                    reward = float(obj.get("reward_accrued_usdc", 0.0) or 0.0)
+                    if reward > 0 and cid:
+                        reward_map[cid] = reward_map.get(cid, 0.0) + reward
+
+                if not reward_map:
+                    continue
+
+                # Find top 3 and bottom 3 by reward
+                ranked = sorted(reward_map.items(), key=lambda x: x[1], reverse=True)
+                top = {cid for cid, _ in ranked[:3]}
+                bottom = {cid for cid, _ in ranked
+                          if cid not in top and ranked.index((cid, _)) >= len(ranked) // 2}
+
+                # Reallocate: shift 10% of capital from bottom performers to top
+                if bottom and top:
+                    shift_pct = 0.10
+                    for cid in bottom:
+                        if cid in self._discovery_capital:
+                            old = self._discovery_capital[cid]
+                            cut = old * shift_pct
+                            self._discovery_capital[cid] = max(old - cut, old * 0.5)
+                            surplus = cut
+                            # Give to the top market
+                            top_cid = next(iter(top))
+                            self._discovery_capital[top_cid] = (
+                                self._discovery_capital.get(top_cid, 0) + surplus
+                            )
+                    log.info("rebalance",
+                             top=round(sum(v for k, v in ranked[:3]), 2),
+                             bottom=round(sum(v for k, v in ranked[-3:]), 2),
+                             shifted_pct=shift_pct)
+            except Exception:
+                log.exception("rebalance_loop_error")
 
     def _build_self_evaluation(self) -> Any:
         """Build a minimal SelfEvaluation from engine state for self-improve."""
@@ -1421,11 +1841,13 @@ class Engine:
             and self.cfg.engine.heartbeat
             and self.gateway.heartbeat_failures >= self.cfg.risk.heartbeat_halt_failures
         )
-        halted = cid in self._halted
+        halted = self.is_quoting_halted(cid)
+        llm_paused = cid in self._llm_paused
         blind = market_stale or user_blind or hb_blind or halted
         if blind:
             log.warning("market_blind", condition_id=cid, cid=cid[:8], market_stale=market_stale,
-                        user_blind=user_blind, hb_blind=hb_blind, halted=halted)
+                        user_blind=user_blind, hb_blind=hb_blind, halted=halted,
+                        llm_paused=llm_paused)
             if market_stale or user_blind:
                 self.alerter.alert(
                     WS_DISCONNECT,
@@ -1577,7 +1999,7 @@ class Engine:
             hours_to_end=hours_to_end,
             sweep_flagged=self._sweep.pop(cid, False),
             ws_stale=ws_stale,
-            market_resolved=cid in self._halted,
+            market_resolved=self.is_quoting_halted(cid),
             intel=self.intel if use_intel else None,
             n_trades_last_hour=n_trades_1h,
             seconds_since_last_trade=secs_stale,
@@ -1916,6 +2338,8 @@ class Engine:
                             await self.gateway.cancel_asset(tok)
                     self._wake_cid(cid)
                 continue
+            # Accepting again: clear Gamma halt only. Never clear ops/LLM pause
+            # (``_llm_paused``) — that would wipe oversight pause_market.
             self._halted.discard(cid)
             self._apply_meta_refresh(cid, raw)
 
@@ -2113,4 +2537,97 @@ def _hours_to_end(end_date_iso: str | None, now: float) -> float | None:
         return hrs if hrs > 0.0 else None
     except (ValueError, TypeError):
         return None
+
+
+class _GovernedJsonFacade:
+    """GrokAgent-compatible ``chat_json_tool`` that always hits LLMGovernance.
+
+    OversightLoop and MarketDiscovery call ``(args, resp) = agent.chat_json_tool(...)``.
+    :class:`GovernedGrokAgent` returns a :class:`GovernedResponse` instead, so we
+    wrap the raw agent + governance here and keep that call shape while ensuring
+    every structured LLM response is audited via ``check_and_log`` (AC2).
+    """
+
+    def __init__(self, agent: Any, governance: LLMGovernance) -> None:
+        self._agent = agent
+        self._gov = governance
+        self.model = getattr(agent, "model", "governed")
+        self.last_decision: Any = None
+
+    async def chat(self, messages: list[dict[str, Any]], **kwargs: Any) -> Any:
+        return await self._agent.chat(messages, **kwargs)
+
+    async def chat_json_tool(
+        self,
+        messages: list[dict[str, Any]],
+        **kwargs: Any,
+    ) -> tuple[Any, Any]:
+        started = time.time()
+        parsed, resp = await self._agent.chat_json_tool(messages, **kwargs)
+
+        # Flatten nested oversight actions for direction/size scans.
+        flat: dict[str, Any] = {}
+        if isinstance(parsed, dict):
+            flat = {k: v for k, v in parsed.items() if k != "actions"}
+            nested = parsed.get("actions")
+            if isinstance(nested, list):
+                for item in nested:
+                    if not isinstance(item, dict):
+                        continue
+                    # Hoist forbidden direction fields if present
+                    for bad in ("side", "direction", "buy_this_market"):
+                        if bad in item:
+                            flat[bad] = item[bad]
+                    params = item.get("params") or {}
+                    if isinstance(params, dict):
+                        if "size_pct" in params:
+                            flat["size_pct"] = params["size_pct"]
+                        if "spread_mult" in params:
+                            flat["spread_mult"] = params["spread_mult"]
+                        if "mult" in params and "spread_mult" not in flat:
+                            flat["spread_mult"] = params["mult"]
+            elif isinstance(nested, dict):
+                flat.update(nested)
+            # Discovery rankings may carry suggested_size_pct
+            for item in parsed.get("rankings") or []:
+                if isinstance(item, dict) and "suggested_size_pct" in item:
+                    flat["size_pct"] = item.get("suggested_size_pct")
+                    break
+
+        prompt_parts = []
+        for m in messages:
+            prompt_parts.append(f"[{m.get('role', '')}] {m.get('content', '')}")
+        decision = self._gov.check_and_log(
+            prompt="\n".join(prompt_parts),
+            response={"actions": flat} if flat else {"content": str(parsed)},
+            llm_started_at=started,
+            context={"kind": kwargs.get("kind") or "tool"},
+            confidence=float(
+                (parsed or {}).get("confidence", 0.5)
+                if isinstance(parsed, dict)
+                else 0.5
+            ),
+        )
+        self.last_decision = decision
+
+        # Strip directional nested actions when governance rejects.
+        if (
+            not decision.approved
+            and isinstance(parsed, dict)
+            and "directional" in (decision.rejection_reason or "")
+        ):
+            if isinstance(parsed.get("actions"), list):
+                parsed = {
+                    **parsed,
+                    "actions": [
+                        {
+                            "type": "no_op",
+                            "dry_run": False,
+                            "reason": "governance_rejected_direction",
+                        }
+                    ],
+                }
+            else:
+                parsed = {"narrative": parsed.get("narrative", ""), "actions": []}
+        return parsed, resp
 

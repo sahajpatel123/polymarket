@@ -16,13 +16,20 @@ heartbeat = true
 heartbeat_interval_s = 5
 journal = true
 loop = "uvloop"
-# Paper validation: keep discovery off so the experiment is on the fixed pair
-auto_discovery_enabled = false
-auto_discovery_hot_reload = false
+# Auto-discovery: find + quote the best markets automatically.
+# Set POLYMAKER_CAPITAL_USDC in .env to enable. Markets are selected by
+# score (reward rate, liquidity, spread) and filtered by capital feasibility.
+# When auto-discovery is on, markets.toml is the FIXED baseline; discovery
+# ADDS complementary markets on top.
+auto_discovery_enabled = true
+auto_discovery_hot_reload = true
 
 [risk]
-# Single capital knob — caps scale from bankroll
-bankroll_usdc = 100.0
+# Single capital knob — ALL caps derive from this. Change this number.
+# At $500: $25/market, $250 daily loss kill, $125 max drawdown.
+# At $1000: $50/market, $500 daily loss kill, $250 max drawdown.
+# Minimum viable capital for 200-share reward-min markets: ~$200.
+bankroll_usdc = 500.0
 total_exposure_frac = 1.0
 market_notional_frac = 0.40
 event_group_frac = 0.50
@@ -35,11 +42,12 @@ user_ws_blind_halt_s = 15.0
 heartbeat_halt_failures = 3
 max_order_error_rate = 0.25
 # Absolutes filled by resolve_from_bankroll when bankroll > 0
-max_total_exposure_usdc = 100.0
-max_event_group_loss_usdc = 50.0
-max_market_notional_usdc = 40.0
-daily_loss_kill_usdc = 10.0
-max_market_loss_usdc = 5.0
+max_total_exposure_usdc = 30.0
+max_event_group_loss_usdc = 15.0
+max_market_notional_usdc = 12.0
+daily_loss_kill_usdc = 3.0
+max_market_loss_usdc = 1.5
+
 
 [execution]
 rate_budget_fraction = 0.25
