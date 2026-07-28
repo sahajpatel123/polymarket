@@ -92,7 +92,8 @@ uv run polymaker run
 # ops
 uv run polymaker status        # positions / open orders from SQLite
 uv run polymaker pnl           # latest equity / daily PnL snapshot
-uv run polymaker dashboard     # HTML health view from metrics log
+uv run polymaker dashboard     # static HTML snapshot from metrics log
+uv run polymaker dashboard --serve   # live multi-layout UI (also auto-opens on `run`)
 uv run polymaker cancel-all    # panic button
 ```
 

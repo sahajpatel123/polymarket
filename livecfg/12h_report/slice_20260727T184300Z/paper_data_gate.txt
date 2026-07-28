@@ -1,0 +1,3 @@
+usage: paper_data_gate.py [-h] [--log LOG] [--metrics-log METRICS_LOG]
+                          [--min-hours MIN_HOURS] [--min-quotes MIN_QUOTES]
+paper_data_gate.py: error: unrecognized arguments: --config-dir livecfg

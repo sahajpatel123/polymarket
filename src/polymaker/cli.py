@@ -195,9 +195,16 @@ def export_csv(
 def dashboard(
     config_dir: str = typer.Option("config", help="config directory"),
     paper: bool = typer.Option(True, "--paper/--live", help="which metrics log to render"),
-    out: str = typer.Option("logs/dashboard.html", help="HTML output path"),
+    out: str = typer.Option("logs/dashboard.html", help="static HTML output path"),
+    serve: bool = typer.Option(
+        False,
+        "--serve",
+        help="also start live localhost dashboard (auto-refresh) without the engine",
+    ),
+    port: int = typer.Option(8765, help="port when using --serve"),
+    open_browser: bool = typer.Option(True, "--open/--no-open", help="open browser when serving"),
 ) -> None:
-    """Render a local HTML metrics dashboard from the metrics JSONL log."""
+    """Render metrics HTML; optionally serve the live multi-layout dashboard."""
     from polymaker.metrics.dashboard import write_dashboard
 
     cfg = Config.load(config_dir)
@@ -210,18 +217,55 @@ def dashboard(
         f"(quotes={rep.n_quote} fills={rep.n_fill} "
         f"spread={rep.realized_spread_usdc:.4f})"
     )
+    if not serve:
+        console.print(
+            "[dim]Tip: `polymaker run` opens the live dashboard automatically. "
+            "Or re-run with --serve for a standalone live view.[/dim]"
+        )
+        return
+
+    from polymaker.metrics.live_dashboard import LiveDashboard, build_snapshot_from_paths
+
+    def _snap() -> dict:
+        return build_snapshot_from_paths(
+            db_path=cfg.paths.db,
+            log_dir=cfg.paths.log_dir,
+            metrics_log=log_path,
+            paper=paper,
+        ).as_dict()
+
+    dash = LiveDashboard(_snap, host=cfg.engine.dashboard_host, port=port, open_browser=open_browser)
+    url = dash.start()
+    console.print(f"[bold green]Live dashboard[/bold green] {url}  (Ctrl+C to stop)")
+    try:
+        while True:
+            import time
+
+            time.sleep(3600)
+    except KeyboardInterrupt:
+        dash.stop()
+        console.print("\n[yellow]Dashboard stopped.[/yellow]")
 
 
 @app.command()
 def run(
     config_dir: str = typer.Option("config", help="config directory"),
     paper: bool = typer.Option(False, "--paper", help="paper mode: full pipeline, no orders posted"),
+    dashboard: bool = typer.Option(
+        True,
+        "--dashboard/--no-dashboard",
+        help="open live localhost operator dashboard on start (default: on)",
+    ),
+    dashboard_port: int = typer.Option(0, help="dashboard port (0 = use config default)"),
 ) -> None:
     """Start the market maker."""
     from polymaker.engine import Engine
     from polymaker.logging import configure
 
     cfg = Config.load(config_dir)
+    cfg.engine.dashboard_enabled = dashboard
+    if dashboard_port > 0:
+        cfg.engine.dashboard_port = dashboard_port
     configure(json_file=Path(cfg.paths.log_dir) / ("paper.jsonl" if paper else "live.jsonl"))
     if cfg.engine.loop == "uvloop":
         try:
@@ -241,7 +285,15 @@ def run(
         finally:
             await engine.shutdown()
 
-    console.print(f"[bold green]Starting polymaker[/bold green] ({'PAPER' if paper else 'LIVE'})…")
+    mode = "PAPER" if paper else "LIVE"
+    console.print(f"[bold green]Starting polymaker[/bold green] ({mode})…")
+    if dashboard:
+        host = cfg.engine.dashboard_host
+        port = cfg.engine.dashboard_port
+        console.print(
+            f"[dim]Dashboard will open at[/dim] http://{host}:{port}/ "
+            f"[dim](or next free port)[/dim]"
+        )
     try:
         asyncio.run(_go())
     except KeyboardInterrupt:

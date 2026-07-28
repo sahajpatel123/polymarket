@@ -1,12 +1,16 @@
 {
-  "status": "running",
-  "start_ts": 1784925687.31229,
-  "start_iso": "2026-07-24T20:41:27.338348+00:00",
-  "planned_end_ts": 1784968887.31229,
-  "duration_h": 12.0,
+  "status": "completed",
+  "start_ts": 1785163376.572567,
+  "start_iso": "2026-07-27T14:42:56.595006+00:00",
+  "planned_end_ts": 1785177776.572567,
+  "duration_h": 4.0,
   "config_dir": "livecfg",
   "profile": "live_scaled",
-  "bankroll_usdc": 100.0,
+  "bankroll_usdc": 30.0,
   "report_dir": "livecfg/12h_report",
-  "pid_file": "livecfg/12h_paper.pid"
+  "pid_file": "livecfg/12h_paper.pid",
+  "end_ts": 1785177780.173249,
+  "end_iso": "2026-07-27T18:43:50.815145+00:00",
+  "elapsed_h": 4.001000189450052,
+  "report_path": "livecfg/12h_report/REPORT_20260727T184300Z.md"
 }

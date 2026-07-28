@@ -23,6 +23,11 @@ class MarketScore:
     # Profitability extras (optional consumers; score remains primary rank key)
     profit_score: float = 0.0  # bankroll-normalized expected daily return signal
     as_risk: float = 0.0  # 0..1 adverse-selection risk proxy
+    # Dominator KPI: share-adjusted expected $/day (headline); monopoly is diagnostic only
+    share_adjusted_expected_usdc: float = 0.0
+    estimated_share_of_pool: float = 0.0
+    monopoly_diagnostic_usdc: float = 0.0
+    capital_skip: bool = False
 
 
 def _mid(m: MarketMeta) -> float:
@@ -91,34 +96,51 @@ def adverse_selection_risk(m: MarketMeta) -> float:
 
 
 def score_market(m: MarketMeta, *, bankroll_usdc: float = 100.0) -> MarketScore:
-    """Rank markets by expected maker income net of AS risk.
+    """Rank markets by **share-adjusted expected income** at this bankroll.
 
-    Prefer high rewards_daily_rate with manageable competition and low AS risk
-    over raw breadth. bankroll_usdc scales the assumed quote size so small
-    accounts do not pretend they can own large pools.
+    Primary rank key is share-adjusted expected $/day (pool × estimated maker
+    share × uptime), not monopoly pool size. Fat pools with dense competition
+    lose to thinner books we can dominate with the same capital.
+
+    Monopoly diagnostic is stored for operators; it is never the sort key.
+    Capital-ineligible markets (cannot fund rewardsMinSize two-sided) score 0.
     """
-    quote_ref = max(10.0, min(200.0, bankroll_usdc * 0.15))
+    from polymaker.strategy.share_planning import plan_share_adjusted
+
+    mid = _mid(m)
+    plan = plan_share_adjusted(
+        bankroll_usdc=float(bankroll_usdc),
+        rewards_daily_rate=float(m.rewards_daily_rate or 0.0),
+        rewards_min_size=float(m.rewards_min_size or 0.0),
+        market_liquidity=float(m.liquidity_num or 0.0),
+        typical_price=mid,
+        exchange_min_shares=float(m.min_order_size or 5.0),
+        condition_id=m.condition_id,
+    )
+    quote_ref = max(plan.quote_size_usdc, max(10.0, min(200.0, bankroll_usdc * 0.15)))
     rd = reward_density(m, quote_size_usdc=quote_ref)
+    # Prefer share-adjusted plan density when eligible
+    if plan.eligible and plan.share_adjusted_expected_usdc > 0:
+        rd = plan.share_adjusted_expected_usdc
     rp = rebate_potential(m)
     ext = extremity(m)
     as_risk = adverse_selection_risk(m)
     spread = max(0.0, m.best_ask - m.best_bid) if (m.best_bid and m.best_ask) else 1.0
 
-    ref = max(quote_ref, 50.0)
-    our_share = min(0.35, ref / max(m.liquidity_num, ref))
-    # Income: rewards (share-adjusted) dominate; rebates secondary
-    income = rd + 0.5 * rp * our_share
-    # Stronger extremity + spread + AS penalties than v1 (profit over breadth)
-    penalty = (1.0 - 0.55 * ext) * (1.0 / (1.0 + spread * 25.0)) * (1.0 - 0.6 * as_risk)
-    # Viability: need real depth; raise floor so dust books never rank high
-    viability = min(1.0, m.liquidity_num / 5000.0)
-    # Reward-rate boost: markets with large absolute pools are more worth the
-    # fixed cost of watching (scaled so $50/day is ~1.0, $300/day ~1.6)
-    rate_boost = 1.0 + min(1.0, float(m.rewards_daily_rate or 0.0) / 300.0)
-    raw = income * penalty * viability * rate_boost
-    # profit_score ≈ expected daily $ / bankroll (signal, not guarantee)
+    our_share = plan.estimated_share_of_pool if plan.eligible else 0.0
+    # HEADLINE rank key = share-adjusted expected $ (dominator thesis).
+    # Rank tracks selection_score closely: pool×share×uptime with mild AS/ext
+    # haircuts. Absolute liquidity must NOT overturn a higher share-adjusted
+    # expectation (that was the monopoly-pool trap).
+    income = plan.share_adjusted_expected_usdc + 0.10 * rp * our_share
+    penalty = (1.0 - 0.35 * ext) * (1.0 / (1.0 + spread * 12.0)) * (1.0 - 0.40 * as_risk)
+    # Share bonus: reward markets we can actually dominate
+    share_boost = 1.0 + min(0.5, our_share)  # up to +50% when share→0.35+
+    raw = income * penalty * share_boost
+    if plan.skip:
+        raw = 0.0
     b = max(bankroll_usdc, 1.0)
-    profit = (rd * (1.0 - 0.5 * as_risk) + 0.25 * rp * our_share) / b
+    profit = plan.share_adjusted_expected_usdc * (1.0 - 0.5 * as_risk) / b
 
     return MarketScore(
         condition_id=m.condition_id,
@@ -129,4 +151,8 @@ def score_market(m: MarketMeta, *, bankroll_usdc: float = 100.0) -> MarketScore:
         score=round(raw, 4),
         profit_score=round(profit, 6),
         as_risk=round(as_risk, 4),
+        share_adjusted_expected_usdc=round(plan.share_adjusted_expected_usdc, 6),
+        estimated_share_of_pool=round(plan.estimated_share_of_pool, 6),
+        monopoly_diagnostic_usdc=round(plan.monopoly_diagnostic_usdc, 6),
+        capital_skip=bool(plan.skip),
     )

@@ -65,6 +65,16 @@ class EngineConfig(BaseModel):
     auto_discovery_min_liquidity: float = 10000.0
     auto_discovery_min_daily_rate: float = 10.0
     auto_discovery_max_spread_cents: float = 5.0
+    # Aspirational daily return target band (fraction of bankroll). Tracked vs
+    # honest realized PnL only — never a guarantee and never monopoly-PASS.
+    aspirational_daily_return_low: float = 0.10   # 10%
+    aspirational_daily_return_high: float = 0.15  # 15%
+    # ── live operator dashboard (localhost) ──
+    # Opens a multi-layout UI in the browser when the engine starts.
+    dashboard_enabled: bool = True
+    dashboard_host: str = "127.0.0.1"
+    dashboard_port: int = 8765
+    dashboard_open_browser: bool = True
 
 
 class RiskConfig(BaseModel):
@@ -332,6 +342,9 @@ class Secrets(BaseSettings):
     browser_address: str = Field(default="", alias="BROWSER_ADDRESS")
     polygon_rpc: str | None = Field(default=None, alias="POLYGON_RPC")
     alert_webhook_url: str | None = Field(default=None, alias="ALERT_WEBHOOK_URL")
+    # xAI Grok (optional) — enables governed LLM discovery / oversight on the
+    # live path. Empty → deterministic-only fallback (no crash).
+    xai_api_key: str = Field(default="", alias="XAI_API_KEY")
     # Polymarket builder API creds (self-generated via L2 auth: clob.create_builder_api_key)
     # + relayer URL — needed to merge a V2 DepositWallet (sig_type 1/3), whose execute()
     # only accepts calls from its factory/relayer. See merge.py.
@@ -347,6 +360,10 @@ class Secrets(BaseSettings):
     @property
     def has_builder_creds(self) -> bool:
         return bool(self.builder_key and self.builder_secret and self.builder_passphrase)
+
+    @property
+    def has_xai(self) -> bool:
+        return bool(self.xai_api_key and self.xai_api_key.strip())
 
 
 class Config(BaseModel):

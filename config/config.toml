@@ -49,6 +49,11 @@ auto_discovery_max_spread_cents = 5.5
 auto_discovery_max_markets = 2
 auto_discovery_profile = "live_scaled"
 auto_discovery_hot_reload = true
+# Live operator dashboard (opens in browser on `polymaker run` / `--paper`)
+dashboard_enabled = true
+dashboard_host = "127.0.0.1"
+dashboard_port = 8765
+dashboard_open_browser = true
 
 [risk]
 # ── SET THIS TO YOUR REAL BALANCE ──

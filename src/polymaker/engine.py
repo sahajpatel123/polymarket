@@ -372,6 +372,33 @@ class Engine:
             auto_discovery=self.cfg.engine.auto_discovery_enabled,
             hot_reload=self.cfg.engine.auto_discovery_hot_reload,
         )
+        self._start_live_dashboard()
+
+    def _start_live_dashboard(self) -> None:
+        """Serve + open the localhost operator dashboard (paper and live)."""
+        eng = self.cfg.engine
+        if not getattr(eng, "dashboard_enabled", True):
+            return
+        try:
+            from polymaker.metrics.live_dashboard import start_for_engine
+
+            dash = start_for_engine(
+                self,
+                host=getattr(eng, "dashboard_host", "127.0.0.1"),
+                port=int(getattr(eng, "dashboard_port", 8765)),
+                open_browser=bool(getattr(eng, "dashboard_open_browser", True)),
+            )
+            log.info("dashboard_opened", url=dash.url, paper=self.paper)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("dashboard_start_failed", err=str(exc))
+
+    def _stop_live_dashboard(self) -> None:
+        dash = getattr(self, "_live_dashboard", None)
+        if dash is None:
+            return
+        with contextlib.suppress(Exception):
+            dash.stop()
+        self._live_dashboard = None
 
     def _spawn(self, name: str, factory: Any) -> None:
         self._task_specs[name] = factory
@@ -405,6 +432,7 @@ class Engine:
     async def shutdown(self) -> None:
         self._running = False
         log.info("engine_shutdown")
+        self._stop_live_dashboard()
         self.md.stop()
         if self.user:
             self.user.stop()
@@ -1292,32 +1320,53 @@ class Engine:
                 continue
             scored.append((sc.score, meta))
 
-        # Risk-parity capital allocation ranks which markets deserve a slot.
-        # Expected return ≈ score (already reward/AS-aware); risk proxy from
-        # inverse viability (thin books → higher risk).
-        from polymaker.strategy.allocation import AllocationInputs, allocate_capital
+        # Multi-market dominator portfolio: max Σ share_adjusted under bankroll.
+        # Universe can be any size; simultaneous slots = max_markets.
+        from polymaker.strategy.share_planning import optimize_multi_market_portfolio
 
         bankroll = float(self.cfg.risk.bankroll_usdc or self.cfg.risk.max_total_exposure_usdc or 100.0)
-        alloc_markets: list[tuple[str, float, float]] = []
         by_cid = {m.condition_id: m for _, m in scored}
+        cand_dicts: list[dict[str, Any]] = []
         for sc_val, meta in scored:
-            risk = max(0.01, 1.0 / max(meta.liquidity_num / 10000.0, 0.1))
-            alloc_markets.append((meta.condition_id, max(sc_val, 1e-6), risk))
-        alloc = allocate_capital(AllocationInputs(
-            markets=tuple(alloc_markets),
-            total_capital_usdc=bankroll,
+            mid = 0.5
+            if meta.best_bid > 0 and meta.best_ask > 0:
+                mid = 0.5 * (meta.best_bid + meta.best_ask)
+            cand_dicts.append({
+                "condition_id": meta.condition_id,
+                "rewards_daily_rate": float(meta.rewards_daily_rate or 0.0),
+                "rewards_min_size": float(meta.rewards_min_size or 0.0),
+                "liquidity_num": float(meta.liquidity_num or 0.0),
+                "typical_price": mid,
+                "min_order_size": float(meta.min_order_size or 5.0),
+                "score": sc_val,
+            })
+        port = optimize_multi_market_portfolio(
+            cand_dicts,
+            bankroll_usdc=bankroll,
+            max_markets=int(max_markets),
             max_concentration=float(self.cfg.risk.max_market_concentration_pct or 0.4),
-            min_allocation=0.05,
-        ))
-        # Prefer allocation order (highest capital first); fall back to score sort
-        if alloc.allocations:
-            ordered = [by_cid[a.condition_id] for a in
-                       sorted(alloc.allocations, key=lambda a: -a.capital_usdc)
-                       if a.condition_id in by_cid]
-            # Stash per-market capital on profile overrides via add_market sizing
+        )
+        if port.picks:
+            ordered = [
+                by_cid[p.condition_id]
+                for p in port.picks
+                if p.condition_id in by_cid
+            ]
+            # Append any scored markets not picked (fallback order by score)
+            picked = {p.condition_id for p in port.picks}
+            for sc_val, meta in sorted(scored, key=lambda x: -x[0]):
+                if meta.condition_id not in picked:
+                    ordered.append(meta)
             self._discovery_capital = {
-                a.condition_id: a.capital_usdc for a in alloc.allocations
+                p.condition_id: p.allocated_usdc for p in port.picks
             }
+            log.info(
+                "discovery_portfolio",
+                n_picks=port.n_markets,
+                total_share_adj=round(port.total_share_adjusted_usdc, 4),
+                daily_return_pct=round(port.daily_return_pct, 6),
+                bankroll=bankroll,
+            )
         else:
             ordered = [m for _, m in sorted(scored, key=lambda x: -x[0])]
             self._discovery_capital = {}
@@ -2429,6 +2478,214 @@ class Engine:
         self.metrics.emit("aspirational_vs_honest", **payload)
         return payload
 
+    def emit_share_adjusted_planning(
+        self,
+        *,
+        bankroll_usdc: float | None = None,
+        alt_bankrolls: tuple[float, ...] | None = None,
+    ) -> dict[str, Any]:
+        """Emit share-adjusted expected rewards for live markets (headline KPI).
+
+        Monopoly diagnostic is included per market but never used as the rank
+        key. Capital-tight scenarios appear as skip with explicit reason.
+        """
+        from polymaker.strategy.share_planning import (
+            plan_capital_scenarios,
+            plan_share_adjusted,
+        )
+
+        b = float(
+            bankroll_usdc
+            if bankroll_usdc is not None
+            else (self.cfg.risk.bankroll_usdc or self._effective_capital or 0.0)
+        )
+        alts = alt_bankrolls or (30.0, max(b, 30.0), max(b * 5.0, 2000.0))
+        markets_out: list[dict[str, Any]] = []
+        for cid, meta in self.metas.items():
+            mid = 0.5
+            if meta.best_bid > 0 and meta.best_ask > 0:
+                mid = 0.5 * (meta.best_bid + meta.best_ask)
+            plan = plan_share_adjusted(
+                bankroll_usdc=b,
+                rewards_daily_rate=float(meta.rewards_daily_rate or 0.0),
+                rewards_min_size=float(meta.rewards_min_size or 0.0),
+                market_liquidity=float(meta.liquidity_num or 0.0),
+                typical_price=mid,
+                exchange_min_shares=float(meta.min_order_size or 5.0),
+                condition_id=cid,
+            )
+            scen = plan_capital_scenarios(
+                rewards_daily_rate=float(meta.rewards_daily_rate or 0.0),
+                rewards_min_size=float(meta.rewards_min_size or 0.0),
+                market_liquidity=float(meta.liquidity_num or 0.0),
+                typical_price=mid,
+                bankrolls=alts,
+                condition_id=cid,
+            )
+            row = {
+                **plan.as_dict(),
+                "slug": meta.slug,
+                "scenarios": [s.as_dict() for s in scen.scenarios],
+            }
+            markets_out.append(row)
+            self.metrics.emit(
+                "share_adjusted_plan",
+                condition_id=cid,
+                headline_kpi="share_adjusted_expected_usdc",
+                share_adjusted_expected_usdc=plan.share_adjusted_expected_usdc,
+                estimated_share_of_pool=plan.estimated_share_of_pool,
+                monopoly_diagnostic_usdc=plan.monopoly_diagnostic_usdc,
+                skip=plan.skip,
+                quote_size_usdc=plan.quote_size_usdc,
+                bankroll_usdc=b,
+            )
+        markets_out.sort(
+            key=lambda r: float(r.get("share_adjusted_expected_usdc") or 0.0),
+            reverse=True,
+        )
+        # Multi-market portfolio + capacity curve (best book for this capital)
+        mm_payload = self.emit_multi_market_dominator(bankroll_usdc=b)
+
+        payload: dict[str, Any] = {
+            "headline_kpi": "share_adjusted_expected_usdc",
+            "bankroll_usdc": b,
+            "n_markets": len(markets_out),
+            "markets": markets_out,
+            "portfolio": mm_payload.get("portfolio"),
+            "capacity_curve": mm_payload.get("capacity_curve"),
+            "note": (
+                "Dominate by raising share_of_pool × n_markets × uptime; "
+                "monopoly is ceiling only. %/day decays as capital outgrows pools."
+            ),
+        }
+        self.metrics.emit(
+            "share_adjusted_planning",
+            headline_kpi=payload["headline_kpi"],
+            bankroll_usdc=b,
+            n_markets=len(markets_out),
+            capital_outgrew=bool(
+                (mm_payload.get("capacity_curve") or {}).get(
+                    "capital_outgrew_reward_surface"
+                )
+            ),
+        )
+        return payload
+
+    def emit_multi_market_dominator(
+        self,
+        *,
+        bankroll_usdc: float | None = None,
+        candidate_markets: list[dict[str, Any]] | None = None,
+        max_markets: int | None = None,
+    ) -> dict[str, Any]:
+        """Best multi-market portfolio + capacity curve for this bankroll.
+
+        No hard limit on universe size — only simultaneous slots
+        (``auto_discovery_max_markets``) and concentration. Emits metrics for
+        operators: total share-adj $, %/day, and capital_outgrew flag.
+        """
+        from polymaker.strategy.share_planning import (
+            capacity_curve,
+            optimize_multi_market_portfolio,
+        )
+
+        b = float(
+            bankroll_usdc
+            if bankroll_usdc is not None
+            else (self.cfg.risk.bankroll_usdc or self._effective_capital or 0.0)
+        )
+        max_m = int(
+            max_markets
+            if max_markets is not None
+            else (self.cfg.engine.auto_discovery_max_markets or 20)
+        )
+        conc = float(self.cfg.risk.max_market_concentration_pct or 0.4)
+
+        if candidate_markets is not None:
+            cands = list(candidate_markets)
+        else:
+            cands = []
+            for cid, meta in self.metas.items():
+                mid = 0.5
+                if meta.best_bid > 0 and meta.best_ask > 0:
+                    mid = 0.5 * (meta.best_bid + meta.best_ask)
+                cands.append({
+                    "condition_id": cid,
+                    "rewards_daily_rate": float(meta.rewards_daily_rate or 0.0),
+                    "rewards_min_size": float(meta.rewards_min_size or 0.0),
+                    "liquidity_num": float(meta.liquidity_num or 0.0),
+                    "typical_price": mid,
+                    "min_order_size": float(meta.min_order_size or 5.0),
+                    "slug": meta.slug,
+                })
+            # Also merge catalog top so capacity uses broader surface
+            try:
+                for row in self.catalog.top(limit=80):
+                    meta = row[0] if isinstance(row, tuple) else row
+                    cid = getattr(meta, "condition_id", "") or ""
+                    if not cid or any(c["condition_id"] == cid for c in cands):
+                        continue
+                    mid = 0.5
+                    bb = float(getattr(meta, "best_bid", 0) or 0)
+                    ba = float(getattr(meta, "best_ask", 0) or 0)
+                    if bb > 0 and ba > 0:
+                        mid = 0.5 * (bb + ba)
+                    cands.append({
+                        "condition_id": cid,
+                        "rewards_daily_rate": float(getattr(meta, "rewards_daily_rate", 0) or 0),
+                        "rewards_min_size": float(getattr(meta, "rewards_min_size", 0) or 0),
+                        "liquidity_num": float(getattr(meta, "liquidity_num", 0) or 0),
+                        "typical_price": mid,
+                        "min_order_size": float(getattr(meta, "min_order_size", 5) or 5),
+                        "slug": getattr(meta, "slug", ""),
+                    })
+            except Exception:  # noqa: BLE001
+                pass
+
+        port = optimize_multi_market_portfolio(
+            cands,
+            bankroll_usdc=b,
+            max_markets=max_m,
+            max_concentration=conc,
+        )
+        curve = capacity_curve(
+            cands,
+            bankrolls=(100.0, 200.0, 300.0, 500.0, 1000.0, 2000.0, 5000.0),
+            current_bankroll=b,
+            max_markets=max_m,
+            max_concentration=conc,
+        )
+        # Stash preferred discovery capital from portfolio picks
+        for p in port.picks:
+            self._discovery_capital[p.condition_id] = p.allocated_usdc
+
+        port_d = port.as_dict()
+        curve_d = curve.as_dict()
+        self.metrics.emit(
+            "multi_market_portfolio",
+            bankroll_usdc=b,
+            n_markets=port.n_markets,
+            total_share_adjusted_usdc=port.total_share_adjusted_usdc,
+            daily_return_pct=port.daily_return_pct,
+            capital_outgrew=curve.capital_outgrew_reward_surface,
+            peak_pct=curve.peak_pct,
+        )
+        if curve.capital_outgrew_reward_surface:
+            log.info(
+                "capital_outgrew_reward_surface",
+                bankroll_usdc=b,
+                current_pct=round(curve.current_pct, 6),
+                peak_pct=round(curve.peak_pct, 6),
+                peak_bankroll=curve.peak_pct_bankroll,
+                reason=curve.outgrew_reason,
+            )
+        return {
+            "portfolio": port_d,
+            "capacity_curve": curve_d,
+            "headline_kpi": "total_share_adjusted_usdc",
+            "n_candidates": len(cands),
+        }
+
     async def _maintenance_loop(self) -> None:
         """Periodic REST book refresh + auto-compounding."""
         while self._running:
@@ -2439,6 +2696,8 @@ class Engine:
                         await self._refresh_book(tok)
             with contextlib.suppress(Exception):
                 self.emit_aspirational_vs_honest()
+            with contextlib.suppress(Exception):
+                self.emit_share_adjusted_planning()
             # ── Auto compounding: update effective bankroll from PnL ──
             if self._day_start_equity > 0 and self._base_capital > 0:
                 try:

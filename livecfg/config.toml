@@ -23,6 +23,10 @@ loop = "uvloop"
 # ADDS complementary markets on top.
 auto_discovery_enabled = true
 auto_discovery_hot_reload = true
+dashboard_enabled = true
+dashboard_host = "127.0.0.1"
+dashboard_port = 8765
+dashboard_open_browser = true
 
 [risk]
 # Single capital knob — ALL caps derive from this. Change this number.

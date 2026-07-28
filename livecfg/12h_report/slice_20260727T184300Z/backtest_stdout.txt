@@ -1,0 +1,41 @@
+Found 2 market(s) in journal: ['0x0f49db97f71c68', '0x18b1c135d0a40c']
+profile=live_scaled bankroll_usdc=30.00
+funding 1 market(s) via allocate_capital: [('0x18b1c135d0a40c', 13.5)]
+
+--- Backtesting 0x18b1c135d0a40c... with profile 'live_scaled' capital=$13.5 ---
+  tick=0.001, rewards_min=200.0, rewards_band=5.5c, daily_rate=$308
+  events_read=1324 applied=853 recomputes=853
+  quotes=8 cancels=6 fills=0 marks=853
+
+  Metrics:
+    n_quote=8 n_cancel=6 n_fill=0
+    realized_spread_usdc=0.0000
+    inventory_drift_abs_peak=0.0000
+    inventory_net_end={'0x18b1c135d0a40c5894da9412e77311827d9caf16cf4cd6591b247a34730af919': 0.0}
+    markout={'30s': 0.0, '120s': 0.0, '300s': 0.0}
+    markout_n={'30s': 0, '120s': 0, '300s': 0}
+    reward_pool_accrual[0x18b1c135d0]=$2.7711
+
+  PnL Estimate:
+    spread_pnl=$0.0000
+    reward_pool=$2.7711 in_band_s=777.3
+    resting_notional=$5.98 equal_share_fallback=False
+    our_share=0.0696 our_reward=$0.1928
+    rebate_est=$0.0000
+    total_est=$0.1928
+    runtime_hours=0.2307
+    daily_return_pct=148.6227%
+    gap_to_15pct=0.0000%
+    target_band_hit=True
+
+=== PORTFOLIO ===
+total_est=$0.1928
+period_return_pct=0.6428%  # over journal window only
+daily_return_pct=66.8802%  # period / (runtime_h/24) extrapolation
+gap_to_15pct=0.0000% target_band_hit=True
+runtime_hours=0.2307 (journal activity span, not wall-clock)
+n_fill=0 estimate_is_reward_only=True
+  NOTE: 0 fills — total_est is share-adjusted reward accrual only, not fill PnL
+oob_check quotes=8 dust_le_0.001=0 oob=0 ok=True
+Summary written to /Users/sahajpatel/code/polymarket/livecfg/12h_report/slice_20260727T184300Z/backtest/backtest_summary.json
+
