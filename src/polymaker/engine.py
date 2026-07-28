@@ -1320,9 +1320,13 @@ class Engine:
                 continue
             scored.append((sc.score, meta))
 
-        # Multi-market dominator portfolio: max Σ share_adjusted under bankroll.
-        # Universe can be any size; simultaneous slots = max_markets.
-        from polymaker.strategy.share_planning import optimize_multi_market_portfolio
+        # Multi-market dominator: max Σ risk-adjusted share-adj under bankroll.
+        # Dynamic slots (best N for capital) capped by discovery max_markets.
+        from polymaker.catalog.scoring import adverse_selection_risk
+        from polymaker.strategy.share_planning import (
+            optimize_multi_market_portfolio,
+            recommend_max_markets,
+        )
 
         bankroll = float(self.cfg.risk.bankroll_usdc or self.cfg.risk.max_total_exposure_usdc or 100.0)
         by_cid = {m.condition_id: m for _, m in scored}
@@ -1338,13 +1342,24 @@ class Engine:
                 "liquidity_num": float(meta.liquidity_num or 0.0),
                 "typical_price": mid,
                 "min_order_size": float(meta.min_order_size or 5.0),
+                "rewards_max_spread": float(meta.rewards_max_spread or 0.0),
+                "as_risk": float(adverse_selection_risk(meta)),
                 "score": sc_val,
             })
+        conc = float(self.cfg.risk.max_market_concentration_pct or 0.4)
+        dyn_n = recommend_max_markets(
+            cand_dicts,
+            bankroll_usdc=bankroll,
+            hard_cap=int(max_markets),
+            max_concentration=conc,
+        )
         port = optimize_multi_market_portfolio(
             cand_dicts,
             bankroll_usdc=bankroll,
-            max_markets=int(max_markets),
-            max_concentration=float(self.cfg.risk.max_market_concentration_pct or 0.4),
+            max_markets=dyn_n,
+            max_concentration=conc,
+            auto_max_markets=False,
+            hard_cap_markets=int(max_markets),
         )
         if port.picks:
             ordered = [
@@ -1354,7 +1369,7 @@ class Engine:
             ]
             # Append any scored markets not picked (fallback order by score)
             picked = {p.condition_id for p in port.picks}
-            for sc_val, meta in sorted(scored, key=lambda x: -x[0]):
+            for _sc_val, meta in sorted(scored, key=lambda x: -x[0]):
                 if meta.condition_id not in picked:
                     ordered.append(meta)
             self._discovery_capital = {
@@ -2585,8 +2600,10 @@ class Engine:
         operators: total share-adj $, %/day, and capital_outgrew flag.
         """
         from polymaker.strategy.share_planning import (
+            build_dominator_operator_report,
             capacity_curve,
             optimize_multi_market_portfolio,
+            recommend_max_markets,
         )
 
         b = float(
@@ -2594,11 +2611,7 @@ class Engine:
             if bankroll_usdc is not None
             else (self.cfg.risk.bankroll_usdc or self._effective_capital or 0.0)
         )
-        max_m = int(
-            max_markets
-            if max_markets is not None
-            else (self.cfg.engine.auto_discovery_max_markets or 20)
-        )
+        hard_cap = int(self.cfg.engine.auto_discovery_max_markets or 20)
         conc = float(self.cfg.risk.max_market_concentration_pct or 0.4)
 
         if candidate_markets is not None:
@@ -2642,12 +2655,32 @@ class Engine:
             except Exception:  # noqa: BLE001
                 pass
 
-        port = optimize_multi_market_portfolio(
-            cands,
-            bankroll_usdc=b,
-            max_markets=max_m,
-            max_concentration=conc,
-        )
+        # Dynamic slots: best N for this capital (capped by config hard_cap)
+        if max_markets is not None:
+            max_m = min(int(max_markets), hard_cap)
+            port = optimize_multi_market_portfolio(
+                cands,
+                bankroll_usdc=b,
+                max_markets=max_m,
+                max_concentration=conc,
+                auto_max_markets=False,
+                hard_cap_markets=hard_cap,
+            )
+        else:
+            max_m = recommend_max_markets(
+                cands,
+                bankroll_usdc=b,
+                hard_cap=hard_cap,
+                max_concentration=conc,
+            )
+            port = optimize_multi_market_portfolio(
+                cands,
+                bankroll_usdc=b,
+                max_markets=max_m,
+                max_concentration=conc,
+                auto_max_markets=False,
+                hard_cap_markets=hard_cap,
+            )
         curve = capacity_curve(
             cands,
             bankrolls=(100.0, 200.0, 300.0, 500.0, 1000.0, 2000.0, 5000.0),
@@ -2661,14 +2694,17 @@ class Engine:
 
         port_d = port.as_dict()
         curve_d = curve.as_dict()
+        operator = build_dominator_operator_report(port, curve)
         self.metrics.emit(
             "multi_market_portfolio",
             bankroll_usdc=b,
             n_markets=port.n_markets,
             total_share_adjusted_usdc=port.total_share_adjusted_usdc,
+            total_risk_adjusted_usdc=port.total_risk_adjusted_usdc,
             daily_return_pct=port.daily_return_pct,
             capital_outgrew=curve.capital_outgrew_reward_surface,
             peak_pct=curve.peak_pct,
+            max_markets_recommended=port.max_markets_recommended,
         )
         if curve.capital_outgrew_reward_surface:
             log.info(
@@ -2678,12 +2714,15 @@ class Engine:
                 peak_pct=round(curve.peak_pct, 6),
                 peak_bankroll=curve.peak_pct_bankroll,
                 reason=curve.outgrew_reason,
+                operator_message=operator.get("operator_message", "")[:200],
             )
         return {
             "portfolio": port_d,
             "capacity_curve": curve_d,
-            "headline_kpi": "total_share_adjusted_usdc",
+            "operator": operator,
+            "headline_kpi": "total_risk_adjusted_usdc",
             "n_candidates": len(cands),
+            "max_markets_recommended": max_m,
         }
 
     async def _maintenance_loop(self) -> None:

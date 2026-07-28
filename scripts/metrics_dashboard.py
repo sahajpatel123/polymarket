@@ -36,6 +36,11 @@ def main() -> int:
     }
     print(json.dumps(summary, indent=2, sort_keys=True))
     print(f"status=OK wrote={out}", file=sys.stderr)
+    print(
+        "tip: for the live multi-layout UI use "
+        "`polymaker run` (auto-opens) or `polymaker dashboard --serve`",
+        file=sys.stderr,
+    )
     return 0
 
 

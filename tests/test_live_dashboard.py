@@ -54,6 +54,18 @@ def test_insights_paper_no_fills() -> None:
     assert any("no fills" in t.lower() for t in tips)
 
 
+def test_insights_global_halt() -> None:
+    snap = build_snapshot_from_paths(
+        db_path=Path("/no/such.db"),
+        log_dir=Path("/no/such"),
+        metrics_log=Path("/no/such.jsonl"),
+        paper=False,
+        risk_extra={"global_halt": True, "halt_reason": "daily_loss -50"},
+    )
+    tips = build_insights(snap)
+    assert any("halt" in t.lower() for t in tips)
+
+
 def test_live_server_snapshot_endpoint(tmp_path: Path) -> None:
     metrics = tmp_path / "metrics-paper.jsonl"
     t0 = 1_000_000.0

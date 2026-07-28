@@ -198,9 +198,13 @@ def _metrics_bits(metrics_log: Path) -> dict[str, Any]:
 def build_insights(snap: DashboardSnapshot) -> list[str]:
     """Short, operator-facing sentences — the 'smart' layer."""
     tips: list[str] = []
+    if snap.risk.get("global_halt"):
+        tips.append(
+            f"Global risk halt — {snap.risk.get('halt_reason') or 'check kill / error rate'}."
+        )
     if snap.mode == "PAPER" and snap.n_fill == 0 and snap.n_quote > 50:
         tips.append("Paper is quoting but has no fills — reward farming posture, not PnL proof.")
-    if snap.health == "CRITICAL":
+    if snap.health == "CRITICAL" and not snap.risk.get("global_halt"):
         tips.append("Fix outage before trusting quotes: check connectivity / collector.")
     if snap.daily_pnl is not None and snap.daily_pnl < 0 and snap.n_fill > 0:
         tips.append("Negative day with fills — check markouts on Risk/Tape; size may be too large.")
@@ -307,13 +311,21 @@ def build_snapshot_from_engine(engine: Any) -> DashboardSnapshot:
             capital = 0.0
 
     live_markets: list[dict[str, Any]] = []
+    metrics_bits = _metrics_bits(metrics_log)
+    rewards = metrics_bits.get("reward_accrual") or {}
+    now = time.time()
     for cid, meta in getattr(engine, "metas", {}).items():
-        regime = "—"
+        regime = "QUIET"
+        cooloff_s = 0.0
         rm = getattr(engine, "regime_m", {}).get(cid)
-        if rm is not None and getattr(rm, "state", None) is not None:
-            regime = str(getattr(rm.state, "name", rm.state))
-        elif cid in getattr(engine, "_halted", set()):
+        if cid in getattr(engine, "_halted", set()):
             regime = "HALTED"
+        elif cid in getattr(engine, "_llm_paused", set()):
+            regime = "PAUSED"
+        elif rm is not None and getattr(rm, "in_cooloff", False):
+            regime = "EVENT"
+            with contextlib.suppress(Exception):
+                cooloff_s = float(rm.cooloff_remaining(now))
         pos_yes = engine.state.position(meta.yes.token_id).size
         pos_no = engine.state.position(meta.no.token_id).size
         live_markets.append(
@@ -321,8 +333,9 @@ def build_snapshot_from_engine(engine: Any) -> DashboardSnapshot:
                 "id": (meta.slug or cid)[:28],
                 "condition_id": cid,
                 "regime": regime,
+                "cooloff_s": round(cooloff_s, 1),
                 "inventory_net": round(float(pos_yes - pos_no), 4),
-                "reward_accrual": 0.0,
+                "reward_accrual": float(rewards.get(cid, 0.0) or 0.0),
                 "question": (meta.question or "")[:80],
                 "tick": meta.tick_size,
                 "rewards_min_size": meta.rewards_min_size,
@@ -336,7 +349,22 @@ def build_snapshot_from_engine(engine: Any) -> DashboardSnapshot:
     }
     kill = float(getattr(cfg.risk, "daily_loss_kill_usdc", 0) or 0) or None
 
-    return build_snapshot_from_paths(
+    # Prefer live RiskManager marks over last SQLite snapshot when available.
+    live_equity = None
+    live_pnl = None
+    halt_reason = ""
+    risk = getattr(engine, "risk", None)
+    if risk is not None:
+        with contextlib.suppress(Exception):
+            live_equity = float(risk.equity())
+            live_pnl = float(getattr(risk, "daily_pnl", 0.0))
+            halted, why = risk.global_halt()
+            risk_extra["global_halt"] = bool(halted)
+            if halted:
+                halt_reason = str(why or "global_halt")
+                risk_extra["halt_reason"] = halt_reason
+
+    snap = build_snapshot_from_paths(
         db_path=cfg.paths.db,
         log_dir=cfg.paths.log_dir,
         metrics_log=metrics_log,
@@ -346,6 +374,15 @@ def build_snapshot_from_engine(engine: Any) -> DashboardSnapshot:
         live_markets=live_markets,
         risk_extra=risk_extra,
     )
+    if live_equity is not None:
+        snap.equity = live_equity
+    if live_pnl is not None:
+        snap.daily_pnl = live_pnl
+    if halt_reason:
+        snap.health = "CRITICAL"
+        snap.health_detail = f"Risk halt: {halt_reason}"
+        snap.insights = build_insights(snap)
+    return snap
 
 
 def render_app_html(*, title: str = "Polymaker") -> str:
@@ -392,6 +429,12 @@ body {{
 }}
 .brand h1 span {{ color: var(--mint); }}
 .meta {{ color: var(--muted); font-size: .85rem; text-align:right; }}
+.conn {{
+  display:inline-block; width:.55rem; height:.55rem; border-radius:50%;
+  margin-right:.35rem; vertical-align:middle; background: var(--warn);
+}}
+.conn-ok {{ background: var(--ok); box-shadow: 0 0 8px color-mix(in srgb, var(--ok) 55%, transparent); }}
+.conn-bad {{ background: var(--bad); }}
 .mode {{
   display:inline-block; padding:.15rem .55rem; border-radius:999px;
   font-size:.72rem; letter-spacing:.06em; font-weight:600; vertical-align:middle;
@@ -466,8 +509,8 @@ th {{
   <header class="brand">
     <h1>Poly<span>maker</span> <span id="mode" class="mode mode-PAPER">PAPER</span></h1>
     <div class="meta">
-      <div id="clock">—</div>
-      <div>auto-refresh 2s · localhost</div>
+      <div><span id="conn" class="conn" title="snapshot link"></span><span id="clock">—</span></div>
+      <div>auto-refresh 2s · keys 1–4 · localhost</div>
     </div>
   </header>
 
@@ -610,7 +653,7 @@ th {{
     }} else {{
       mb.innerHTML = s.markets.map(m => `<tr>
         <td><code>${{m.id}}</code></td>
-        <td><span class="regime">${{m.regime || "—"}}</span></td>
+        <td><span class="regime">${{m.regime || "—"}}${{m.cooloff_s ? " ·" + m.cooloff_s + "s" : ""}}</span></td>
         <td>${{fmt(m.inventory_net, 2)}}</td>
         <td>${{fmt(m.reward_accrual, 3)}}</td>
         <td style="color:var(--muted);max-width:28ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${{m.question || ""}}</td>
@@ -646,11 +689,16 @@ th {{
   }}
 
   async function tick() {{
+    const dot = $("conn");
     try {{
       const r = await fetch("/api/snapshot", {{ cache: "no-store" }});
       if (!r.ok) throw new Error("HTTP " + r.status);
       paint(await r.json());
+      dot.className = "conn conn-ok";
+      dot.title = "snapshot OK";
     }} catch (e) {{
+      dot.className = "conn conn-bad";
+      dot.title = "snapshot failed";
       $("health-detail").textContent = "Waiting for bot snapshot… (" + e.message + ")";
     }}
   }}
