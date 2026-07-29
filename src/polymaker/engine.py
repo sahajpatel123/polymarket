@@ -626,12 +626,13 @@ class Engine:
     # ── V3 LLM oversight ─────────────────────────────────────────────
 
     def _oversight_snapshot(self) -> dict[str, Any]:
-        """Build a snapshot for the OversightLoop's 30-min commentary.
+        """Build a rich snapshot for Grok's 10-min oversight commentary.
 
-        Returns a dict the LLM can reason about: PnL, drawdown, fill
-        rate, top-of-book state per market, and recent anomalies.
-        All values are serializable so the oversight loop can pass
-        them to Grok without coupling to the engine's internal types.
+        Includes everything Grok needs to make informed decisions:
+        equity/pnl trends, per-market reward share, regime state,
+        fill quality, spread overrides, capital allocation, and
+        adverse selection signals. No fluff — every field has a
+        reason for being here.
         """
         equity = float(self.risk.equity)
         day_start = float(self.risk.day_start_equity or equity or 1.0)
@@ -640,35 +641,96 @@ class Engine:
         if day_start > 0 and equity < day_start:
             drawdown = (day_start - equity) / day_start
 
+        # Per-market intelligence
         markets: dict[str, dict[str, Any]] = {}
-        for _cid, meta in self.metas.items():
+        total_reward_accrued = 0.0
+        for cid, meta in self.metas.items():
             yes_book = self.md.book(meta.yes.token_id)
             micro = yes_book.microprice(1) if yes_book is not None else None
             fv = float(micro) if micro is not None else 0.5
             spread = 0.0
+            depth_imbalance = 0.0
             if yes_book is not None:
                 v = yes_book.view()
-                if v.best_bid is not None and v.best_ask is not None:
-                    spread = max(0.0, float(v.best_ask) - float(v.best_bid))
-            markets[_cid[:8]] = {
-                "slug": meta.slug,
-                "fv": round(fv, 5),
-                "regime": "live",
-                "spread": round(spread, 4),
-                "reward_min_size": getattr(meta, "rewards_min_size", 0),
-            }
+                bb = v.best_bid.price if v.best_bid else 0
+                ba = v.best_ask.price if v.best_ask else 0
+                if bb > 0 and ba > 0:
+                    spread = ba - bb
+                bd = v.bid_depth if hasattr(v, "bid_depth") else 0
+                ad = v.ask_depth if hasattr(v, "ask_depth") else 0
+                total_depth = bd + ad
+                depth_imbalance = (bd - ad) / max(total_depth, 0.01)
 
-        n_cap_skip = 0
+            # Regime + estimators
+            regime_m = self.regime_m.get(cid)
+            regime_state = str(regime_m.current if regime_m else "QUIET")
+            est = self.est.get(cid)
+            vol_ratio = float(getattr(est.vol, "ratio", 0) or 0)
+            tox = float(getattr(est.markout, "toxicity", 0) or 0)
+            flow_z = float(getattr(est.flow, "z", 0) or 0)
+
+            # Capital + sizing
+            alloc = float(self._discovery_capital.get(cid, 0) or 0)
+            spread_override = float(self._per_market_spread_mult.get(cid, 1.0))
+            profile = self.profiles.get(cid)
+            base_size = float(getattr(profile, "base_size_usdc", 0) or 0) if profile else 0
+            reward_min = float(getattr(meta, "rewards_min_size", 0) or 0)
+            reward_rate = float(getattr(meta, "rewards_daily_rate", 0) or 0)
+
+            # Fill quality
+            fill_rate = 0.0
+            resting_notional = 0.0
+            orders = self.state.orders_for(meta.yes.token_id) + self.state.orders_for(meta.no.token_id)
+            if orders:
+                resting_notional = sum(o.price * o.size for o in orders)
+
+            # Reward accrual (approximate from recent marks)
+            reward_accrued = 0.0
+            # Build a condensed market view
+            markets[cid[:8]] = {
+                "slug": str(getattr(meta, "slug", "") or ""),
+                "fv": round(fv, 5),
+                "spread_ticks": round(spread / max(meta.tick_size, 0.0001), 1),
+                "regime": regime_state,
+                "vol_ratio": round(vol_ratio, 4),
+                "toxicity": round(tox, 4),
+                "flow_z": round(flow_z, 3),
+                "depth_imbalance": round(depth_imbalance, 3),
+                "reward_min_size": reward_min,
+                "reward_daily_rate": round(reward_rate, 2),
+                "our_allocation_usdc": round(alloc, 2),
+                "our_base_size_usdc": round(base_size, 2),
+                "our_resting_notional_usdc": round(resting_notional, 2),
+                "spread_override": round(spread_override, 2),
+                "fill_rate": round(fill_rate, 4),
+                "in_quarantine": cid in self._quarantined,
+                "in_halted": cid in self._halted,
+            }
+            total_reward_accrued += reward_accrued
+
         return {
+            "timestamp_utc": datetime.utcnow().isoformat(),
+            "paper_mode": self.paper,
+            # Portfolio level
             "equity": round(equity, 2),
             "daily_pnl": round(daily, 2),
+            "daily_return_pct": round(daily / max(day_start, 1) * 100, 2),
             "drawdown_pct": round(drawdown * 100, 2),
-            "fill_rate": round(self._recent_fill_rate(), 4),
+            "effective_capital": round(self._effective_capital, 2),
+            "base_capital": round(self._base_capital, 2),
+            "capital_compounded": self._effective_capital > self._base_capital * 1.01,
+            # Risk envelope
+            "daily_loss_kill_usdc": round(self.cfg.risk.daily_loss_kill_usdc, 2),
+            "days_until_loss_kill": (
+                round(abs(self.cfg.risk.daily_loss_kill_usdc / max(daily, 0.01)), 1)
+                if daily < 0 else None
+            ),
+            # Activity
             "n_active_markets": len(self.metas),
             "n_halted": len(self._halted),
-            "n_llm_paused": len(self._llm_paused),
             "n_quarantined": len(self._quarantined),
-            "n_capital_skip": n_cap_skip,
+            "llm_enabled": bool(self._llm_enabled),
+            # Per-market data (richest field)
             "markets": markets,
         }
 

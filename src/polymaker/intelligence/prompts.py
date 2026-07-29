@@ -55,10 +55,21 @@ def prompt_rank_markets(
       }
     """
     system = SYSTEM_PREAMBLE + (f"\n\n{memory_block}" if memory_block else "")
-    user = f"""Rank the following Polymarket candidates for maker liquidity rewards.
-Prefer markets where our bankroll can meet rewardsMinSize, spreads are farmable,
-and adverse selection risk is manageable. Return the top {top_n} only via the
-rank_markets tool.
+    user = f"""Rank these Polymarket candidates for maker liquidity rewards.
+
+Prioritize markets where:
+1. rewards_daily_rate is high relative to rewards_min_size (good ROI)
+2. spread is wide enough to farm (but not so wide the market is dead)
+3. liquidity is sufficient (thin books = adverse selection risk)
+4. our capital can meet rewardsMinSize for 2-sided quoting
+
+For each ranked market, suggest:
+- confidence (0-1): how sure you are this market is worth quoting
+- suggested_size_pct (0-1): what fraction of our per-market cap to use
+- narrative: one sentence on why this market
+- risk_notes: what could go wrong (adverse selection, thin book, news risk)
+
+Return the top {top_n} via the rank_markets tool.
 
 capital_usdc={capital_usdc}
 candidates=
@@ -249,9 +260,25 @@ def prompt_oversight_commentary(
       }
     """
     system = SYSTEM_PREAMBLE + (f"\n\n{memory_block}" if memory_block else "")
-    user = f"""30-minute oversight snapshot. Comment on health and optionally propose
-bounded actions. Prefer no_op / dry_run=true unless risk is clear.
-Use oversight_report.
+    user = f"""10-minute oversight snapshot. Analyze and propose bounded actions.
+
+You are the trading brain. The math engine handles quoting, risk, and
+execution. Your job: spot opportunities and threats early.
+
+Guidelines:
+- If a market has high toxicity (>0.3) OR flow_z > 2: propose pause_market
+  with reason "toxic flow detected — widening spread insufficient"
+- If a market has low spread but high reward rate AND low toxicity:
+  propose add_layer to capture more reward share
+- If drawdown > 5%: propose widen_spread across all markets
+- If daily PnL is positive and trending up: propose tighten_spread on
+  winning markets to increase fill rate
+- If a market has resting_notional below reward_min_size AND capital
+  allocation is sufficient: flag it (can't earn rewards)
+- Prefer dry_run=false when confidence is high and the action is
+  reversible. Use dry_run=true only when uncertain.
+- NEVER propose: side changes, directional bets, risk cap modifications.
+- Output via oversight_report tool.
 
 snapshot=
 {_fmt_ctx(snapshot)}
