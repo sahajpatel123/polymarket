@@ -140,12 +140,6 @@ class RiskConfig(BaseModel):
         data["max_event_group_loss_usdc"] = b * float(self.event_group_frac)
         data["daily_loss_kill_usdc"] = b * float(self.daily_loss_frac)
         data["max_market_loss_usdc"] = b * float(self.market_loss_frac)
-        # Concentration hard-cap also respects market_notional_frac.
-        conc = min(
-            data["max_market_notional_usdc"],
-            data["max_total_exposure_usdc"] * float(self.max_market_concentration_pct),
-        )
-        data["max_market_notional_usdc"] = conc
         return RiskConfig(**data)
 
     def scale_profile_sizes(
@@ -247,12 +241,12 @@ class StrategyProfile(BaseModel):
     # Default False preserves sit-behind / band-floor farming behavior.
     join_best_bid: bool = False
     # regime
-    event_cooloff_s: float = 60.0
-    event_jump_ticks: int = 8
+    event_cooloff_s: float = 120.0       # stay out 2 min after sweep/jump
+    event_jump_ticks: int = 6             # 0.6% jump triggers EVENT (was 8)
     # sweep = a print >= event_sweep_mult order-sizes AND >= event_sweep_frac of
-    # the near-touch depth it consumed (both must hold to flag a toxic sweep)
-    event_sweep_mult: float = 4.0
-    event_sweep_frac: float = 0.8
+    # near-touch depth consumed. Lower = more sensitive.
+    event_sweep_mult: float = 3.0        # 3× order size = sweep (was 4.0)
+    event_sweep_frac: float = 0.7        # 70% depth consumed = sweep (was 0.8)
     trend_flow_z: float = 1.5
     # short/long realized-vol ratio that trips TRENDING (half size). On a thin
     # book microprice jitter inflates this without real trade flow, so raise it
