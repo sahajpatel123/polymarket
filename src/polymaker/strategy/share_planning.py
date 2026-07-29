@@ -299,9 +299,15 @@ class MultiMarketPortfolio:
     max_markets_used: int = 0
     max_markets_recommended: int = 0
     as_weight: float = DEFAULT_AS_WEIGHT
+    # Partial deploy: only working_capital is live; reserve stays dry powder
+    capital_deploy_frac: float = 1.0
+    working_capital_usdc: float = 0.0
+    reserve_usdc: float = 0.0
+    prefer_horizon_days: float = 0.0
     note: str = (
         "return_%/day ≈ total_share_adjusted / capital. "
         "Efficiency uses AS haircut so thin toxic books don't win on raw pool share. "
+        "capital_deploy_frac keeps reserve — never dump full bankroll into one event. "
         "As capital grows, % naturally declines when reward surface is finite."
     )
 
@@ -319,9 +325,14 @@ class MultiMarketPortfolio:
             "max_markets_used": self.max_markets_used,
             "max_markets_recommended": self.max_markets_recommended,
             "as_weight": self.as_weight,
+            "capital_deploy_frac": self.capital_deploy_frac,
+            "working_capital_usdc": round(self.working_capital_usdc, 4),
+            "reserve_usdc": round(self.reserve_usdc, 4),
+            "prefer_horizon_days": self.prefer_horizon_days,
             "picks": [p.as_dict() for p in self.picks],
             "note": self.note,
             "headline_kpi": "total_risk_adjusted_usdc",
+            "policy": "partial_deploy_multi_market",
         }
 
 
@@ -409,6 +420,45 @@ def _as_risk_for_market(m: dict[str, Any]) -> float:
     )
 
 
+def _horizon_boost(
+    m: dict[str, Any],
+    *,
+    prefer_horizon_days: float,
+    now_ts: float | None = None,
+) -> float:
+    """1.0 default; up to ~1.25 if market ends within prefer_horizon_days."""
+    h = float(prefer_horizon_days or 0.0)
+    if h <= 0:
+        return 1.0
+    end = m.get("end_date_iso") or m.get("end_date") or m.get("hours_to_end")
+    if end is None:
+        return 1.0
+    try:
+        if isinstance(end, (int, float)):
+            hours = float(end)
+        else:
+            from datetime import datetime, timezone
+
+            s = str(end).replace("Z", "+00:00")
+            dt = datetime.fromisoformat(s)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            ts = now_ts if now_ts is not None else datetime.now(timezone.utc).timestamp()
+            hours = (dt.timestamp() - ts) / 3600.0
+        if hours <= 0:
+            return 0.85  # already ended / stale — mild downrank
+        days = hours / 24.0
+        if days <= h:
+            # closer to now (but still open) → mild boost; floor 1.05 inside window
+            closeness = 1.0 - min(1.0, days / h)
+            return 1.05 + 0.20 * closeness  # 1.05 .. 1.25
+        if days <= h * 2:
+            return 1.0
+        return 0.92  # far-dated: slight deprioritize for 2-week ops mode
+    except Exception:  # noqa: BLE001
+        return 1.0
+
+
 def optimize_multi_market_portfolio(
     markets: Sequence[dict[str, Any]],
     *,
@@ -420,15 +470,18 @@ def optimize_multi_market_portfolio(
     as_weight: float = DEFAULT_AS_WEIGHT,
     auto_max_markets: bool = False,
     hard_cap_markets: int = 20,
+    capital_deploy_frac: float = 1.0,
+    prefer_horizon_days: float = 0.0,
 ) -> MultiMarketPortfolio:
-    """Greedy multi-market pick: maximize Σ **risk-adjusted** share under bankroll.
+    """Greedy multi-market pick with **partial deploy** (reserve capital).
 
     Algorithm (efficient, pure, no I/O):
-      1. Universe unbounded; slots = ``max_markets`` (or auto-chosen if
-         ``auto_max_markets``).
-      2. Efficiency = risk_adjust(share_adj) / allocated_usdc — AS haircut so
-         ultra-thin toxic books don't beat safer dominable books.
-      3. Slice = min(remaining, bankroll × max_concentration); skip ineligible.
+      1. working_capital = bankroll × capital_deploy_frac (rest is reserve).
+      2. Per-market slice ≤ bankroll × max_concentration (of full bankroll)
+         and ≤ remaining working capital — many small simultaneous books.
+      3. Efficiency = risk_adjust(share_adj) / alloc × horizon_boost
+         (prefer ~2-week events when prefer_horizon_days > 0).
+      4. Never requires dumping full bankroll into one event.
 
     When ``auto_max_markets`` is True, tries several slot counts and keeps the
     portfolio with highest total risk-adjusted expected USDC.
@@ -436,6 +489,8 @@ def optimize_multi_market_portfolio(
     b = max(0.0, float(bankroll_usdc))
     aw = min(1.0, max(0.0, float(as_weight)))
     hard = max(1, int(hard_cap_markets))
+    dfrac = min(1.0, max(0.05, float(capital_deploy_frac)))
+    horizon = max(0.0, float(prefer_horizon_days))
 
     if auto_max_markets and b > 0 and markets:
         return _optimize_with_dynamic_slots(
@@ -446,6 +501,8 @@ def optimize_multi_market_portfolio(
             max_share=max_share,
             as_weight=aw,
             hard_cap_markets=hard,
+            capital_deploy_frac=dfrac,
+            prefer_horizon_days=horizon,
         )
 
     return _optimize_fixed_slots(
@@ -457,6 +514,8 @@ def optimize_multi_market_portfolio(
         max_share=max_share,
         as_weight=aw,
         max_markets_recommended=int(max_markets),
+        capital_deploy_frac=dfrac,
+        prefer_horizon_days=horizon,
     )
 
 
@@ -470,9 +529,16 @@ def _optimize_fixed_slots(
     max_share: float,
     as_weight: float,
     max_markets_recommended: int,
+    capital_deploy_frac: float = 1.0,
+    prefer_horizon_days: float = 0.0,
 ) -> MultiMarketPortfolio:
     b = bankroll_usdc
-    if b <= 0 or not markets or max_markets <= 0:
+    dfrac = min(1.0, max(0.05, float(capital_deploy_frac)))
+    working = b * dfrac
+    reserve = max(0.0, b - working)
+    horizon = max(0.0, float(prefer_horizon_days))
+
+    if b <= 0 or not markets or max_markets <= 0 or working <= 0:
         return MultiMarketPortfolio(
             bankroll_usdc=b,
             picks=(),
@@ -486,14 +552,17 @@ def _optimize_fixed_slots(
             max_markets_used=0,
             max_markets_recommended=max_markets_recommended,
             as_weight=as_weight,
+            capital_deploy_frac=dfrac,
+            working_capital_usdc=working,
+            reserve_usdc=reserve,
+            prefer_horizon_days=horizon,
         )
 
-    remaining = b
+    remaining = working
     picks: list[PortfolioPick] = []
     used: set[str] = set()
+    # Cap per market off FULL bankroll so slices stay small vs total wallet
     max_slice = max(1e-6, b * float(max_concentration))
-    # Index markets by cid for as_risk
-    by_cid = {str(m.get("condition_id") or ""): m for m in markets}
 
     while remaining > 1e-6 and len(picks) < int(max_markets):
         best: PortfolioPick | None = None
@@ -520,8 +589,9 @@ def _optimize_fixed_slots(
             )
             if ra <= 0:
                 continue
+            hboost = _horizon_boost(m, prefer_horizon_days=horizon)
             raw_eff = plan.share_adjusted_expected_usdc / alloc
-            eff = ra / alloc
+            eff = (ra / alloc) * hboost
             if eff > best_eff + 1e-15 or (
                 abs(eff - best_eff) <= 1e-15
                 and best is not None
@@ -542,11 +612,12 @@ def _optimize_fixed_slots(
         picks.append(best)
         used.add(best.condition_id)
         remaining -= best.allocated_usdc
-        _ = by_cid  # keep for clarity / future use
 
     total_sa = sum(p.plan.share_adjusted_expected_usdc for p in picks)
     total_ra = sum(p.risk_adjusted_share_usdc for p in picks)
     total_alloc = sum(p.allocated_usdc for p in picks)
+    # Unallocated = reserve + unused working
+    unalloc = reserve + max(0.0, remaining)
     pct = (total_sa / b) if b > 0 else 0.0
     return MultiMarketPortfolio(
         bankroll_usdc=b,
@@ -554,13 +625,17 @@ def _optimize_fixed_slots(
         total_share_adjusted_usdc=total_sa,
         total_risk_adjusted_usdc=total_ra,
         total_allocated_usdc=total_alloc,
-        unallocated_usdc=max(0.0, remaining),
+        unallocated_usdc=unalloc,
         n_markets=len(picks),
         daily_return_pct=pct,
         max_concentration=float(max_concentration),
         max_markets_used=len(picks),
         max_markets_recommended=max_markets_recommended,
         as_weight=as_weight,
+        capital_deploy_frac=dfrac,
+        working_capital_usdc=working,
+        reserve_usdc=reserve,
+        prefer_horizon_days=horizon,
     )
 
 
@@ -571,6 +646,8 @@ def recommend_max_markets(
     hard_cap: int = 20,
     max_concentration: float = 0.40,
     as_weight: float = DEFAULT_AS_WEIGHT,
+    capital_deploy_frac: float = 1.0,
+    prefer_horizon_days: float = 0.0,
     candidate_slots: Sequence[int] = (1, 2, 3, 4, 6, 8, 10, 12, 16, 20),
 ) -> int:
     """Choose simultaneous market slots that maximize risk-adjusted portfolio $.
@@ -596,6 +673,8 @@ def recommend_max_markets(
             max_share=DEFAULT_MAX_SHARE,
             as_weight=as_weight,
             max_markets_recommended=n_i,
+            capital_deploy_frac=capital_deploy_frac,
+            prefer_horizon_days=prefer_horizon_days,
         )
         if port.total_risk_adjusted_usdc > best_ra + 1e-12:
             best_ra = port.total_risk_adjusted_usdc
@@ -619,6 +698,8 @@ def _optimize_with_dynamic_slots(
     max_share: float,
     as_weight: float,
     hard_cap_markets: int,
+    capital_deploy_frac: float = 1.0,
+    prefer_horizon_days: float = 0.0,
 ) -> MultiMarketPortfolio:
     n = recommend_max_markets(
         markets,
@@ -626,6 +707,8 @@ def _optimize_with_dynamic_slots(
         hard_cap=hard_cap_markets,
         max_concentration=max_concentration,
         as_weight=as_weight,
+        capital_deploy_frac=capital_deploy_frac,
+        prefer_horizon_days=prefer_horizon_days,
     )
     return _optimize_fixed_slots(
         markets,
@@ -636,6 +719,8 @@ def _optimize_with_dynamic_slots(
         max_share=max_share,
         as_weight=as_weight,
         max_markets_recommended=n,
+        capital_deploy_frac=capital_deploy_frac,
+        prefer_horizon_days=prefer_horizon_days,
     )
 
 
@@ -683,6 +768,7 @@ def build_dominator_operator_report(
             "Defend in-band size-eligible quotes to hold share_of_pool",
             "Re-run capacity_curve after capital compounds",
             "Prefer picks with high efficiency and moderate as_risk",
+            "Keep capital_deploy_frac < 1 so reserve is never dumped into one book",
         ]
 
     return {
@@ -698,6 +784,9 @@ def build_dominator_operator_report(
         "outgrew_reason": capacity.outgrew_reason,
         "operator_message": message,
         "recommended_actions": actions,
+        "capital_deploy_frac": portfolio.capital_deploy_frac,
+        "working_capital_usdc": portfolio.working_capital_usdc,
+        "reserve_usdc": portfolio.reserve_usdc,
         "max_markets_recommended": portfolio.max_markets_recommended,
         "picks_summary": [
             {
@@ -721,6 +810,8 @@ def capacity_curve(
     max_markets: int = 20,
     max_concentration: float = 0.40,
     outgrew_frac_of_peak: float = 0.50,
+    capital_deploy_frac: float = 1.0,
+    prefer_horizon_days: float = 0.0,
 ) -> CapacityCurve:
     """Build capacity curve and diagnose capital_outgrew_reward_surface.
 
@@ -736,6 +827,8 @@ def capacity_curve(
             bankroll_usdc=float(b),
             max_markets=max_markets,
             max_concentration=max_concentration,
+            capital_deploy_frac=capital_deploy_frac,
+            prefer_horizon_days=prefer_horizon_days,
         )
         points.append(
             CapacityPoint(
@@ -761,24 +854,29 @@ def capacity_curve(
     cur_b = float(
         current_bankroll if current_bankroll is not None else points[-1].bankroll_usdc
     )
-    # Interpolate current from nearest portfolio solve (exact re-solve)
     cur_port = optimize_multi_market_portfolio(
         markets,
         bankroll_usdc=cur_b,
         max_markets=max_markets,
         max_concentration=max_concentration,
+        capital_deploy_frac=capital_deploy_frac,
+        prefer_horizon_days=prefer_horizon_days,
     )
     cur_pct = cur_port.daily_return_pct
 
     outgrew = False
     reason = "ok"
-    if peak.daily_return_pct > 1e-12 and cur_b > peak.bankroll_usdc * 1.05 and cur_pct < peak.daily_return_pct * float(outgrew_frac_of_peak):
-            outgrew = True
-            reason = (
-                f"current_pct={cur_pct:.4%} < {outgrew_frac_of_peak:.0%} of "
-                f"peak_pct={peak.daily_return_pct:.4%} at bankroll={peak.bankroll_usdc:.0f}; "
-                f"capital grew to {cur_b:.0f} past dense reward surface"
-            )
+    if (
+        peak.daily_return_pct > 1e-12
+        and cur_b > peak.bankroll_usdc * 1.05
+        and cur_pct < peak.daily_return_pct * float(outgrew_frac_of_peak)
+    ):
+        outgrew = True
+        reason = (
+            f"current_pct={cur_pct:.4%} < {outgrew_frac_of_peak:.0%} of "
+            f"peak_pct={peak.daily_return_pct:.4%} at bankroll={peak.bankroll_usdc:.0f}; "
+            f"capital grew to {cur_b:.0f} past dense reward surface"
+        )
 
     return CapacityCurve(
         points=tuple(points),
