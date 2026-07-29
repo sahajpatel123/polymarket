@@ -21,6 +21,12 @@ so the failure modes below are ones that actually bit us, not hypotheticals.
 - **Liveness ≠ quiet.** A silent log can mean "healthy and resting" OR "hung." Do a
   real health probe periodically: open orders on the exchange, positions on-chain,
   and that each order is inside the reward band.
+- **Live localhost dashboard.** `polymaker run` opens `http://127.0.0.1:8765/`
+  (Pulse / Book / Risk / Tape; real URL in `logs/dashboard.url` if the port bumps).
+  Use `--no-open` on SSH/headless; `--no-dashboard` to disable. Probe with
+  `curl -sf "$(tr -d '[:space:]' < logs/dashboard.url)healthz"` (non-zero exit on CRITICAL).
+  Standalone: `polymaker dashboard --serve`. This is a glance UI — still watch the
+  log stream for fills and regime flips; do not replace tape-watching with the UI.
 
 ## Where it goes wrong (ranked by how much it cost us)
 

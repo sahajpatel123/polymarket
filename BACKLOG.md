@@ -72,6 +72,11 @@ done without evidence (script output / tests) from that cycle.
   raw logs.
 - Evidence: `scripts/metrics_dashboard.py` → `logs/dashboard.html`;
   `polymaker dashboard`; `tests/test_dashboard.py`
+- Follow-through (live UI): `src/polymaker/metrics/live_dashboard.py` — auto-opens
+  on `polymaker run` at `http://127.0.0.1:8765/` (Pulse/Book/Risk/Tape);
+  `polymaker dashboard --serve`; `logs/dashboard.url`; `/healthz` (503 on CRITICAL);
+  `tests/test_live_dashboard.py`, `tests/test_doctor_dashboard.py`. Loopback-only
+  unless `POLYMAKER_DASHBOARD_ALLOW_REMOTE=1`.
 
 ### T1-09 Strategy A/B compare harness (eval infra for Tier-2)
 - Status: `done`

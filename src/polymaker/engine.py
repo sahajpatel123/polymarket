@@ -112,6 +112,8 @@ class Engine:
         # Ops/LLM pause — independent of Gamma; must NOT be cleared by metadata refresh
         self._llm_paused: set[str] = set()
         self._pending_pause_cancels: set[str] = set()
+        # condition_id → last requote regime (for live dashboard Book layout)
+        self._last_regime: dict[str, str] = {}
         # condition_id → last capital/reward eligibility decision (skip vs floor)
         self._reward_eligibility: dict[str, MakerRewardEligibility] = {}
         # supervised tasks: name -> (factory, task) so a dead task restarts
@@ -372,6 +374,7 @@ class Engine:
             auto_discovery=self.cfg.engine.auto_discovery_enabled,
             hot_reload=self.cfg.engine.auto_discovery_hot_reload,
         )
+        self._started_at = time.time()
         self._start_live_dashboard()
 
     def _start_live_dashboard(self) -> None:
@@ -388,6 +391,14 @@ class Engine:
                 port=int(getattr(eng, "dashboard_port", 8765)),
                 open_browser=bool(getattr(eng, "dashboard_open_browser", True)),
             )
+            # Persist the real URL (port may bump if busy) for operators/scripts.
+            with contextlib.suppress(Exception):
+                Path(self.cfg.paths.log_dir).mkdir(parents=True, exist_ok=True)
+                (Path(self.cfg.paths.log_dir) / "dashboard.url").write_text(
+                    dash.url + "\n", encoding="utf-8"
+                )
+            print(f"Dashboard: {dash.url}", flush=True)
+            print(f"  healthz: curl -sf {dash.url}healthz", flush=True)
             log.info("dashboard_opened", url=dash.url, paper=self.paper)
         except Exception as exc:  # noqa: BLE001
             log.warning("dashboard_start_failed", err=str(exc))
@@ -399,6 +410,10 @@ class Engine:
         with contextlib.suppress(Exception):
             dash.stop()
         self._live_dashboard = None
+        with contextlib.suppress(Exception):
+            url_path = Path(self.cfg.paths.log_dir) / "dashboard.url"
+            if url_path.exists():
+                url_path.unlink()
 
     def _spawn(self, name: str, factory: Any) -> None:
         self._task_specs[name] = factory
@@ -598,6 +613,7 @@ class Engine:
         self._halted.discard(cid)
         self._llm_paused.discard(cid)
         self._pending_pause_cancels.discard(cid)
+        self._last_regime.pop(cid, None)
         for tok in (meta.yes.token_id, meta.no.token_id):
             self._token_cid.pop(tok, None)
         # Tell the market data service to drop the subscription
@@ -1344,14 +1360,19 @@ class Engine:
                 "min_order_size": float(meta.min_order_size or 5.0),
                 "rewards_max_spread": float(meta.rewards_max_spread or 0.0),
                 "as_risk": float(adverse_selection_risk(meta)),
+                "end_date_iso": getattr(meta, "end_date_iso", None),
                 "score": sc_val,
             })
         conc = float(self.cfg.risk.max_market_concentration_pct or 0.4)
+        deploy = float(getattr(self.cfg.risk, "capital_deploy_frac", 0.6) or 0.6)
+        horizon = float(getattr(self.cfg.risk, "prefer_horizon_days", 14.0) or 0.0)
         dyn_n = recommend_max_markets(
             cand_dicts,
             bankroll_usdc=bankroll,
             hard_cap=int(max_markets),
             max_concentration=conc,
+            capital_deploy_frac=deploy,
+            prefer_horizon_days=horizon,
         )
         port = optimize_multi_market_portfolio(
             cand_dicts,
@@ -1360,6 +1381,8 @@ class Engine:
             max_concentration=conc,
             auto_max_markets=False,
             hard_cap_markets=int(max_markets),
+            capital_deploy_frac=deploy,
+            prefer_horizon_days=horizon,
         )
         if port.picks:
             ordered = [
@@ -2205,6 +2228,7 @@ class Engine:
                  pos_yes=round(pos_yes.size, 1), pos_no=round(pos_no.size, 1),
                  tox=round(est.markout.toxicity, 3), flowz=round(est.flow.z, 2),
                  vol_ratio=round(est.vol.ratio, 3))
+        self._last_regime[cid] = regime.value
         self._maybe_merge(cid, meta, p, pos_yes.size, pos_no.size)
 
     async def _quarantine(self, meta: MarketMeta, reason: str) -> None:
@@ -2613,6 +2637,8 @@ class Engine:
         )
         hard_cap = int(self.cfg.engine.auto_discovery_max_markets or 20)
         conc = float(self.cfg.risk.max_market_concentration_pct or 0.4)
+        deploy = float(getattr(self.cfg.risk, "capital_deploy_frac", 0.6) or 0.6)
+        horizon = float(getattr(self.cfg.risk, "prefer_horizon_days", 14.0) or 0.0)
 
         if candidate_markets is not None:
             cands = list(candidate_markets)
@@ -2629,6 +2655,8 @@ class Engine:
                     "liquidity_num": float(meta.liquidity_num or 0.0),
                     "typical_price": mid,
                     "min_order_size": float(meta.min_order_size or 5.0),
+                    "rewards_max_spread": float(meta.rewards_max_spread or 0.0),
+                    "end_date_iso": getattr(meta, "end_date_iso", None),
                     "slug": meta.slug,
                 })
             # Also merge catalog top so capacity uses broader surface
@@ -2650,43 +2678,43 @@ class Engine:
                         "liquidity_num": float(getattr(meta, "liquidity_num", 0) or 0),
                         "typical_price": mid,
                         "min_order_size": float(getattr(meta, "min_order_size", 5) or 5),
+                        "rewards_max_spread": float(getattr(meta, "rewards_max_spread", 0) or 0),
+                        "end_date_iso": getattr(meta, "end_date_iso", None),
                         "slug": getattr(meta, "slug", ""),
                     })
             except Exception:  # noqa: BLE001
                 pass
 
-        # Dynamic slots: best N for this capital (capped by config hard_cap)
+        # Partial deploy + multi-market small slices (not full dump)
         if max_markets is not None:
             max_m = min(int(max_markets), hard_cap)
-            port = optimize_multi_market_portfolio(
-                cands,
-                bankroll_usdc=b,
-                max_markets=max_m,
-                max_concentration=conc,
-                auto_max_markets=False,
-                hard_cap_markets=hard_cap,
-            )
         else:
             max_m = recommend_max_markets(
                 cands,
                 bankroll_usdc=b,
                 hard_cap=hard_cap,
                 max_concentration=conc,
+                capital_deploy_frac=deploy,
+                prefer_horizon_days=horizon,
             )
-            port = optimize_multi_market_portfolio(
-                cands,
-                bankroll_usdc=b,
-                max_markets=max_m,
-                max_concentration=conc,
-                auto_max_markets=False,
-                hard_cap_markets=hard_cap,
-            )
+        port = optimize_multi_market_portfolio(
+            cands,
+            bankroll_usdc=b,
+            max_markets=max_m,
+            max_concentration=conc,
+            auto_max_markets=False,
+            hard_cap_markets=hard_cap,
+            capital_deploy_frac=deploy,
+            prefer_horizon_days=horizon,
+        )
         curve = capacity_curve(
             cands,
             bankrolls=(100.0, 200.0, 300.0, 500.0, 1000.0, 2000.0, 5000.0),
             current_bankroll=b,
             max_markets=max_m,
             max_concentration=conc,
+            capital_deploy_frac=deploy,
+            prefer_horizon_days=horizon,
         )
         # Stash preferred discovery capital from portfolio picks
         for p in port.picks:

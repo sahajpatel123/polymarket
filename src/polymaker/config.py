@@ -97,9 +97,16 @@ class RiskConfig(BaseModel):
     event_group_frac: float = 0.50         # max 50% in one neg-risk event group
     daily_loss_frac: float = 0.10          # kill at −10% day
     market_loss_frac: float = 0.05         # reduce-only a market at −5% of bankroll
-    # Max fraction of total-exposure budget in one market (also used as a
-    # soft concentration check vs max_total when bankroll is unset).
-    max_market_concentration_pct: float = 0.5
+    # Max fraction of **full bankroll** in one market (portfolio slice + risk).
+    # 0.25 @ $50 ⇒ ≤$12.5 per event — simultaneous small books, not one dump.
+    max_market_concentration_pct: float = 0.25
+    # Portfolio deploy policy (multi-market small slices — not dump-all):
+    # Only this fraction of bankroll is eligible for live quoting; the rest
+    # is reserve. Example $50 × 0.60 = $30 working capital across markets.
+    capital_deploy_frac: float = 0.60
+    # Soft preference: boost markets ending within this many days (0 = off).
+    # ~14d matches “events over the next two weeks.”
+    prefer_horizon_days: float = 14.0
     # Gas circuit breaker: halt if cumulative gas ≥ this fraction of bankroll
     # (or of day-start equity / total-exposure fallback).
     max_gas_cost_pct: float = 0.10

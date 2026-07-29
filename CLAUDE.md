@@ -36,6 +36,7 @@ src/polymaker/
   userstream/           # authenticated user WS (fills / order updates)
   merge.py              # YES+NO → collateral (EOA / Safe / deposit wallet)
   journal.py            # raw WS/order append log
+  metrics/              # analyze + live localhost dashboard (Pulse/Book/Risk/Tape)
 docs/                   # subsystem docs (linked below)
 TIPS.md                 # operator field notes from a live session
 tests/                  # offline unit suite (~113 tests)
@@ -85,7 +86,7 @@ deposit-wallet merges. Template: `.env.example`.
 | Section | Knobs that matter |
 |---------|-------------------|
 | `[wallet]` | `signature_type` (0 EOA / 1 magic / 2 Safe / 3 deposit), hosts, RPC |
-| `[engine]` | `debounce_ms`, `quoter_tick_s`, `reconcile_interval_s`, `catalog_refresh_s`, `heartbeat`, `heartbeat_interval_s`, `journal`, `loop` |
+| `[engine]` | `debounce_ms`, `quoter_tick_s`, `reconcile_interval_s`, `catalog_refresh_s`, `heartbeat`, `heartbeat_interval_s`, `journal`, `loop`, `dashboard_*` (localhost UI) |
 | `[risk]` | exposure/event/market caps, `daily_loss_kill_usdc`, WS/user/heartbeat blind thresholds, `max_order_error_rate` |
 | `[execution]` | `post_only`, rate budget fraction, batch size |
 | `[paths]` | `db`, `journal_dir`, `log_dir` |
@@ -182,7 +183,9 @@ cp .env.example .env          # then set PK + BROWSER_ADDRESS
 uv run polymaker scan
 uv run polymaker markets
 uv run polymaker markets-add <slug> --profile newsom-mm
-uv run polymaker run --paper
+uv run polymaker run --paper          # opens http://127.0.0.1:8765/ (see logs/dashboard.url)
+uv run polymaker run --paper --no-open
+uv run polymaker dashboard --serve    # live UI without the engine
 uv run polymaker doctor
 uv run pytest
 ```

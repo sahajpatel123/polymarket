@@ -236,7 +236,14 @@ def dashboard(
 
     dash = LiveDashboard(_snap, host=cfg.engine.dashboard_host, port=port, open_browser=open_browser)
     url = dash.start()
+    url_path = Path(cfg.paths.log_dir) / "dashboard.url"
+    with contextlib.suppress(Exception):
+        Path(cfg.paths.log_dir).mkdir(parents=True, exist_ok=True)
+        url_path.write_text(url + "\n", encoding="utf-8")
     console.print(f"[bold green]Live dashboard[/bold green] {url}  (Ctrl+C to stop)")
+    console.print(
+        f"[dim]URL also written to {url_path} · probe: curl -sf {url}healthz[/dim]"
+    )
     try:
         while True:
             import time
@@ -244,6 +251,9 @@ def dashboard(
             time.sleep(3600)
     except KeyboardInterrupt:
         dash.stop()
+        with contextlib.suppress(Exception):
+            if url_path.exists():
+                url_path.unlink()
         console.print("\n[yellow]Dashboard stopped.[/yellow]")
 
 
@@ -257,6 +267,11 @@ def run(
         help="open live localhost operator dashboard on start (default: on)",
     ),
     dashboard_port: int = typer.Option(0, help="dashboard port (0 = use config default)"),
+    open_browser: bool = typer.Option(
+        True,
+        "--open/--no-open",
+        help="auto-open browser for the live dashboard (default: on)",
+    ),
 ) -> None:
     """Start the market maker."""
     from polymaker.engine import Engine
@@ -264,6 +279,7 @@ def run(
 
     cfg = Config.load(config_dir)
     cfg.engine.dashboard_enabled = dashboard
+    cfg.engine.dashboard_open_browser = open_browser
     if dashboard_port > 0:
         cfg.engine.dashboard_port = dashboard_port
     configure(json_file=Path(cfg.paths.log_dir) / ("paper.jsonl" if paper else "live.jsonl"))
@@ -292,7 +308,7 @@ def run(
         port = cfg.engine.dashboard_port
         console.print(
             f"[dim]Dashboard will open at[/dim] http://{host}:{port}/ "
-            f"[dim](or next free port)[/dim]"
+            f"[dim](or next free port — see logs/dashboard.url)[/dim]"
         )
     try:
         asyncio.run(_go())

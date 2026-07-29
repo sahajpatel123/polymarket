@@ -49,7 +49,9 @@ auto_discovery_max_spread_cents = 5.5
 auto_discovery_max_markets = 2
 auto_discovery_profile = "live_scaled"
 auto_discovery_hot_reload = true
-# Live operator dashboard (opens in browser on `polymaker run` / `--paper`)
+# Live operator dashboard (opens in browser on `polymaker run` / `--paper`).
+# Loopback only unless POLYMAKER_DASHBOARD_ALLOW_REMOTE=1. CLI: --no-dashboard / --no-open.
+# Real URL (if port bumps) → logs/dashboard.url · probe: curl -sf "$(tr -d '[:space:]' < logs/dashboard.url)healthz"
 dashboard_enabled = true
 dashboard_host = "127.0.0.1"
 dashboard_port = 8765

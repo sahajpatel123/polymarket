@@ -3,6 +3,14 @@
 Serves a single-page multi-layout UI + JSON snapshot API on 127.0.0.1.
 No heavy framework: stdlib HTTP server in a daemon thread, auto-refresh
 in the browser. Designed for glanceable ops (Pulse / Book / Risk / Tape).
+
+Operator surface
+----------------
+- Layouts: Pulse (1) · Book (2) · Risk (3) · Tape (4); Esc → Pulse; ``i`` inventory filter
+- Deep links: ``http://127.0.0.1:8765/#risk``
+- ``GET /api/snapshot`` — full JSON; ``GET /healthz`` — probe (503 if CRITICAL)
+- Engine writes real URL to ``logs/dashboard.url`` (port may bump if busy)
+- Bind is loopback-only unless ``POLYMAKER_DASHBOARD_ALLOW_REMOTE=1``
 """
 
 from __future__ import annotations
@@ -10,6 +18,7 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import os
 import socket
 import threading
 import time
@@ -26,6 +35,30 @@ log = logging.getLogger("polymaker.metrics.live_dashboard")
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+
+
+def _require_loopback_host(host: str) -> str:
+    """Keep the operator UI on loopback unless explicitly overridden.
+
+    Set ``POLYMAKER_DASHBOARD_ALLOW_REMOTE=1`` to bind a non-loopback host
+    (not recommended — snapshot includes inventory / PnL).
+    """
+    h = (host or DEFAULT_HOST).strip() or DEFAULT_HOST
+    if h in _LOOPBACK_HOSTS:
+        return h
+    if os.environ.get("POLYMAKER_DASHBOARD_ALLOW_REMOTE", "").strip() in {
+        "1",
+        "true",
+        "TRUE",
+        "yes",
+    }:
+        log.warning("dashboard_remote_bind_allowed", host=h)
+        return h
+    raise ValueError(
+        f"dashboard host {h!r} is not loopback; use 127.0.0.1 "
+        "or set POLYMAKER_DASHBOARD_ALLOW_REMOTE=1"
+    )
 
 
 @dataclass
@@ -56,6 +89,10 @@ class DashboardSnapshot:
     outage: dict[str, Any] = field(default_factory=dict)
     insights: list[str] = field(default_factory=list)
     url_hint: str = ""
+    # Live link health: market_ws / user_ws / heartbeat / outage
+    links: dict[str, Any] = field(default_factory=dict)
+    metrics_age_s: float | None = None
+    version: str = ""
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -93,6 +130,43 @@ def _read_outage(log_dir: Path) -> dict[str, Any]:
         return {}
 
 
+_DB_CACHE: dict[str, tuple[float, float, int, Any]] = {}
+_DB_CACHE_TTL_S = 1.5
+_CACHE_MAX_KEYS = 32
+
+
+def _cache_put(cache: dict[str, Any], key: str, value: Any) -> None:
+    cache[key] = value
+    while len(cache) > _CACHE_MAX_KEYS:
+        cache.pop(next(iter(cache)), None)
+
+
+def _db_cache_get(path: Path, kind: str) -> Any | None:
+    if not path.exists():
+        return None
+    try:
+        st = path.stat()
+        key = f"{kind}:{path.resolve()}"
+        hit = _DB_CACHE.get(key)
+        if hit is None:
+            return None
+        cached_at, mtime, size, payload = hit
+        if mtime == st.st_mtime and size == st.st_size and (time.time() - cached_at) < _DB_CACHE_TTL_S:
+            return payload
+    except OSError:
+        return None
+    return None
+
+
+def _db_cache_set(path: Path, kind: str, payload: Any) -> None:
+    try:
+        st = path.stat()
+        key = f"{kind}:{path.resolve()}"
+        _cache_put(_DB_CACHE, key, (time.time(), float(st.st_mtime), int(st.st_size), payload))
+    except OSError:
+        pass
+
+
 def _read_pnl(db_path: Path) -> dict[str, float | None]:
     out: dict[str, float | None] = {
         "equity": None,
@@ -102,6 +176,9 @@ def _read_pnl(db_path: Path) -> dict[str, float | None]:
     }
     if not db_path.exists():
         return out
+    cached = _db_cache_get(db_path, "pnl")
+    if isinstance(cached, dict):
+        return cached  # type: ignore[return-value]
     try:
         import sqlite3
 
@@ -125,6 +202,7 @@ def _read_pnl(db_path: Path) -> dict[str, float | None]:
                 if row["inventory_value"] is not None
                 else None
             )
+        _db_cache_set(db_path, "pnl", out)
     except Exception:
         pass
     return out
@@ -133,6 +211,9 @@ def _read_pnl(db_path: Path) -> dict[str, float | None]:
 def _read_state_store(db_path: Path) -> tuple[int, list[dict[str, Any]]]:
     if not db_path.exists():
         return 0, []
+    cached = _db_cache_get(db_path, "state")
+    if isinstance(cached, tuple) and len(cached) == 2:
+        return cached  # type: ignore[return-value]
     try:
         from polymaker.state.store import StateStore
 
@@ -151,12 +232,18 @@ def _read_state_store(db_path: Path) -> tuple[int, list[dict[str, Any]]]:
                 }
             )
         store.close()
-        return open_orders, positions
+        result = (open_orders, positions)
+        _db_cache_set(db_path, "state", result)
+        return result
     except Exception:
         return 0, []
 
 
-def _metrics_bits(metrics_log: Path) -> dict[str, Any]:
+_METRICS_CACHE: dict[str, tuple[float, float, int, dict[str, Any]]] = {}
+_METRICS_CACHE_TTL_S = 2.5
+
+
+def _metrics_bits(metrics_log: Path, *, force: bool = False) -> dict[str, Any]:
     empty = {
         "n_quote": 0,
         "n_fill": 0,
@@ -172,10 +259,30 @@ def _metrics_bits(metrics_log: Path) -> dict[str, Any]:
     if not metrics_log.exists():
         return empty
     try:
+        st = metrics_log.stat()
+        if st.st_size == 0:
+            return empty
+        mtime = float(st.st_mtime)
+        size = int(st.st_size)
+        key = str(metrics_log.resolve())
+    except OSError:
+        return empty
+    now = time.time()
+    if not force:
+        hit = _METRICS_CACHE.get(key)
+        if hit is not None:
+            cached_at, cached_mtime, cached_size, payload = hit
+            if (
+                cached_mtime == mtime
+                and cached_size == size
+                and (now - cached_at) < _METRICS_CACHE_TTL_S
+            ):
+                return payload
+    try:
         from polymaker.metrics.analyze import analyze
 
         rep = analyze(metrics_log)
-        return {
+        payload = {
             "n_quote": rep.n_quote,
             "n_fill": rep.n_fill,
             "n_cancel": rep.n_cancel,
@@ -191,27 +298,78 @@ def _metrics_bits(metrics_log: Path) -> dict[str, Any]:
                 k: round(v, 4) for k, v in rep.inventory_net_end.items()
             },
         }
+        _cache_put(_METRICS_CACHE, key, (now, mtime, size, payload))
+        return payload
     except Exception:
         return empty
 
 
 def build_insights(snap: DashboardSnapshot) -> list[str]:
-    """Short, operator-facing sentences — the 'smart' layer."""
-    tips: list[str] = []
+    """Short, operator-facing sentences — the 'smart' layer.
+
+    Critical tips (halt / blind links / toxicity) are kept ahead of soft notes
+    so the 4-slot budget is not wasted on paper chatter during an incident.
+    """
+    critical: list[str] = []
+    soft: list[str] = []
     if snap.risk.get("global_halt"):
-        tips.append(
+        critical.append(
             f"Global risk halt — {snap.risk.get('halt_reason') or 'check kill / error rate'}."
         )
+    links = snap.links or {}
+    if links.get("market_ws") == "down":
+        critical.append("Market WS disconnected — books stale; quoting will blind-halt.")
+    if links.get("user_ws") == "down":
+        critical.append("User WS down — fills may be missed until reconnect + reconcile.")
+    if links.get("heartbeat") == "down":
+        critical.append("Heartbeat failing — exchange may auto-cancel resting orders.")
+    if snap.outage.get("outage_open") or links.get("outage") == "open":
+        critical.append("Outage flag open — check connectivity / collector before trusting tape.")
+    err = snap.risk.get("order_error_rate")
+    attempts = int(snap.risk.get("order_attempts") or 0)
+    if isinstance(err, (int, float)) and err >= 0.15 and attempts >= 20:
+        critical.append(
+            f"Order error rate {err:.0%} over {attempts} attempts — posting may be failing."
+        )
+    if snap.metrics_age_s is not None and snap.metrics_age_s > 120 and snap.risk.get("running"):
+        critical.append(
+            f"Metrics log quiet for {int(snap.metrics_age_s)}s — engine may be hung or not emitting."
+        )
+    mo30 = snap.markout.get("30s")
+    if isinstance(mo30, (int, float)) and mo30 < -0.005 and snap.n_fill >= 5:
+        critical.append(
+            f"30s markout adverse ({mo30:+.4f}) — fills may be toxic; check size / thin books."
+        )
+    if snap.health == "CRITICAL" and not snap.risk.get("global_halt") and not links:
+        critical.append("Fix outage before trusting quotes: check connectivity / collector.")
+
+    frac = snap.risk.get("exposure_frac")
+    if isinstance(frac, (int, float)) and frac >= 0.7:
+        soft.append(
+            f"Total exposure at {frac:.0%} of cap — size taper may already be on."
+        )
     if snap.mode == "PAPER" and snap.n_fill == 0 and snap.n_quote > 50:
-        tips.append("Paper is quoting but has no fills — reward farming posture, not PnL proof.")
-    if snap.health == "CRITICAL" and not snap.risk.get("global_halt"):
-        tips.append("Fix outage before trusting quotes: check connectivity / collector.")
+        soft.append("Paper is quoting but has no fills — reward farming posture, not PnL proof.")
+    if snap.capital_usdc <= 0 and snap.risk.get("running"):
+        soft.append("Capital is 0 — sizing/policy may be unloaded; check capital file / bankroll.")
     if snap.daily_pnl is not None and snap.daily_pnl < 0 and snap.n_fill > 0:
-        tips.append("Negative day with fills — check markouts on Risk/Tape; size may be too large.")
+        soft.append("Negative day with fills — check markouts on Risk/Tape; size may be too large.")
     if snap.inventory_peak > 100:
-        tips.append("Inventory peak is elevated — prefer exits / REDUCE_ONLY over adding.")
+        soft.append("Inventory peak is elevated — prefer exits / REDUCE_ONLY over adding.")
+    if (
+        snap.n_quote > 100
+        and snap.n_cancel > 0
+        and snap.n_quote > 0
+        and (snap.n_cancel / snap.n_quote) > 0.85
+    ):
+        soft.append("Cancel/quote is very high — churn may be burning rate limit / missed rewards.")
     if snap.open_orders == 0 and snap.n_markets > 0 and snap.health in {"OK", "ACTIVE"}:
-        tips.append("No open orders despite markets — regime may be HALTED/EVENT or WS blind.")
+        soft.append("No open orders despite markets — regime may be HALTED/EVENT or WS blind.")
+    halted_n = int(snap.risk.get("halted_markets") or 0)
+    if halted_n > 0 and snap.n_markets > 0 and halted_n >= max(1, snap.n_markets // 2):
+        soft.append(f"{halted_n}/{snap.n_markets} markets halted — check Gamma closed/not-accepting.")
+
+    tips = critical + soft
     if not tips:
         tips.append("Steady state. Watch Pulse for health color; switch to Book for per-market drift.")
     return tips[:4]
@@ -227,13 +385,14 @@ def build_snapshot_from_paths(
     kill_usdc: float | None = None,
     live_markets: list[dict[str, Any]] | None = None,
     risk_extra: dict[str, Any] | None = None,
+    metrics_bits: dict[str, Any] | None = None,
 ) -> DashboardSnapshot:
     db = Path(db_path)
     logs = Path(log_dir)
     mlog = Path(metrics_log)
     pnl = _read_pnl(db)
     open_orders, positions = _read_state_store(db)
-    bits = _metrics_bits(mlog)
+    bits = metrics_bits if metrics_bits is not None else _metrics_bits(mlog)
     outage = _read_outage(logs)
     outage_open = bool(outage.get("outage_open"))
 
@@ -291,6 +450,16 @@ def build_snapshot_from_paths(
         outage=outage,
         insights=[],
     )
+    with contextlib.suppress(Exception):
+        from polymaker import __version__
+
+        snap.version = str(__version__)
+    if (risk_extra or {}).get("global_halt"):
+        snap.health = "CRITICAL"
+        snap.health_detail = f"Risk halt: {(risk_extra or {}).get('halt_reason') or 'global_halt'}"
+    with contextlib.suppress(Exception):
+        if mlog.exists():
+            snap.metrics_age_s = round(time.time() - mlog.stat().st_mtime, 1)
     snap.insights = build_insights(snap)
     return snap
 
@@ -314,8 +483,8 @@ def build_snapshot_from_engine(engine: Any) -> DashboardSnapshot:
     metrics_bits = _metrics_bits(metrics_log)
     rewards = metrics_bits.get("reward_accrual") or {}
     now = time.time()
+    last_regimes = getattr(engine, "_last_regime", {}) or {}
     for cid, meta in getattr(engine, "metas", {}).items():
-        regime = "QUIET"
         cooloff_s = 0.0
         rm = getattr(engine, "regime_m", {}).get(cid)
         if cid in getattr(engine, "_halted", set()):
@@ -326,6 +495,10 @@ def build_snapshot_from_engine(engine: Any) -> DashboardSnapshot:
             regime = "EVENT"
             with contextlib.suppress(Exception):
                 cooloff_s = float(rm.cooloff_remaining(now))
+        else:
+            # Prefer last requote decision (QUIET / TRENDING / …) over a
+            # static QUIET default — Book was lying when markets were live.
+            regime = str(last_regimes.get(cid) or "QUIET")
         pos_yes = engine.state.position(meta.yes.token_id).size
         pos_no = engine.state.position(meta.no.token_id).size
         live_markets.append(
@@ -341,6 +514,14 @@ def build_snapshot_from_engine(engine: Any) -> DashboardSnapshot:
                 "rewards_min_size": meta.rewards_min_size,
             }
         )
+    # Book: surface problems first (HALTED/EVENT/PAUSED), then |inventory|.
+    _sev = {"HALTED": 0, "PAUSED": 1, "EVENT": 2, "REDUCE_ONLY": 3, "TRENDING": 4}
+    live_markets.sort(
+        key=lambda m: (
+            _sev.get(str(m.get("regime") or ""), 5),
+            -abs(float(m.get("inventory_net") or 0)),
+        )
+    )
 
     risk_extra = {
         "halted_markets": len(getattr(engine, "_halted", set())),
@@ -363,6 +544,56 @@ def build_snapshot_from_engine(engine: Any) -> DashboardSnapshot:
             if halted:
                 halt_reason = str(why or "global_halt")
                 risk_extra["halt_reason"] = halt_reason
+            # Exposure vs caps — what Risk layout actually needs.
+            rcfg = getattr(risk, "cfg", None) or cfg.risk
+            exposure = float(risk._total_exposure())  # noqa: SLF001 — dashboard read
+            cap_total = float(getattr(rcfg, "max_total_exposure_usdc", 0) or 0)
+            risk_extra["exposure_usdc"] = round(exposure, 2)
+            risk_extra["max_total_exposure_usdc"] = cap_total
+            risk_extra["exposure_frac"] = (
+                round(exposure / cap_total, 3) if cap_total > 0 else None
+            )
+            risk_extra["max_market_notional_usdc"] = float(
+                getattr(rcfg, "max_market_notional_usdc", 0) or 0
+            )
+            risk_extra["order_error_rate"] = None
+            attempts = int(getattr(risk, "_order_attempts", 0) or 0)
+            errors = int(getattr(risk, "_order_errors", 0) or 0)
+            if attempts > 0:
+                risk_extra["order_error_rate"] = round(errors / attempts, 3)
+                risk_extra["order_attempts"] = attempts
+
+    # Live connectivity strip (Pulse).
+    links: dict[str, Any] = {}
+    md = getattr(engine, "md", None)
+    if md is not None:
+        links["market_ws"] = "up" if getattr(md, "connected", False) else "down"
+    else:
+        links["market_ws"] = "—"
+    if paper:
+        links["user_ws"] = "n/a"
+        links["heartbeat"] = "n/a"
+    else:
+        user = getattr(engine, "user", None)
+        if user is None:
+            links["user_ws"] = "—"
+        else:
+            links["user_ws"] = "up" if getattr(user, "connected", False) else "down"
+        gw = getattr(engine, "gateway", None)
+        hb_fail = 0
+        halt_after = int(getattr(cfg.risk, "heartbeat_halt_failures", 3) or 3)
+        if gw is not None:
+            with contextlib.suppress(Exception):
+                hb_fail = int(getattr(gw, "heartbeat_failures", 0) or 0)
+        links["heartbeat_failures"] = hb_fail
+        if not getattr(cfg.engine, "heartbeat", True):
+            links["heartbeat"] = "off"
+        elif hb_fail >= halt_after:
+            links["heartbeat"] = "down"
+        elif hb_fail > 0:
+            links["heartbeat"] = "degraded"
+        else:
+            links["heartbeat"] = "up"
 
     snap = build_snapshot_from_paths(
         db_path=cfg.paths.db,
@@ -373,7 +604,32 @@ def build_snapshot_from_engine(engine: Any) -> DashboardSnapshot:
         kill_usdc=kill,
         live_markets=live_markets,
         risk_extra=risk_extra,
+        metrics_bits=metrics_bits,
     )
+    if snap.outage.get("outage_open"):
+        links["outage"] = "open"
+    else:
+        links["outage"] = "clear"
+    started = getattr(engine, "_started_at", None)
+    if isinstance(started, (int, float)) and started > 0:
+        links["uptime_s"] = int(max(0, time.time() - float(started)))
+    snap.links = links
+
+    dash = getattr(engine, "_live_dashboard", None)
+    if dash is not None and getattr(dash, "url", ""):
+        snap.url_hint = str(dash.url)
+
+    # Escalate health when live links are blind (engine path only).
+    if not halt_reason:
+        if links.get("market_ws") == "down" or links.get("heartbeat") == "down":
+            snap.health = "CRITICAL"
+            parts = [k for k, v in links.items() if v == "down"]
+            snap.health_detail = "Link down: " + ", ".join(parts)
+        elif links.get("user_ws") == "down" or links.get("heartbeat") == "degraded":
+            if snap.health in {"OK", "ACTIVE", "NO_DATA"}:
+                snap.health = "WARN"
+                snap.health_detail = "Link degraded — check user WS / heartbeat"
+
     if live_equity is not None:
         snap.equity = live_equity
     if live_pnl is not None:
@@ -381,7 +637,7 @@ def build_snapshot_from_engine(engine: Any) -> DashboardSnapshot:
     if halt_reason:
         snap.health = "CRITICAL"
         snap.health_detail = f"Risk halt: {halt_reason}"
-        snap.insights = build_insights(snap)
+    snap.insights = build_insights(snap)
     return snap
 
 
@@ -423,6 +679,11 @@ body {{
   display:flex; align-items:baseline; justify-content:space-between; gap:1rem;
   margin-bottom: 1.25rem; border-bottom: 1px solid var(--line); padding-bottom: .85rem;
 }}
+@media (max-width: 560px) {{
+  .brand {{ flex-direction: column; align-items:flex-start; gap:.35rem; }}
+  .meta {{ text-align:left; }}
+  .app {{ padding: 1rem 0.85rem 2.5rem; }}
+}}
 .brand h1 {{
   margin:0; font-size: clamp(1.6rem, 3vw, 2.1rem); letter-spacing: -0.03em;
   font-weight: 600;
@@ -451,6 +712,16 @@ body {{
 .nav button.active {{
   color: var(--bg); background: var(--mint); border-color: var(--mint); font-weight: 600;
 }}
+.book-filters {{
+  display:flex; gap:.4rem; flex-wrap:wrap; margin-bottom: .65rem;
+}}
+.book-filters button {{
+  background: transparent; color: var(--muted); border: 1px solid var(--line);
+  border-radius: 999px; padding: .35rem .8rem; cursor: pointer; font: inherit;
+}}
+.book-filters button.active {{
+  color: var(--bg); background: var(--mint); border-color: var(--mint); font-weight: 600;
+}}
 .layout {{ display:none; animation: in .25s ease; }}
 .layout.active {{ display:block; }}
 @keyframes in {{ from {{ opacity:0; transform: translateY(4px); }} to {{ opacity:1; transform:none; }} }}
@@ -470,6 +741,17 @@ body {{
 .health-OK, .health-ACTIVE {{ color: var(--ok); }}
 .health-WARN {{ color: var(--warn); }}
 .health-CRITICAL, .health-NO_DATA {{ color: var(--bad); }}
+.health-CRITICAL {{
+  animation: pulse-crit 1.6s ease-in-out infinite;
+}}
+@keyframes pulse-crit {{
+  0%, 100% {{ opacity: 1; }}
+  50% {{ opacity: .72; }}
+}}
+@media (prefers-reduced-motion: reduce) {{
+  .health-CRITICAL {{ animation: none; }}
+  .layout {{ animation: none; }}
+}}
 .detail {{ color: var(--muted); max-width: 36ch; }}
 .statgrid {{
   display:grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: .65rem;
@@ -493,15 +775,55 @@ th {{
   font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted);
   font-weight: 500;
 }}
+code.copyable {{ cursor: pointer; border-bottom: 1px dotted color-mix(in srgb, var(--muted) 60%, transparent); }}
+code.copyable:hover {{ color: var(--mint); }}
+.toast {{
+  position: fixed; bottom: 1.1rem; right: 1.1rem; padding: .45rem .75rem;
+  background: #1c2733; border: 1px solid var(--line); border-radius: 8px;
+  font-size: .78rem; color: var(--mint); opacity: 0; pointer-events: none;
+  transition: opacity .2s ease;
+}}
+.toast.show {{ opacity: 1; }}
 .regime {{
   font-family: var(--mono); font-size: .8rem; padding: .1rem .4rem; border-radius: 6px;
   background: #1c2733; color: var(--ink);
 }}
+.regime-QUIET {{ color: var(--ok); }}
+.regime-TRENDING {{ color: var(--live); }}
+.regime-EVENT {{ color: var(--warn); }}
+.regime-HALTED, .regime-PAUSED {{ color: var(--bad); }}
+.regime-REDUCE_ONLY {{ color: var(--warn); }}
+.links {{
+  display:flex; flex-wrap:wrap; gap:.5rem; margin: 0 0 1rem;
+}}
+.link-chip {{
+  font-family: var(--mono); font-size: .72rem; letter-spacing: .04em;
+  padding: .35rem .65rem; border-radius: 8px; border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel) 90%, transparent); color: var(--muted);
+}}
+.link-up {{ color: var(--ok); border-color: color-mix(in srgb, var(--ok) 35%, var(--line)); }}
+.link-down {{ color: var(--bad); border-color: color-mix(in srgb, var(--bad) 40%, var(--line)); }}
+.link-degraded {{ color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, var(--line)); }}
+.link-open {{ color: var(--bad); border-color: color-mix(in srgb, var(--bad) 40%, var(--line)); }}
+.link-clear, .link-na, .link-off, .link-dash {{ color: var(--muted); }}
 .foot {{
   margin-top: 1.5rem; color: var(--muted); font-size: .78rem;
   display:flex; justify-content:space-between; gap:1rem; flex-wrap:wrap;
 }}
 .empty {{ color: var(--muted); padding: 1rem 0; }}
+.bar {{
+  height: .45rem; background: #1c2733; border-radius: 99px; overflow: hidden; margin-top: .45rem;
+}}
+.bar > i {{
+  display:block; height:100%; width:0%; background: var(--mint); border-radius: 99px;
+  transition: width .35s ease;
+}}
+.bar.warn > i {{ background: var(--warn); }}
+.bar.bad > i {{ background: var(--bad); }}
+.cap-row .k {{ font-size:.7rem; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); }}
+.cap-row .v {{
+  font-family: var(--mono); font-size: .95rem; font-variant-numeric: tabular-nums; margin-top: .1rem;
+}}
 </style>
 </head>
 <body>
@@ -510,7 +832,7 @@ th {{
     <h1>Poly<span>maker</span> <span id="mode" class="mode mode-PAPER">PAPER</span></h1>
     <div class="meta">
       <div><span id="conn" class="conn" title="snapshot link"></span><span id="clock">—</span></div>
-      <div>auto-refresh 2s · keys 1–4 · localhost</div>
+      <div>auto-refresh 2s · keys 1–4 · localhost · <span id="age">—</span> · metrics <span id="metrics-age">—</span></div>
     </div>
   </header>
 
@@ -522,6 +844,8 @@ th {{
   </nav>
 
   <section id="pulse" class="layout active">
+    <div class="links" id="links"></div>
+    <div class="links" id="regime-summary" style="margin-top:-0.35rem"></div>
     <div class="hero">
       <div class="panel">
         <div class="k" style="color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.06em">System health</div>
@@ -534,6 +858,7 @@ th {{
           <div class="stat"><div class="k">Equity</div><div class="v" id="equity">—</div></div>
           <div class="stat"><div class="k">Capital</div><div class="v" id="capital">—</div></div>
           <div class="stat"><div class="k">Open orders</div><div class="v" id="orders">—</div></div>
+          <div class="stat"><div class="k">Uptime</div><div class="v" id="uptime">—</div></div>
         </div>
       </div>
     </div>
@@ -541,9 +866,20 @@ th {{
       <div class="k" style="color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.4rem">What matters now</div>
       <ul id="insights"></ul>
     </div>
+    <div class="panel" style="margin-top:1rem">
+      <div class="cap-row">
+        <div class="k">Daily PnL vs kill</div>
+        <div class="v" id="pnl-kill-label">—</div>
+        <div class="bar" id="pnl-kill-bar"><i id="pnl-kill-fill"></i></div>
+      </div>
+    </div>
   </section>
 
   <section id="book" class="layout">
+    <div class="book-filters">
+      <button type="button" id="book-filter-all" class="active">All</button>
+      <button type="button" id="book-filter-inv">Inventory ≠ 0</button>
+    </div>
     <div class="panel">
       <table>
         <thead><tr><th>Market</th><th>Regime</th><th>Inv net</th><th>Reward acc.</th><th>Question</th></tr></thead>
@@ -558,6 +894,17 @@ th {{
       <div class="panel stat"><div class="k">Halted</div><div class="v" id="halted">—</div></div>
       <div class="panel stat"><div class="k">LLM paused</div><div class="v" id="paused">—</div></div>
       <div class="panel stat"><div class="k">Kill USDC</div><div class="v" id="kill">—</div></div>
+    </div>
+    <div class="panel" style="margin-bottom:1rem">
+      <div class="cap-row">
+        <div class="k">Total exposure / cap</div>
+        <div class="v" id="exposure-label">—</div>
+        <div class="bar" id="exposure-bar"><i id="exposure-fill"></i></div>
+      </div>
+      <div class="statgrid" style="margin-top:1rem">
+        <div class="stat"><div class="k">Mkt notional cap</div><div class="v" id="mkt-cap">—</div></div>
+        <div class="stat"><div class="k">Order err rate</div><div class="v" id="err-rate">—</div></div>
+      </div>
     </div>
     <div class="panel">
       <table>
@@ -574,6 +921,12 @@ th {{
       <div class="panel stat"><div class="k">Cancels</div><div class="v" id="n-cancel">—</div></div>
       <div class="panel stat"><div class="k">Spread USDC</div><div class="v" id="spread">—</div></div>
     </div>
+    <div class="statgrid" style="margin-bottom:1rem">
+      <div class="panel stat"><div class="k">Quotes / fill</div><div class="v" id="qpf">—</div></div>
+      <div class="panel stat"><div class="k">Cancel / quote</div><div class="v" id="cpq">—</div></div>
+      <div class="panel stat"><div class="k">Fill rate</div><div class="v" id="fill-rate">—</div></div>
+      <div class="panel stat"><div class="k">Markets</div><div class="v" id="n-markets">—</div></div>
+    </div>
     <div class="panel">
       <table>
         <thead><tr><th>Markout horizon</th><th>Mean</th></tr></thead>
@@ -583,10 +936,11 @@ th {{
   </section>
 
   <footer class="foot">
-    <span>Layouts: Pulse (now) · Book (markets) · Risk (inventory) · Tape (flow)</span>
-    <span id="gen">—</span>
+    <span>Layouts: Pulse (1) · Book (2) · Risk (3) · Tape (4) · click market id to copy</span>
+    <span><span id="ver"></span> <span id="url-hint"></span> <span id="gen">—</span></span>
   </footer>
 </div>
+<div class="toast" id="toast">Copied</div>
 <script>
 (function() {{
   const $ = (id) => document.getElementById(id);
@@ -597,32 +951,136 @@ th {{
     const s = (v >= 0 ? "+" : "") + v.toFixed(2);
     return s;
   }};
+  function toast(msg) {{
+    const t = $("toast");
+    t.textContent = msg;
+    t.classList.add("show");
+    clearTimeout(toast._timer);
+    toast._timer = setTimeout(() => t.classList.remove("show"), 1200);
+  }}
+  async function copyText(text) {{
+    try {{
+      await navigator.clipboard.writeText(text);
+      toast("Copied " + text);
+    }} catch (e) {{
+      toast("Copy failed");
+    }}
+  }}
 
-  document.querySelectorAll(".nav button").forEach(btn => {{
-    btn.addEventListener("click", () => {{
-      document.querySelectorAll(".nav button").forEach(b => b.classList.remove("active"));
-      document.querySelectorAll(".layout").forEach(l => l.classList.remove("active"));
-      btn.classList.add("active");
-      $(btn.dataset.layout).classList.add("active");
-      try {{ localStorage.setItem("pm_layout", btn.dataset.layout); }} catch (e) {{}}
+  function showLayout(name) {{
+    const b = document.querySelector(`#nav button[data-layout="${{name}}"]`);
+    if (!b) return;
+    document.querySelectorAll("#nav button").forEach(x => x.classList.remove("active"));
+    document.querySelectorAll(".layout").forEach(l => l.classList.remove("active"));
+    b.classList.add("active");
+    $(name).classList.add("active");
+    try {{ localStorage.setItem("pm_layout", name); }} catch (e) {{}}
+    if (location.hash.replace(/^#/, "") !== name) {{
+      history.replaceState(null, "", "#" + name);
+    }}
+  }}
+
+  let bookFilter = "all";
+  try {{ bookFilter = localStorage.getItem("pm_book_filter") || "all"; }} catch (e) {{}}
+  function setBookFilter(mode) {{
+    bookFilter = mode;
+    try {{ localStorage.setItem("pm_book_filter", mode); }} catch (e) {{}}
+    $("book-filter-all").classList.toggle("active", mode === "all");
+    $("book-filter-inv").classList.toggle("active", mode === "inv");
+    if (window.__lastMarkets) renderMarkets(window.__lastMarkets);
+  }}
+  function renderMarkets(markets) {{
+    const mb = $("markets-body");
+    let rows = markets || [];
+    if (bookFilter === "inv") {{
+      rows = rows.filter(m => Math.abs(Number(m.inventory_net) || 0) > 1e-9);
+    }}
+    if (!rows.length) {{
+      mb.innerHTML = '<tr><td colspan="5" class="empty">' +
+        (bookFilter === "inv" ? "No inventory drift" : "No markets yet") + "</td></tr>";
+      return;
+    }}
+    mb.innerHTML = rows.map(m => {{
+      const inv = Number(m.inventory_net) || 0;
+      const invCls = inv > 0 ? "pos" : (inv < 0 ? "neg" : "");
+      return `<tr>
+      <td><code class="copyable" data-copy="${{m.id}}" title="click to copy">${{m.id}}</code></td>
+      <td><span class="regime regime-${{m.regime || "QUIET"}}">${{m.regime || "—"}}${{m.cooloff_s ? " ·" + m.cooloff_s + "s" : ""}}</span></td>
+      <td class="${{invCls}}">${{fmt(m.inventory_net, 2)}}</td>
+      <td>${{fmt(m.reward_accrual, 3)}}</td>
+      <td style="color:var(--muted);max-width:28ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${{m.question || ""}}</td>
+    </tr>`;
+    }}).join("");
+    mb.querySelectorAll("code.copyable").forEach(el => {{
+      el.addEventListener("click", () => copyText(el.dataset.copy || el.textContent));
     }});
+  }}
+  $("book-filter-all").addEventListener("click", () => setBookFilter("all"));
+  $("book-filter-inv").addEventListener("click", () => setBookFilter("inv"));
+  $("book-filter-all").classList.toggle("active", bookFilter === "all");
+  $("book-filter-inv").classList.toggle("active", bookFilter === "inv");
+
+  document.querySelectorAll("#nav button").forEach(btn => {{
+    btn.addEventListener("click", () => showLayout(btn.dataset.layout));
   }});
   document.addEventListener("keydown", (e) => {{
+    if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
     const map = {{ "1": "pulse", "2": "book", "3": "risk", "4": "tape" }};
-    if (map[e.key]) {{
-      const b = document.querySelector(`.nav button[data-layout="${{map[e.key]}}"]`);
-      if (b) b.click();
+    if (map[e.key]) showLayout(map[e.key]);
+    if (e.key === "Escape") showLayout("pulse");
+    if (e.key === "?" || (e.shiftKey && e.key === "/")) {{
+      toast("1–4 layouts · Esc pulse · i inventory · u copy URL · ? help");
+    }}
+    if (e.key === "i" || e.key === "I") {{
+      if (bookFilter === "inv") setBookFilter("all");
+      else setBookFilter("inv");
+      showLayout("book");
+    }}
+    if (e.key === "u" || e.key === "U") {{
+      const hint = ($("url-hint").textContent || "").replace(/\\s*·\\s*$/, "").trim();
+      copyText(hint || location.href.split("#")[0]);
     }}
   }});
-  try {{
-    const saved = localStorage.getItem("pm_layout");
-    if (saved) {{
-      const b = document.querySelector(`.nav button[data-layout="${{saved}}"]`);
-      if (b) b.click();
+  window.addEventListener("hashchange", () => {{
+    const h = location.hash.replace(/^#/, "");
+    if (h) showLayout(h);
+  }});
+  (function initLayout() {{
+    const fromHash = location.hash.replace(/^#/, "");
+    if (fromHash && document.querySelector(`#nav button[data-layout="${{fromHash}}"]`)) {{
+      showLayout(fromHash);
+      return;
     }}
-  }} catch (e) {{}}
+    try {{
+      const saved = localStorage.getItem("pm_layout");
+      if (saved) showLayout(saved);
+    }} catch (e) {{}}
+  }})();
 
+  let lastSnap = null;
+  function paintAge() {{
+    if (!lastSnap) return;
+    const ageEl = $("age");
+    if (typeof lastSnap.ts === "number") {{
+      const secs = Math.max(0, Math.round(Date.now() / 1000 - lastSnap.ts));
+      ageEl.textContent = secs <= 2 ? "fresh" : secs + "s ago";
+      ageEl.style.color = secs > 8 ? "var(--bad)" : (secs > 4 ? "var(--warn)" : "var(--muted)");
+    }} else {{
+      ageEl.textContent = "—";
+    }}
+    const ma = $("metrics-age");
+    if (typeof lastSnap.metrics_age_s === "number" && typeof lastSnap.ts === "number") {{
+      const a = lastSnap.metrics_age_s + Math.max(0, Date.now() / 1000 - lastSnap.ts);
+      ma.textContent = a < 5 ? "live" : Math.round(a) + "s ago";
+      ma.style.color = a > 120 ? "var(--bad)" : (a > 30 ? "var(--warn)" : "var(--muted)");
+    }} else {{
+      ma.textContent = "—";
+      ma.style.color = "var(--muted)";
+    }}
+  }}
   function paint(s) {{
+    lastSnap = s;
+    document.title = "Polymaker · " + (s.health || "…") + " · " + (s.mode || "");
     const mode = $("mode");
     mode.textContent = s.mode;
     mode.className = "mode mode-" + s.mode;
@@ -636,8 +1094,52 @@ th {{
     $("equity").textContent = fmt(s.equity, 2);
     $("capital").textContent = fmt(s.capital_usdc, 0);
     $("orders").textContent = String(s.open_orders);
+    const up = (s.links && s.links.uptime_s);
+    if (typeof up === "number") {{
+      const h = Math.floor(up / 3600);
+      const m = Math.floor((up % 3600) / 60);
+      const sec = up % 60;
+      $("uptime").textContent = h > 0
+        ? (h + "h " + m + "m")
+        : (m > 0 ? (m + "m " + sec + "s") : (sec + "s"));
+    }} else {{
+      $("uptime").textContent = "—";
+    }}
     $("clock").textContent = s.generated_at;
     $("gen").textContent = "snapshot " + s.generated_at;
+    const ver = $("ver");
+    ver.textContent = s.version ? ("v" + s.version + " ·") : "";
+    const uh = $("url-hint");
+    if (s.url_hint) {{
+      uh.textContent = s.url_hint + " ·";
+    }} else {{
+      uh.textContent = "";
+    }}
+    paintAge();
+
+    const linkBox = $("links");
+    const L = s.links || {{}};
+    const order = ["market_ws", "user_ws", "heartbeat", "outage"];
+    const labels = {{ market_ws: "market WS", user_ws: "user WS", heartbeat: "heartbeat", outage: "outage" }};
+    linkBox.innerHTML = order.filter(k => k in L).map(k => {{
+      const st = String(L[k]);
+      const stCls = st === "n/a" ? "na" : (st === "—" ? "dash" : st.replace(/[^a-z0-9-]/gi, ""));
+      const cls = "link-chip link-" + stCls;
+      const extra = (k === "heartbeat" && L.heartbeat_failures) ? " ·" + L.heartbeat_failures : "";
+      return `<span class="${{cls}}">${{labels[k] || k}} · ${{st}}${{extra}}</span>`;
+    }}).join("");
+
+    const rs = $("regime-summary");
+    const counts = {{}};
+    (s.markets || []).forEach(m => {{
+      const r = m.regime || "—";
+      counts[r] = (counts[r] || 0) + 1;
+    }});
+    const rOrder = ["HALTED", "PAUSED", "EVENT", "REDUCE_ONLY", "TRENDING", "QUIET", "—"];
+    const keys = rOrder.filter(k => counts[k]).concat(Object.keys(counts).filter(k => !rOrder.includes(k)));
+    rs.innerHTML = keys.length
+      ? keys.map(k => `<span class="link-chip regime regime-${{k}}">${{k}} · ${{counts[k]}}</span>`).join("")
+      : "";
 
     const ul = $("insights");
     ul.innerHTML = "";
@@ -647,48 +1149,92 @@ th {{
       ul.appendChild(li);
     }});
 
-    const mb = $("markets-body");
-    if (!s.markets || !s.markets.length) {{
-      mb.innerHTML = '<tr><td colspan="5" class="empty">No markets yet</td></tr>';
+    const kill = (s.risk && s.risk.daily_loss_kill_usdc);
+    const pnlV = s.daily_pnl;
+    if (typeof kill === "number" && kill > 0 && typeof pnlV === "number") {{
+      // 0% = at -kill, 50% = flat, 100% = +kill (symmetric view of headroom).
+      const frac = Math.max(0, Math.min(1, (pnlV + kill) / (2 * kill)));
+      $("pnl-kill-label").textContent = money(pnlV) + " / kill -" + fmt(kill, 0);
+      $("pnl-kill-fill").style.width = Math.round(frac * 100) + "%";
+      const bar = $("pnl-kill-bar");
+      bar.className = "bar" + (pnlV <= -0.7 * kill ? " bad" : (pnlV < 0 ? " warn" : ""));
     }} else {{
-      mb.innerHTML = s.markets.map(m => `<tr>
-        <td><code>${{m.id}}</code></td>
-        <td><span class="regime">${{m.regime || "—"}}${{m.cooloff_s ? " ·" + m.cooloff_s + "s" : ""}}</span></td>
-        <td>${{fmt(m.inventory_net, 2)}}</td>
-        <td>${{fmt(m.reward_accrual, 3)}}</td>
-        <td style="color:var(--muted);max-width:28ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${{m.question || ""}}</td>
-      </tr>`).join("");
+      $("pnl-kill-label").textContent = "—";
+      $("pnl-kill-fill").style.width = "0%";
+      $("pnl-kill-bar").className = "bar";
     }}
+
+    window.__lastMarkets = s.markets || [];
+    renderMarkets(window.__lastMarkets);
 
     $("inv-peak").textContent = fmt(s.inventory_peak, 1);
     $("halted").textContent = String((s.risk && s.risk.halted_markets) || 0);
     $("paused").textContent = String((s.risk && s.risk.llm_paused) || 0);
     $("kill").textContent = fmt(s.risk && s.risk.daily_loss_kill_usdc, 0);
 
+    const R = s.risk || {{}};
+    const exp = R.exposure_usdc;
+    const cap = R.max_total_exposure_usdc;
+    const frac = (typeof R.exposure_frac === "number") ? R.exposure_frac
+      : (cap > 0 && typeof exp === "number") ? (exp / cap) : null;
+    if (typeof exp === "number" && cap > 0) {{
+      $("exposure-label").textContent = fmt(exp, 1) + " / " + fmt(cap, 0) +
+        (frac !== null ? "  (" + Math.round(frac * 100) + "%)" : "");
+      const pct = Math.max(0, Math.min(100, Math.round((frac || 0) * 100)));
+      $("exposure-fill").style.width = pct + "%";
+      const bar = $("exposure-bar");
+      bar.className = "bar" + (frac >= 0.9 ? " bad" : (frac >= 0.7 ? " warn" : ""));
+    }} else {{
+      $("exposure-label").textContent = "—";
+      $("exposure-fill").style.width = "0%";
+      $("exposure-bar").className = "bar";
+    }}
+    $("mkt-cap").textContent = fmt(R.max_market_notional_usdc, 0);
+    $("err-rate").textContent = (typeof R.order_error_rate === "number")
+      ? (Math.round(R.order_error_rate * 1000) / 10) + "%"
+      : "—";
+
     const pb = $("pos-body");
     if (!s.positions || !s.positions.length) {{
       pb.innerHTML = '<tr><td colspan="3" class="empty">Flat</td></tr>';
     }} else {{
-      pb.innerHTML = s.positions.map(p => `<tr>
-        <td><code>${{p.token}}</code></td><td>${{fmt(p.size, 2)}}</td><td>${{fmt(p.avg_price, 3)}}</td>
-      </tr>`).join("");
+      const rows = s.positions.slice().sort((a, b) => Math.abs(b.size||0) - Math.abs(a.size||0));
+      pb.innerHTML = rows.map(p => {{
+        const sz = Number(p.size) || 0;
+        const cls = sz > 0 ? "pos" : (sz < 0 ? "neg" : "");
+        return `<tr>
+        <td><code>${{p.token}}</code></td><td class="${{cls}}">${{fmt(p.size, 2)}}</td><td>${{fmt(p.avg_price, 3)}}</td>
+      </tr>`;
+      }}).join("");
     }}
 
     $("n-quote").textContent = String(s.n_quote);
     $("n-fill").textContent = String(s.n_fill);
     $("n-cancel").textContent = String(s.n_cancel);
     $("spread").textContent = fmt(s.realized_spread_usdc, 4);
+    const nq = Number(s.n_quote) || 0;
+    const nf = Number(s.n_fill) || 0;
+    const nc = Number(s.n_cancel) || 0;
+    $("qpf").textContent = nf > 0 ? fmt(nq / nf, 1) : (nq > 0 ? "∞" : "—");
+    $("cpq").textContent = nq > 0 ? fmt(nc / nq, 2) : "—";
+    $("fill-rate").textContent = nq > 0 ? (Math.round((nf / nq) * 1000) / 10) + "%" : "—";
+    $("n-markets").textContent = String(s.n_markets || 0);
     const mk = s.markout || {{}};
     const keys = ["30s", "120s", "300s"].filter(k => k in mk);
     const mbody = $("markout-body");
     if (!keys.length) {{
       mbody.innerHTML = '<tr><td colspan="2" class="empty">No markouts yet</td></tr>';
     }} else {{
-      mbody.innerHTML = keys.map(k => `<tr><td>${{k}}</td><td>${{fmt(mk[k], 5)}}</td></tr>`).join("");
+      mbody.innerHTML = keys.map(k => {{
+        const v = mk[k];
+        const cls = (typeof v === "number" && v < 0) ? "neg" : ((typeof v === "number" && v > 0) ? "pos" : "");
+        return `<tr><td>${{k}}</td><td class="${{cls}}">${{fmt(v, 5)}}</td></tr>`;
+      }}).join("");
     }}
   }}
 
   async function tick() {{
+    if (document.visibilityState === "hidden") return;
     const dot = $("conn");
     try {{
       const r = await fetch("/api/snapshot", {{ cache: "no-store" }});
@@ -702,8 +1248,12 @@ th {{
       $("health-detail").textContent = "Waiting for bot snapshot… (" + e.message + ")";
     }}
   }}
+  document.addEventListener("visibilitychange", () => {{
+    if (document.visibilityState === "visible") tick();
+  }});
   tick();
   setInterval(tick, 2000);
+  setInterval(paintAge, 1000);
 }})();
 </script>
 </body>
@@ -717,48 +1267,68 @@ class _Handler(BaseHTTPRequestHandler):
             return
         log.debug("dashboard_http %s", fmt % args)
 
+    def _send(self, code: int, body: bytes, content_type: str) -> None:
+        self.send_response(code)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def _snapshot(self) -> dict[str, Any]:
         fn = getattr(self.server, "snapshot_fn", None)
         if not callable(fn):
             return {"error": "no snapshot_fn"}
-        return fn()
+        payload = fn()
+        if isinstance(payload, dict) and "error" not in payload:
+            self.server.last_snapshot = payload  # type: ignore[attr-defined]
+            self.server.last_snapshot_at = time.time()  # type: ignore[attr-defined]
+        return payload
 
     def do_GET(self) -> None:  # noqa: N802
         path = urlparse(self.path).path
         if path in {"/", "/index.html"}:
-            body = render_app_html().encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Cache-Control", "no-store")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+            self._send(200, render_app_html().encode("utf-8"), "text/html; charset=utf-8")
             return
         if path == "/api/snapshot":
             try:
                 payload = self._snapshot()
                 body = json.dumps(payload, default=str).encode("utf-8")
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Cache-Control", "no-store")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
+                self._send(200, body, "application/json")
             except Exception as exc:
-                err = json.dumps({"error": str(exc)}).encode("utf-8")
-                self.send_response(500)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(err)))
-                self.end_headers()
-                self.wfile.write(err)
+                self._send(500, json.dumps({"error": str(exc)}).encode("utf-8"), "application/json")
             return
         if path == "/healthz":
-            body = b'{"ok":true}'
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+            last = getattr(self.server, "last_snapshot", None)
+            last_at = getattr(self.server, "last_snapshot_at", None)
+            info: dict[str, Any] = {"ok": True}
+            if isinstance(last, dict):
+                info["health"] = last.get("health")
+                info["mode"] = last.get("mode")
+                info["ts"] = last.get("ts")
+                if last.get("version"):
+                    info["version"] = last.get("version")
+            if isinstance(last_at, (int, float)):
+                info["snapshot_age_s"] = round(time.time() - float(last_at), 2)
+            # Probe once if nothing cached yet (cold start).
+            if last is None:
+                with contextlib.suppress(Exception):
+                    self._snapshot()
+                    last = getattr(self.server, "last_snapshot", None)
+                    if isinstance(last, dict):
+                        info["health"] = last.get("health")
+                        info["mode"] = last.get("mode")
+                        info["ts"] = last.get("ts")
+                        if last.get("version"):
+                            info["version"] = last.get("version")
+                        info["snapshot_age_s"] = 0.0
+            if info.get("health") == "CRITICAL":
+                info["ok"] = False
+            body = json.dumps(info).encode("utf-8")
+            self._send(200 if info["ok"] else 503, body, "application/json")
             return
         self.send_error(404)
 
@@ -787,7 +1357,7 @@ class LiveDashboard:
         open_browser: bool = True,
     ) -> None:
         self.snapshot_fn = snapshot_fn
-        self.host = host
+        self.host = _require_loopback_host(host)
         self.port = port
         self.open_browser = open_browser
         self._httpd: ThreadingHTTPServer | None = None
@@ -800,6 +1370,8 @@ class LiveDashboard:
         port = _pick_port(self.host, self.port)
         httpd = ThreadingHTTPServer((self.host, port), _Handler)
         httpd.snapshot_fn = self.snapshot_fn  # type: ignore[attr-defined]
+        httpd.last_snapshot = None  # type: ignore[attr-defined]
+        httpd.last_snapshot_at = None  # type: ignore[attr-defined]
         self._httpd = httpd
         self.port = port
         self.url = f"http://{self.host}:{port}/"

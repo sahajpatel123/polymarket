@@ -10,7 +10,9 @@ the gate before the live $5 round-trip (the README).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -106,6 +108,27 @@ async def run_doctor(cfg: Config, console: Console) -> bool:
         check("user WS authenticated", passed, detail)
     else:
         console.print("  [dim]· skipping user WS (needs wallet creds)[/dim]")
+
+    # ── live dashboard bind (localhost operator UI) ─────────────────────
+    try:
+        from polymaker.metrics.live_dashboard import DEFAULT_PORT, _require_loopback_host
+
+        host = _require_loopback_host(getattr(cfg.engine, "dashboard_host", "127.0.0.1"))
+        port = int(getattr(cfg.engine, "dashboard_port", DEFAULT_PORT) or DEFAULT_PORT)
+        enabled = bool(getattr(cfg.engine, "dashboard_enabled", True))
+        detail = f"http://{host}:{port}/"
+        if not enabled:
+            detail += " (disabled in config — ok; enable with --dashboard)"
+        url_file = Path(cfg.paths.log_dir) / "dashboard.url"
+        if url_file.exists():
+            with contextlib.suppress(Exception):
+                live = url_file.read_text(encoding="utf-8").strip()
+                if live:
+                    detail += f" · live {live}"
+        # Bind validity matters; disabled is a choice, not a preflight failure.
+        check("dashboard bind (loopback)", True, detail)
+    except ValueError as e:
+        check("dashboard bind (loopback)", False, str(e))
 
     console.print(f"\n[bold]{'READY' if ok else 'NOT READY'}[/bold]")
     return ok

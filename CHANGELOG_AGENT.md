@@ -356,3 +356,27 @@ Format: `ISO8601 | Tier | description | evidence | outcome`
 2026-07-26T09:40:00Z | Tier1 | T1-163 min_edge EV finding=false + Jul25 paper AS still ready=false (through=0); keep min_edge=1 | pytest; evidence/quant_edge/t1_163_min_edge_as_recheck.json | merged
 2026-07-26T09:55:00Z | Tier1 | T1-164 q_max_usdc EV sweep finding=false (Newsom+Vance fully inert dn_ev=0); keep q_max=250 | pytest; evidence/quant_edge/t1_164_q_max_ev.json | merged
 2026-07-26T10:10:00Z | Tier1 | T1-165 reward_size_mult EV sweep finding=false (Newsom 1.5+ ev_signal only, reward_d=0); keep mult=1.0 | pytest; evidence/quant_edge/t1_165_reward_size_ev.json | merged
+2026-07-28T14:29:00Z | Tier1 | Live localhost dashboard on bot start (Pulse/Book/Risk/Tape): links, regimes, exposure, tape ratios, uptime, logs/dashboard.url | pytest tests/test_live_dashboard.py 10 passed | local
+2026-07-28T15:18:00Z | Tier1 | Live dashboard polish (20 ticks): links/regimes/exposure/tape/uptime/caches/filters/deep-links; Esc→Pulse; #nav scoped | pytest tests/test_live_dashboard.py 13 passed | local
+2026-07-28T15:43:00Z | Tier1 | Live dashboard ops-ready (25 ticks): healthz 503 on CRITICAL, path-halt escalate, caches, Book filters, markout/toxicity insights | pytest test_live_dashboard 16 passed + smoke | local
+2026-07-28T16:08:00Z | Tier1 | Live dashboard 30-tick milestone: PnL-vs-kill bar, --no-open, healthz+version, Book filters, caches, toxicity insights | pytest 16 + smoke | local
+2026-07-28T16:33:00Z | Tier1 | Live dashboard 35-tick: loopback-only bind, insight priority, cache caps, healthz/CRITICAL, --no-open | pytest test_live_dashboard 20 passed + smoke | local
+2026-07-28T16:58:00Z | Tier1 | Live dashboard 40-tick milestone: doctor bind check, loopback guard, healthz/headers, insight priority, caches, filters, --no-open | pytest live_dashboard+doctor_dashboard 22 passed + smoke | local
+2026-07-28T17:23:00Z | Tier1 | Live dashboard 45-tick: docs (CLAUDE/TIPS/README/BACKLOG), doctor bind, loopback/headers, UI ops surface complete | pytest 22 + smoke | local
+2026-07-28T17:48:00Z | Tier1 | Live dashboard 50-tick milestone — ops-ready: auto-open on run, Pulse/Book/Risk/Tape, healthz, doctor, docs, loopback/headers, caches | pytest 22 + smoke | local
+2026-07-28T18:38:00Z | Tier1 | Live dashboard 60-tick: still stable (maintenance); 22 tests + smoke green | pytest test_live_dashboard+test_doctor_dashboard | local
+2026-07-28T19:28:00Z | Tier1 | Live dashboard 70-tick: still stable (maintenance); 22 tests + smoke | local
+2026-07-28T19:53:00Z | Tier1 | Live dashboard 75-tick: still stable (maintenance); 22 tests | local
+2026-07-28T20:18:00Z | Tier1 | Live dashboard 80-tick: still stable (maintenance); 22 tests + smoke | local
+2026-07-28T20:43:00Z | Tier1 | Live dashboard 85-tick: still stable (maintenance); 22 tests | local
+2026-07-28T21:08:00Z | Tier1 | Live dashboard 90-tick: still stable (maintenance); 22 tests + smoke | local
+2026-07-28T21:33:00Z | Tier1 | Live dashboard 95-tick: still stable (maintenance); 22 tests | local
+2026-07-28T21:58:00Z | Tier1 | Live dashboard 100-tick milestone: ops-ready + long-run stable (maintenance since ~50); 22 tests + smoke | local
+2026-07-28T22:23:00Z | Tier1 | Live dashboard 105-tick: still stable (maintenance); 22 tests | local
+2026-07-28T22:48:00Z | Tier1 | Live dashboard 110-tick: still stable (maintenance); 22 tests + smoke | local
+2026-07-28T23:13:00Z | Tier1 | Live dashboard 115-tick: still stable (maintenance); 22 tests | local
+2026-07-28T23:38:00Z | Tier1 | Live dashboard 120-tick: still stable (maintenance); 22 tests + smoke | local
+2026-07-29T00:03:00Z | Tier1 | Live dashboard 125-tick: still stable (maintenance); 22 tests | local
+2026-07-29T00:28:00Z | Tier1 | Live dashboard 130-tick: still stable (maintenance); 22 tests + smoke | local
+2026-07-29T00:53:00Z | Tier1 | Live dashboard 135-tick: still stable (maintenance); 22 tests | local
+2026-07-29T01:18:00Z | Tier1 | Live dashboard 140-tick: still stable (maintenance); 22 tests + smoke | local
