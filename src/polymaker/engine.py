@@ -154,7 +154,11 @@ class Engine:
         # Grok sets these via oversigt actions; engine reads them
         # on every requote. Grok = sizing + aggression authority.
         self._grok_aggression: dict[str, float] = {}        # 0.5-2.0 (1.0 = normal)
-        self._grok_band_override: dict[str, float] = {}      # 0.2-0.8 (None = use decision default)
+        self._grok_band_override: dict[str, float] = {}      # 0.2-0.8
+        # ─── Grok automated triggers (0 API cost, sub-second evaluation) ──
+        from polymaker.intelligence.grok_triggers import GrokTrigger
+        self._grok_triggers: list[GrokTrigger] = []
+        # ────────────────────────────────────────────────────────────────
         # ─────────────────────────────────────────────────────
         # V3: long-term memory + self-improve + review
         self.memory: AgentMemory | None = None
@@ -975,6 +979,29 @@ class Engine:
                             "src": src[:8], "dst": dst[:8], "amount": amt}
             return {"action": "rotate_capital", "status": "rejected", "reason": "invalid_params"}
 
+        if atype == "set_trigger":
+            from polymaker.intelligence.grok_triggers import (
+                TRIGGER_ACTIONS,
+                TRIGGER_CONDITIONS,
+                GrokTrigger,
+            )
+            cond = str(params.get("condition") or params.get("cond") or "")
+            thresh = float(params.get("threshold", params.get("thresh", 0)) or 0)
+            trig_action = str(params.get("trigger_action") or params.get("action") or "alert_only")
+            market = str(params.get("market") or cid or "")
+            if cond not in TRIGGER_CONDITIONS or trig_action not in TRIGGER_ACTIONS:
+                return {"action": "set_trigger", "status": "rejected",
+                        "reason": f"invalid_condition({cond})_or_action({trig_action})"}
+            trig = GrokTrigger(
+                condition=cond, threshold=thresh, action=trig_action,
+                market=market, reason=reason, set_by="grok",
+            )
+            self._grok_triggers.append(trig)
+            log.info("grok_trigger_set", condition=cond, threshold=thresh,
+                     action=trig_action, market=market[:8] if market else "portfolio")
+            return {"action": "set_trigger", "status": "applied",
+                    "condition": cond, "threshold": thresh, "trigger_action": trig_action}
+
         return {"action": atype, "status": "unknown", "reason": reason}
 
     # ── V3 supervised loops ─────────────────────────────────────────
@@ -1372,6 +1399,40 @@ class Engine:
                              shifted_pct=shift_pct)
             except Exception:
                 log.exception("rebalance_loop_error")
+
+    def _apply_trigger_action(self, violation: Any) -> None:
+        """Execute a triggered Grok guardrail — zero API calls."""
+        cid = getattr(violation.trigger, "market", None) or ""
+        action = getattr(violation.trigger, "action", "alert_only")
+        mult = float(getattr(violation.trigger, "mult", 0.7) or 0.7)
+
+        if action == "pause" and cid:
+            self._llm_paused.add(cid)
+            self._pending_pause_cancels.add(cid)
+            self._wake_cid(cid)
+            log.info("trigger_pause", cid=cid[:8],
+                     condition=violation.trigger.condition)
+
+        elif action == "defensive" and cid:
+            self._grok_aggression[cid] = max(0.5, float(self._grok_aggression.get(cid, 1.0) or 1.0) * 0.7)
+            self._grok_band_override[cid] = 0.25
+            self._wake_cid(cid)
+            log.info("trigger_defensive", cid=cid[:8],
+                     aggression=round(self._grok_aggression[cid], 2))
+
+        elif action == "size_down" and cid:
+            cur = float(self._grok_aggression.get(cid, 1.0) or 1.0)
+            self._grok_aggression[cid] = max(0.5, cur * mult)
+            self._wake_cid(cid)
+            log.info("trigger_size_down", cid=cid[:8], mult=mult)
+
+        elif action == "size_up" and cid:
+            cur = float(self._grok_aggression.get(cid, 1.0) or 1.0)
+            self._grok_aggression[cid] = min(2.0, cur / max(mult, 0.01))
+            self._wake_cid(cid)
+            log.info("trigger_size_up", cid=cid[:8], mult=mult)
+
+        # alert_only: logged by evaluate_triggers, no engine action
 
     def _build_self_evaluation(self) -> Any:
         """Build a minimal SelfEvaluation from engine state for self-improve."""
@@ -2201,6 +2262,18 @@ class Engine:
             if tox > 0.02:
                 base = min(1.0, base + 0.35)
             return base
+
+        # ── Grok automated triggers: evaluate 24/7, zero API cost ──
+        # Grok set these on the 10-min oversight cycle. They fire
+        # sub-second here on every requote without calling Grok.
+        if self._grok_triggers:
+            from polymaker.intelligence.grok_triggers import evaluate_triggers
+            snap = self._oversight_snapshot()
+            violations = evaluate_triggers(self._grok_triggers, snap)
+            for v in violations:
+                log.warning("grok_trigger_fired", **v.as_dict())
+                self._apply_trigger_action(v)
+        # ────────────────────────────────────────────────────────
 
         pipe = build_targets(
             meta=meta,

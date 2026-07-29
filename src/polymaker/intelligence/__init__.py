@@ -71,6 +71,11 @@ from polymaker.intelligence.execution import (
     SmartExecutor,
 )
 from polymaker.intelligence.governed_agent import GovernedGrokAgent, GovernedResponse
+from polymaker.intelligence.grok_triggers import (
+    GrokTrigger,
+    TriggerViolation,
+    evaluate_triggers,
+)
 from polymaker.intelligence.info_theory import (
     AutocorrelationTracker,
     EntropyTracker,
@@ -211,6 +216,9 @@ __all__ = [
     "GrokAgent",
     "GovernedGrokAgent",
     "GovernedResponse",
+    "GrokTrigger",
+    "TriggerViolation",
+    "evaluate_triggers",
     "IcebergSizer",
     "ImprovementSuggestion",
     "ImproveResult",
