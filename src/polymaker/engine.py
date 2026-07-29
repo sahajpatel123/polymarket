@@ -150,6 +150,12 @@ class Engine:
         self._llm_actions: list = []
         self._llm_enabled = bool(cfg.secrets.xai_api_key)
         self._per_market_spread_mult: dict[str, float] = {}
+        # ── Grok per-market trading authority ─────────────────
+        # Grok sets these via oversigt actions; engine reads them
+        # on every requote. Grok = sizing + aggression authority.
+        self._grok_aggression: dict[str, float] = {}        # 0.5-2.0 (1.0 = normal)
+        self._grok_band_override: dict[str, float] = {}      # 0.2-0.8 (None = use decision default)
+        # ─────────────────────────────────────────────────────
         # V3: long-term memory + self-improve + review
         self.memory: AgentMemory | None = None
         self.profile_hist: ProfileHistory | None = None
@@ -915,6 +921,59 @@ class Engine:
         if atype in ("add_layer", "drop_market"):
             log.info("oversight_deferred", action=atype, cid=cid[:8], reason=reason)
             return {"action": atype, "status": "deferred_to_self_improve", "cid": cid[:8]}
+
+        # ── Grok trading authority: sizing, aggression, band, rotation ──
+
+        if atype == "size_up" or atype == "size_down":
+            if not cid:
+                return {"action": atype, "status": "unknown", "reason": "missing_cid"}
+            mult = max(0.5, min(2.0, float(params.get("mult", 1.0) or 1.0)))
+            cur = float(self._grok_aggression.get(cid, 1.0))
+            if atype == "size_up":
+                cur = min(2.0, cur * mult)
+            else:
+                cur = max(0.5, cur / max(mult, 1.01))
+            self._grok_aggression[cid] = cur
+            self._wake_cid(cid)
+            log.info("grok_size_adjust", cid=cid[:8], aggression=round(cur, 2), mult=mult, reason=reason)
+            return {"action": atype, "status": "applied", "cid": cid[:8], "aggression": cur}
+
+        if atype == "go_aggressive" or atype == "go_defensive":
+            if not cid:
+                return {"action": atype, "status": "unknown", "reason": "missing_cid"}
+            band = params.get("band", params.get("band_position"))
+            if atype == "go_aggressive":
+                band = float(band) if band is not None else 0.65
+                band = max(0.5, min(0.8, band))
+            else:
+                band = float(band) if band is not None else 0.25
+                band = max(0.1, min(0.4, band))
+            cur_aggression = self._grok_aggression.get(cid, 1.0)
+            if atype == "go_aggressive":
+                self._grok_aggression[cid] = min(2.0, cur_aggression * 1.3)
+            else:
+                self._grok_aggression[cid] = max(0.5, cur_aggression * 0.7)
+            self._grok_band_override[cid] = band
+            self._wake_cid(cid)
+            log.info("grok_stance_adjust", cid=cid[:8], band=round(band, 2),
+                     aggression=round(self._grok_aggression[cid], 2), reason=reason)
+            return {"action": atype, "status": "applied", "cid": cid[:8],
+                    "band_position": band, "aggression": self._grok_aggression[cid]}
+
+        if atype == "rotate_capital":
+            src = str(params.get("from") or params.get("src") or "")
+            dst = str(params.get("to") or params.get("dst") or "")
+            amt = float(params.get("amount", params.get("amt", 0)) or 0)
+            if src and dst and amt > 0:
+                src_cap = float(self._discovery_capital.get(src, 0) or 0)
+                if src_cap >= amt:
+                    self._discovery_capital[src] = src_cap - amt
+                    self._discovery_capital[dst] = float(self._discovery_capital.get(dst, 0)) + amt
+                    log.info("grok_rotate_capital", src=src[:8], dst=dst[:8],
+                             amt=round(amt, 2), reason=reason)
+                    return {"action": "rotate_capital", "status": "applied",
+                            "src": src[:8], "dst": dst[:8], "amount": amt}
+            return {"action": "rotate_capital", "status": "rejected", "reason": "invalid_params"}
 
         return {"action": atype, "status": "unknown", "reason": reason}
 
@@ -2114,6 +2173,11 @@ class Engine:
         # Quarantine → reduce_only (entries off, exits on). Size scale stays
         # 1.0 so exit legs are not zeroed; non-quarantine applies deg cut.
         size_scale = rd.size_scale * (1.0 if quarantined else float(deg.size_multiplier))
+        # ── Grok trading authority: per-market aggression ──
+        _grok_agg = float(self._grok_aggression.get(cid, 1.0))
+        if abs(_grok_agg - 1.0) > 0.005:
+            size_scale *= _grok_agg
+        # ──────────────────────────────────────────────────────
         use_intel = p.use_intelligence and not deg.use_baseline_profile and not quarantined
 
         # Shared decision pipeline (same as replay): regime + intel + quotes.
@@ -2186,6 +2250,13 @@ class Engine:
             intel_spread_mult *= gov_spread_mult
             intel_spread_mult = max(0.5, min(3.0, intel_spread_mult))
             intel_reason = f"{intel_reason}+gov_x{round(gov_spread_mult, 2)}"
+        # ─────────────────────────────────────────────────────────────
+
+        # ── Grok band override: Grok says 'go_aggressive/defensive' ──
+        _grok_band = self._grok_band_override.get(cid)
+        if _grok_band is not None and isinstance(intel_band_frac, (int, float)):
+            intel_band_frac = float(_grok_band)
+            intel_reason = f"{intel_reason}+grok_band={round(_grok_band, 2)}"
         # ─────────────────────────────────────────────────────────────
 
         live = self.state.orders_for(meta.yes.token_id) + self.state.orders_for(meta.no.token_id)

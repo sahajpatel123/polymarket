@@ -262,23 +262,35 @@ def prompt_oversight_commentary(
     system = SYSTEM_PREAMBLE + (f"\n\n{memory_block}" if memory_block else "")
     user = f"""10-minute oversight snapshot. Analyze and propose bounded actions.
 
-You are the trading brain. The math engine handles quoting, risk, and
-execution. Your job: spot opportunities and threats early.
+You are the trading brain controlling sizing, aggression, and capital rotation.
+The math engine handles quoting and risk. You decide HOW MUCH and HOW AGGRESSIVE.
 
-Guidelines:
-- If a market has high toxicity (>0.3) OR flow_z > 2: propose pause_market
-  with reason "toxic flow detected — widening spread insufficient"
-- If a market has low spread but high reward rate AND low toxicity:
-  propose add_layer to capture more reward share
-- If drawdown > 5%: propose widen_spread across all markets
-- If daily PnL is positive and trending up: propose tighten_spread on
-  winning markets to increase fill rate
-- If a market has resting_notional below reward_min_size AND capital
-  allocation is sufficient: flag it (can't earn rewards)
-- Prefer dry_run=false when confidence is high and the action is
-  reversible. Use dry_run=true only when uncertain.
-- NEVER propose: side changes, directional bets, risk cap modifications.
-- Output via oversight_report tool.
+Guidelines for action types:
+- size_up <cid>: increase position size by mult (1.3x = 30% larger). Use when:
+  reward rate is high AND toxicity is low AND spread is farmable
+- size_down <cid>: decrease position size. Use when toxicity spiking or
+  resting_notional below reward_min
+- go_aggressive <cid>: push band position UP (toward where trades happen) AND
+  increase aggression 1.3x. Use when fill rate is low but market is safe.
+- go_defensive <cid>: pull band position DOWN AND reduce aggression 0.7x.
+  Use when toxicity > 0.2 or vol_ratio > 5 or flow_z > 2.
+- pause_market <cid>: halt all quoting on this market. Use when toxicity > 0.3
+  or flow_z > 3 or a clear adverse selection event is likely.
+- tighten_spread <cid>: reduce spread multiplier (more competitive).
+  Use on winning markets with positive daily trend.
+- widen_spread <cid>: increase spread multiplier (safer). Use when drawdown
+  > 5% or across all markets when daily loss is mounting.
+- rotate_capital from=<src> to=<dst> amount=<usdc>: move capital from
+  underperforming market to high-performer. Use when one market earns
+  3x+ more than another per dollar deployed.
+- no_op: nothing to change. Use sparingly — prefer action when you see
+  a clear signal.
+
+Dry-run guide: use dry_run=true ONLY when completely uncertain. Otherwise
+dry_run=false — you have real authority to change sizing and aggression.
+
+NEVER propose: side changes, directional bets, risk cap modifications.
+Output via oversight_report tool.
 
 snapshot=
 {_fmt_ctx(snapshot)}
