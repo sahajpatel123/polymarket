@@ -1180,21 +1180,26 @@ class Engine:
                 )
                 continue
 
-            alloc = max(bankroll * max(size_pct, 0.05), gate.recommended_base_size_usdc)
+            # Grok's suggested_size_pct is the authority. No floor — Grok
+            # decides the allocation. Capital gate ensures reward eligibility.
+            alloc = max(bankroll * max(size_pct, 0.001), gate.recommended_base_size_usdc)
             self._discovery_capital[cid] = min(alloc, bankroll * 0.4)
 
             if cid in self.metas:
-                # Already trading: refresh size preference on profile
+                # Already trading: Grok updates size preference on profile.
+                # Grok's allocation is authoritative; don't max(old, gate).
                 cur = self.profiles.get(cid, profile)
+                grok_size = bankroll * size_pct
                 self.profiles[cid] = cur.model_copy(update={
                     "base_size_usdc": max(
-                        cur.base_size_usdc,
+                        grok_size,
                         gate.recommended_base_size_usdc or cur.base_size_usdc,
                     ),
                     "bankroll_usdc": self._discovery_capital[cid],
                 })
                 continue
 
+            grok_base = bankroll * size_pct
             mkt_profile = profile.model_copy(update={
                 "q_max_usdc": min(
                     profile.q_max_usdc,
@@ -1202,6 +1207,7 @@ class Engine:
                 ),
                 "base_size_usdc": max(
                     profile.base_size_usdc,
+                    grok_base,
                     gate.recommended_base_size_usdc or profile.base_size_usdc,
                 ),
                 "bankroll_usdc": self._discovery_capital[cid],
@@ -2061,15 +2067,19 @@ class Engine:
             await self._cancel_market_orders(cid, meta, reason="capital_ineligible")
             return
 
-        # Scale sizes to risk bankroll when set (capital-adaptive profiles).
-        # Pass reward_min_size + typical_price so the scaling floors our
-        # base_size_usdc at a reward-eligible level when bankroll allows.
+        # Scale sizes to Grok's per-market allocation when available,
+        # otherwise fall back to global bankroll formula.
+        _effective_bankroll = self._discovery_capital.get(cid, 0.0)
+        if _effective_bankroll > 0:
+            self.cfg.risk.bankroll_usdc = _effective_bankroll
         p = self.risk.cfg.scale_profile_sizes(
             p,
             rewards_min_size=getattr(meta, "rewards_min_size", 0.0),
             typical_price=typical_px,
             exchange_min_shares=float(getattr(meta, "min_order_size", 5.0) or 5.0),
         )
+        if _effective_bankroll > 0:
+            self.cfg.risk.bankroll_usdc = self._effective_capital  # restore global
         if reward_gate.eligible and reward_gate.recommended_base_size_usdc > 0:
             p = p.model_copy(update={
                 "base_size_usdc": max(
