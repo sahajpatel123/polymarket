@@ -915,7 +915,7 @@ class Engine:
                 await self.run_oversight_cycle_once()
             except Exception:
                 log.exception("oversight_loop_error")
-            await asyncio.sleep(1800)  # 30 min
+            await asyncio.sleep(600)  # 10 min — faster reaction to Grok
 
     async def _improve_loop(self) -> None:
         """Auto self-improve: every 6h or on strategy decay."""
@@ -1049,7 +1049,7 @@ class Engine:
             profile = next(iter(self.cfg.profiles.values()))
         if profile is None:
             profile = StrategyProfile()
-        max_markets = int(self.cfg.engine.auto_discovery_max_markets or 20)
+        # No hard market cap — Grok decides count. Capital gate is the only limit.
         added = 0
         for rank in rankings:
             cid = str(getattr(rank, "condition_id", "") or "")
@@ -1133,8 +1133,6 @@ class Engine:
                 })
                 continue
 
-            if len(self.metas) + added >= max_markets:
-                break
             mkt_profile = profile.model_copy(update={
                 "q_max_usdc": min(
                     profile.q_max_usdc,
@@ -1159,16 +1157,16 @@ class Engine:
         return added
 
     async def _llm_discovery_loop(self) -> None:
-        """LLM-ranked market discovery every 30 min → trade-list selection."""
+        """LLM-ranked market discovery every 3 min — immediate activation."""
         if self._discovery_agent is None:
             return
         while self._running:
             try:
                 await self.run_llm_discovery_cycle_once()
-                await asyncio.sleep(1800)  # 30 min
+                await asyncio.sleep(180)  # 3 min
             except Exception:
                 log.exception("llm_discovery_loop_error")
-                await asyncio.sleep(60)
+                await asyncio.sleep(30)
 
     async def _capital_rebalance_loop(self) -> None:
         """Shift capital toward markets with highest reward accrual.
@@ -1270,7 +1268,7 @@ class Engine:
             return
         interval = max(60.0, float(self.cfg.engine.auto_discovery_interval_s))
         min_score = float(self.cfg.engine.auto_discovery_min_score)
-        max_markets = int(self.cfg.engine.auto_discovery_max_markets)
+        max_markets = min(50, int(self.cfg.engine.auto_discovery_max_markets or 50))
         tags = tuple(self.cfg.engine.auto_discovery_tags) or ("politics",)
         profile_name = self.cfg.engine.auto_discovery_profile
         min_liquidity = float(getattr(self.cfg.engine, "auto_discovery_min_liquidity", 10000.0))

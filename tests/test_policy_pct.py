@@ -31,7 +31,7 @@ def test_risk_profile_balanced_defaults():
     p = RiskProfile.from_name("balanced")
     assert p.size_mult == 1.0
     assert p.loss_kill_mult == 1.0
-    assert p.max_markets == 8
+    assert p.max_markets == 20
 
 
 def test_risk_profile_conservative_tighter():
@@ -91,7 +91,7 @@ def test_policy_default_factory_values():
     p = RiskPolicy()
     assert p.max_per_market_pct == DEFAULT_MAX_PER_MARKET_PCT
     assert p.daily_loss_kill_pct == DEFAULT_DAILY_LOSS_KILL_PCT
-    assert p.max_concurrent_markets == 8
+    assert p.max_concurrent_markets == 50
     assert p.profile_name == "balanced"
 
 

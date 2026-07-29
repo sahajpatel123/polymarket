@@ -51,7 +51,7 @@ DEFAULT_DAILY_LOSS_KILL_PCT = 0.10         # halt at -10% of capital in a day
 DEFAULT_MAX_DRAWDOWN_KILL_PCT = 0.25       # halt at -25% from equity peak
 DEFAULT_PER_MARKET_LOSS_PCT = 0.05         # reduce-only a market at -5% of capital
 DEFAULT_PER_TRADE_LOSS_PCT = 0.005         # tight stop on a single fill (0.5%)
-DEFAULT_MAX_CONCURRENT_MARKETS = 8
+DEFAULT_MAX_CONCURRENT_MARKETS = 50             # Grok + capital decide the real count
 DEFAULT_MIN_REWARD_PCT_PER_DAY = 0.005     # skip markets < 0.5%/day expected
 
 VALID_RISK_PROFILES = ("conservative", "balanced", "aggressive")
@@ -89,10 +89,10 @@ class RiskProfile:
                 f"unknown risk profile {name!r}; expected one of {VALID_RISK_PROFILES}"
             )
         if n == "conservative":
-            return cls(name=n, size_mult=0.5, loss_kill_mult=0.5, max_markets=4)
+            return cls(name=n, size_mult=0.5, loss_kill_mult=0.5, max_markets=10)
         if n == "aggressive":
-            return cls(name=n, size_mult=2.0, loss_kill_mult=2.0, max_markets=12)
-        return cls(name=n, size_mult=1.0, loss_kill_mult=1.0, max_markets=8)
+            return cls(name=n, size_mult=2.0, loss_kill_mult=2.0, max_markets=30)
+        return cls(name=n, size_mult=1.0, loss_kill_mult=1.0, max_markets=20)
 
 
 @dataclass(frozen=True)
