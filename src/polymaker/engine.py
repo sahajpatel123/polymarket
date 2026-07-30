@@ -49,6 +49,11 @@ from polymaker.intelligence.deepseek_triggers import DeepSeekTrigger
 from polymaker.intelligence.memory import AgentMemory
 from polymaker.intelligence.policy import load_capital_usdc
 from polymaker.intelligence.profile_history import ProfileHistory
+from polymaker.intelligence.resolution import (
+    ALPHA_BIAS_THRESHOLD,
+    ResolutionSignal,
+    estimate_resolution_probability,
+)
 from polymaker.intelligence.self_improve import SelfImprover
 from polymaker.intelligence.signal_processing import (
     KalmanMidPrice,
@@ -185,6 +190,9 @@ class Engine:
         # ── Per-hour reward tracking ──────────────────────────
         self._hourly_fills: dict[str, int] = {}  # cid → fills this hour
         self._hour_start_ts: float = time.time()
+        # ── Resolution arbitrage: per-market P(event) estimates ──
+        self._resolution_signals: dict[str, ResolutionSignal] = {}
+        self._resolution_loop_running: bool = False
         # LLM-ranked selection (last discovery rankings + governed facade)
         self._llm_rankings: list[Any] = []
         self._gov_facade: Any | None = None
@@ -378,6 +386,7 @@ class Engine:
             self._spawn("review", self._review_loop)
             if self._discovery_agent is not None:
                 self._spawn("llm_discovery", self._llm_discovery_loop)
+            self._spawn("resolution", self._resolution_loop)
             log.info("llm_supervised_tasks_started")
         # ──────────────────────────────────────────────────────────────
 
@@ -741,6 +750,8 @@ class Engine:
                 "fill_rate": round(fill_rate, 4),
                 "in_quarantine": cid in self._quarantined,
                 "in_halted": cid in self._halted,
+                "resolution_alpha": round(float(getattr(self._resolution_signals.get(cid), "alpha", 0.0) or 0.0), 1),
+                "resolution_direction": str(getattr(self._resolution_signals.get(cid), "direction", "NONE") or "NONE"),
             }
             total_reward_accrued += reward_accrued
 
@@ -1465,6 +1476,55 @@ class Engine:
             log.info("trigger_size_up", cid=cid[:8], mult=mult)
 
         # alert_only: logged by evaluate_triggers, no engine action
+
+    async def _resolution_loop(self) -> None:
+        """Estimate P(event) via DeepSeek every hour — resolution arbitrage.
+
+        For every market, ask DeepSeek: 'what is the true probability?'
+        Compare to market price → compute resolution_alpha.
+        Store per-market signal for quoting bias.
+        """
+        if self.gov_agent is None:
+            return
+        self._resolution_loop_running = True
+        while self._running:
+            try:
+                for cid, meta in list(self.metas.items()):
+                    sig = self._resolution_signals.get(cid)
+                    if sig is not None and not sig.needs_refresh():
+                        continue
+                    question = getattr(meta, "question", "") or getattr(meta, "slug", "")
+                    price = getattr(getattr(meta, "yes", None), "price", None) or 0.5
+                    try:
+                        price = float(price)
+                    except (TypeError, ValueError):
+                        price = 0.5
+                    reward = float(getattr(meta, "rewards_daily_rate", 0) or 0)
+                    volume = float(getattr(meta, "liquidity_num", 0) or 0)
+
+                    try:
+                        sig_new = await estimate_resolution_probability(
+                            agent=self.gov_agent,
+                            question=question,
+                            market_price=price,
+                            reward_rate=reward,
+                            volume=volume,
+                        )
+                        sig_new.condition_id = cid
+                        self._resolution_signals[cid] = sig_new
+                        if sig_new.alpha > ALPHA_BIAS_THRESHOLD:
+                            log.info("resolution_alpha",
+                                     cid=cid[:8],
+                                     alpha=round(sig_new.alpha, 1),
+                                     direction=sig_new.direction,
+                                     confidence=round(sig_new.confidence, 3),
+                                     reasoning=sig_new.reasoning[:120])
+                    except Exception:
+                        log.exception("resolution_estimate_failed", cid=cid[:8])
+                await asyncio.sleep(3600)  # every hour
+            except Exception:
+                log.exception("resolution_loop_error")
+                await asyncio.sleep(300)
 
     def _build_self_evaluation(self) -> Any:
         """Build a minimal SelfEvaluation from engine state for self-improve."""
@@ -2266,6 +2326,8 @@ class Engine:
         if deg.quarantine:
             self._quarantined.add(cid)
         quarantined = cid in self._quarantined
+        # ── Resolution arbitrage bias: when market is wrong, lean in ──
+        _res_sig = self._resolution_signals.get(cid)
         # Quarantine → reduce_only (entries off, exits on). Size scale stays
         # 1.0 so exit legs are not zeroed; non-quarantine applies deg cut.
         size_scale = rd.size_scale * (1.0 if quarantined else float(deg.size_multiplier))
@@ -2298,6 +2360,12 @@ class Engine:
                 size_scale *= _kelly_adj
         except Exception:
             pass
+        # ── Resolution arbitrage bias: when market is wrong, lean in ──
+        _res_sig = self._resolution_signals.get(cid)
+        if _res_sig is not None and _res_sig.should_bias_quoting():
+            _res_mult = _res_sig.size_multiplier()
+            size_scale *= _res_mult
+        # ───────────────────────────────────────────────────────
         # ── Reward-rate sizing: bigger orders on high-reward markets ──
         try:
             _rew_rate = float(getattr(meta, "rewards_daily_rate", 0) or 0)
