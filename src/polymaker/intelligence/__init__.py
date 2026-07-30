@@ -59,6 +59,11 @@ from polymaker.intelligence.decision import (
     IntelligenceState,
     TradingDecision,
 )
+from polymaker.intelligence.deepseek_triggers import (
+    DeepSeekTrigger,
+    TriggerViolation,
+    evaluate_triggers,
+)
 from polymaker.intelligence.discovery import (
     DiscoveryResult,
     MarketDiscovery,
@@ -71,11 +76,6 @@ from polymaker.intelligence.execution import (
     SmartExecutor,
 )
 from polymaker.intelligence.governed_agent import GovernedDeepSeekAgent, GovernedResponse
-from polymaker.intelligence.deepseek_triggers import (
-    DeepSeekTrigger,
-    TriggerViolation,
-    evaluate_triggers,
-)
 from polymaker.intelligence.info_theory import (
     AutocorrelationTracker,
     EntropyTracker,
@@ -143,6 +143,13 @@ from polymaker.intelligence.regime_detector import (
     RegimeDecision,
     detect_regime,
 )
+from polymaker.intelligence.resolution import (
+    ALPHA_BIAS_THRESHOLD,
+    ALPHA_DIRECTIONAL_THRESHOLD,
+    ResolutionSignal,
+    compute_alpha,
+    estimate_resolution_probability,
+)
 from polymaker.intelligence.review import (
     DaySummary,
     LocalMemoryStore,
@@ -189,6 +196,8 @@ from polymaker.intelligence.sizing import (
 )
 
 __all__ = [
+    "ALPHA_BIAS_THRESHOLD",
+    "ALPHA_DIRECTIONAL_THRESHOLD",
     "AdaptivePositionLimit",
     "AdaptiveSpreadParams",
     "AgentMemory",
@@ -252,6 +261,7 @@ __all__ = [
     "RankedMarket",
     "RegimeDecision",
     "ResolvedPolicy",
+    "ResolutionSignal",
     "RewardEligibility",
     "ReviewResult",
     "RiskPolicy",
@@ -275,6 +285,7 @@ __all__ = [
     "WaveletDenoiser",
     "allocation_from_confidence",
     "apply_overrides",
+    "compute_alpha",
     "compute_adverse_selection_risk",
     "compute_depth_imbalance",
     "compute_fill_probability",
@@ -283,6 +294,7 @@ __all__ = [
     "compute_opportunity_score",
     "compute_realized_vol",
     "detect_regime",
+    "estimate_resolution_probability",
     "function_tool",
     "load_capital_usdc",
     "load_memory",

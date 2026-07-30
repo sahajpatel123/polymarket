@@ -260,36 +260,36 @@ def prompt_oversight_commentary(
       }
     """
     system = SYSTEM_PREAMBLE + (f"\n\n{memory_block}" if memory_block else "")
-    user = f"""10-minute oversight snapshot. Analyze and propose bounded actions.
+    user = f"""Continuous oversight snapshot (every 30s). You are the guardian.
 
-You are the trading brain controlling sizing, aggression, and capital rotation.
-The math engine handles quoting and risk. You decide HOW MUCH and HOW AGGRESSIVE.
+You see everything the bot does. The math engine runs quotes and risk.
+YOU decide strategy: sizing, aggression, market selection, and when to
+exploit mispricings via resolution arbitrage.
+
+KEY METRIC — resolution_alpha: measures how wrong the market price is.
+  alpha = |market_price - P(event)| / tick_size
+  alpha > 3: market is wrong — bias quoting toward the direction of truth
+  alpha > 8: strong mispricing — consider go_aggressive on this market
+  alpha > 15: extreme — maximize size on the directional bias
+
+When you see high resolution_alpha on a market, that market is mispriced.
+The expected profit from holding to resolution exceeds any reward. Lean in.
 
 Guidelines for action types:
-- size_up <cid>: increase position size by mult (1.3x = 30% larger). Use when:
-  reward rate is high AND toxicity is low AND spread is farmable
-- size_down <cid>: decrease position size. Use when toxicity spiking or
-  resting_notional below reward_min
-- go_aggressive <cid>: push band position UP (toward where trades happen) AND
-  increase aggression 1.3x. Use when fill rate is low but market is safe.
-- go_defensive <cid>: pull band position DOWN AND reduce aggression 0.7x.
-  Use when toxicity > 0.2 or vol_ratio > 5 or flow_z > 2.
-- pause_market <cid>: halt all quoting on this market. Use when toxicity > 0.3
-  or flow_z > 3 or a clear adverse selection event is likely.
-- tighten_spread <cid>: reduce spread multiplier (more competitive).
-  Use on winning markets with positive daily trend.
-- widen_spread <cid>: increase spread multiplier (safer). Use when drawdown
-  > 5% or across all markets when daily loss is mounting.
-- rotate_capital from=<src> to=<dst> amount=<usdc>: move capital from
-  underperforming market to high-performer. Use when one market earns
-  3x+ more than another per dollar deployed.
-- no_op: nothing to change. Use sparingly — prefer action when you see
-  a clear signal.
+- size_up <cid>: increase position size. Use on high-reward, low-tox markets
+  OR on markets with resolution_alpha > 8 (DeepSeek says market is wrong)
+- size_down <cid>: decrease position size. Use when toxicity spiking.
+- go_aggressive <cid>: push band toward fills + size up 1.3x.
+  Use on markets with resolution_alpha > 5 or high reward + low tox.
+- go_defensive <cid>: pull band back + size down 0.7x.
+  Use when toxicity > 0.2 or vol_ratio > 5.
+- pause_market <cid>: halt quoting. Use when tox > 0.3 or flow_z > 3.
+- rotate_capital from=<src> to=<dst> amount=<usdc>: move capital.
+  Use when one market earns 3x+ more or has 3x+ higher resolution_alpha.
+- set_trigger: deploy automated guardrails (zero API cost, sub-second).
+- no_op: only when everything is perfect.
 
-Dry-run guide: use dry_run=true ONLY when completely uncertain. Otherwise
-dry_run=false — you have real authority to change sizing and aggression.
-
-NEVER propose: side changes, directional bets, risk cap modifications.
+You are the guardian. The bot trusts your judgment. Act decisively.
 Output via oversight_report tool.
 
 snapshot=

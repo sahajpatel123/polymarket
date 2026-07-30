@@ -1521,7 +1521,7 @@ class Engine:
                                      reasoning=sig_new.reasoning[:120])
                     except Exception:
                         log.exception("resolution_estimate_failed", cid=cid[:8])
-                await asyncio.sleep(3600)  # every hour
+                await asyncio.sleep(300)  # every 5 min — DeepSeek is the guardian
             except Exception:
                 log.exception("resolution_loop_error")
                 await asyncio.sleep(300)
