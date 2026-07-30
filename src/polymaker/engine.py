@@ -2287,7 +2287,9 @@ class Engine:
             )
             _ko = kelly_size(_ki)
             if _ko.fraction > 0:
-                _kelly_adj = min(3.0, max(0.3, _ko.fraction * 10.0))
+                # Kelly fraction is the % of bankroll to risk. Map to size
+                # multiplier: 5% Kelly → 1.25x size, 30% → 2.5x.
+                _kelly_adj = min(3.0, max(0.3, 1.0 + _ko.fraction * 5.0))
                 size_scale *= _kelly_adj
         except Exception:
             pass
@@ -2410,10 +2412,10 @@ class Engine:
 
         # ── HMM pre-volatility: widen BEFORE the spike hits ──────
         _hmm_m = self._hmm.get(cid)
-        if _hmm_m is not None and _hmm_m.n_updates > 5:
-            _hmm_m.update(float(est.vol.short_value))
-            if _hmm_m.p_high_vol > 0.65:
-                _hmm_widen = 1.0 + (_hmm_m.p_high_vol - 0.5) * 0.5
+        if _hmm_m is not None:
+            _hmm_m.update(float(micro))  # feed mid-price, not volatility
+            if _hmm_m.n_updates > 3 and _hmm_m.alpha[1] > 0.65:
+                _hmm_widen = 1.0 + (_hmm_m.alpha[1] - 0.5) * 0.5
                 intel_spread_mult *= _hmm_widen
                 intel_spread_mult = max(0.5, min(3.0, intel_spread_mult))
                 intel_reason = f"{intel_reason}+HMM_x{round(_hmm_widen, 2)}"
