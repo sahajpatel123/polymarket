@@ -45,10 +45,15 @@ from polymaker.intelligence import (
     MarketDiscovery,
     OversightLoop,
 )
+from polymaker.intelligence.deepseek_triggers import DeepSeekTrigger
 from polymaker.intelligence.memory import AgentMemory
 from polymaker.intelligence.policy import load_capital_usdc
 from polymaker.intelligence.profile_history import ProfileHistory
 from polymaker.intelligence.self_improve import SelfImprover
+from polymaker.intelligence.signal_processing import (
+    KalmanMidPrice,
+    VolatilityRegimeHMM,
+)
 from polymaker.journal import Journal
 from polymaker.logging import get_logger
 from polymaker.marketdata.orderbook import BookView
@@ -149,6 +154,10 @@ class Engine:
         self._last_book_ts: dict[str, float] = {}
         # Inventory entry timestamps for exit urgency (token_id -> first open ts)
         self._pos_entry_ts: dict[str, float] = {}
+        # ── Signal processing: per-market Kalman + HMM ─────────
+        self._kalman: dict[str, KalmanMidPrice] = {}
+        self._hmm: dict[str, VolatilityRegimeHMM] = {}
+        # ────────────────────────────────────────────────────────
         # LLM / V3 governance: wired only when DEEPSEEK_API_KEY is in .env
         self.deepseek_agent: DeepSeekAgent | None = None
         self.gov_agent: GovernedDeepSeekAgent | None = None
@@ -163,7 +172,6 @@ class Engine:
         self._grok_aggression: dict[str, float] = {}        # 0.5-2.0 (1.0 = normal)
         self._grok_band_override: dict[str, float] = {}      # 0.2-0.8
         # ─── DeepSeek automated triggers (0 API cost, sub-second evaluation) ──
-        from polymaker.intelligence.deepseek_triggers import DeepSeekTrigger
         self._deepseek_triggers: list[DeepSeekTrigger] = []
         # ────────────────────────────────────────────────────────────────
         # ─────────────────────────────────────────────────────
@@ -501,6 +509,8 @@ class Engine:
                 self._locks[meta.condition_id] = asyncio.Lock()
                 for tok in (meta.yes.token_id, meta.no.token_id):
                     self._token_cid[tok] = meta.condition_id
+                self._kalman[meta.condition_id] = KalmanMidPrice()
+                self._hmm[meta.condition_id] = VolatilityRegimeHMM()
 
                 sc = score_market(meta)
                 self.metrics.emit(
@@ -570,6 +580,11 @@ class Engine:
         self._locks[cid] = asyncio.Lock()
         for tok in (meta.yes.token_id, meta.no.token_id):
             self._token_cid[tok] = cid
+
+        # ── Per-market signal processing ────────────────────
+        self._kalman[cid] = KalmanMidPrice()
+        self._hmm[cid] = VolatilityRegimeHMM()
+        # ─────────────────────────────────────────────────────
 
         # Subscribe the market data service to the new market's tokens
         self.md.add_market(cid, [meta.yes.token_id, meta.no.token_id])
@@ -2094,6 +2109,15 @@ class Engine:
         micro = yes_book.microprice(p.micro_levels)
         if micro is None:
             return
+
+        # ── Kalman smoothing: reduce microprice jitter ─────────
+        _kal = self._kalman.get(cid)
+        if _kal is not None:
+            _kal.update(float(micro))
+            _kv = _kal.x_hat if _kal.n_updates > 3 else float(micro)
+            micro = max(0.01, min(0.99, _kv))
+        # ────────────────────────────────────────────────────────
+
         est.flow.decay_to(now)
         # FV preview for risk marks only — last_fv stays previous until after
         # build_targets so regime jump detection matches the shared pipeline.
@@ -2376,6 +2400,17 @@ class Engine:
             intel_spread_mult = max(0.5, min(3.0, intel_spread_mult))
             intel_reason = f"{intel_reason}+AS_x{round(_as_mult, 2)}"
         # ─────────────────────────────────────────────────────────────
+
+        # ── HMM pre-volatility: widen BEFORE the spike hits ──────
+        _hmm_m = self._hmm.get(cid)
+        if _hmm_m is not None and _hmm_m.n_updates > 5:
+            _hmm_m.update(float(est.vol.short_value))
+            if _hmm_m.p_high_vol > 0.65:
+                _hmm_widen = 1.0 + (_hmm_m.p_high_vol - 0.5) * 0.5
+                intel_spread_mult *= _hmm_widen
+                intel_spread_mult = max(0.5, min(3.0, intel_spread_mult))
+                intel_reason = f"{intel_reason}+HMM_x{round(_hmm_widen, 2)}"
+        # ───────────────────────────────────────────────────────
 
         # ── DeepSeek band override: DeepSeek says 'go_aggressive/defensive' ──
         _grok_band = self._grok_band_override.get(cid)
