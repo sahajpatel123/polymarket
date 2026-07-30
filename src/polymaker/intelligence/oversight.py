@@ -23,7 +23,7 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-from polymaker.intelligence.agent import GrokAgent
+from polymaker.intelligence.agent import DeepSeekAgent
 from polymaker.intelligence.memory import AgentMemory
 from polymaker.intelligence.prompts import (
     OVERSIGHT_TOOL_SCHEMA,
@@ -149,7 +149,7 @@ class OversightLoop:
 
     def __init__(
         self,
-        agent: GrokAgent,
+        agent: DeepSeekAgent,
         memory: AgentMemory | None = None,
         *,
         interval_s: float = DEFAULT_INTERVAL_S,

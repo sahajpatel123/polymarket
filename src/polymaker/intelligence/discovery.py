@@ -19,7 +19,7 @@ from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-from polymaker.intelligence.agent import GrokAgent
+from polymaker.intelligence.agent import DeepSeekAgent
 from polymaker.intelligence.memory import AgentMemory
 from polymaker.intelligence.prompts import RANK_MARKETS_TOOL_SCHEMA, prompt_rank_markets
 
@@ -139,7 +139,7 @@ class MarketDiscovery:
 
     def __init__(
         self,
-        agent: GrokAgent,
+        agent: DeepSeekAgent,
         memory: AgentMemory | None = None,
         *,
         cache_ttl_s: float = CACHE_TTL_S,

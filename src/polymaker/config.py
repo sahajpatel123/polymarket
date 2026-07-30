@@ -343,8 +343,10 @@ class Secrets(BaseSettings):
     browser_address: str = Field(default="", alias="BROWSER_ADDRESS")
     polygon_rpc: str | None = Field(default=None, alias="POLYGON_RPC")
     alert_webhook_url: str | None = Field(default=None, alias="ALERT_WEBHOOK_URL")
-    # xAI Grok (optional) — enables governed LLM discovery / oversight on the
+    # DeepSeek LLM (primary) — enables governed LLM discovery / oversight on the
     # live path. Empty → deterministic-only fallback (no crash).
+    deepseek_api_key: str = Field(default="", alias="DEEPSEEK_API_KEY")
+    # Legacy xAI Grok key — kept for backward compat
     xai_api_key: str = Field(default="", alias="XAI_API_KEY")
     # Polymarket builder API creds (self-generated via L2 auth: clob.create_builder_api_key)
     # + relayer URL — needed to merge a V2 DepositWallet (sig_type 1/3), whose execute()
@@ -363,8 +365,17 @@ class Secrets(BaseSettings):
         return bool(self.builder_key and self.builder_secret and self.builder_passphrase)
 
     @property
+    def has_deepseek(self) -> bool:
+        return bool(self.deepseek_api_key and self.deepseek_api_key.strip())
+
+    @property
     def has_xai(self) -> bool:
         return bool(self.xai_api_key and self.xai_api_key.strip())
+
+    @property
+    def has_llm(self) -> bool:
+        """Any LLM key present (DeepSeek or legacy xAI)."""
+        return self.has_deepseek or self.has_xai
 
 
 class Config(BaseModel):

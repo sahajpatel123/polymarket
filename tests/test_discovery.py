@@ -27,7 +27,7 @@ class FakeAgent:
         resp = AgentResponse(
             content="rank ok",
             tool_calls=[ToolCall(id="1", name="rank_markets", arguments=payload)],
-            usage=TokenUsage(total_tokens=20, prompt_tokens=10, completion_tokens=10),
+            usage=TokenUsage(total_tokens=20, input_tokens=10, output_tokens=10),
         )
         return payload, resp
 

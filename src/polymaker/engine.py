@@ -39,8 +39,8 @@ from polymaker.execution.gateway import ExecutionGateway
 from polymaker.execution.reconciler import reconcile
 from polymaker.intelligence import (
     DecisionFramework,
-    GovernedGrokAgent,
-    GrokAgent,
+    GovernedDeepSeekAgent,
+    DeepSeekAgent,
     LLMGovernance,
     MarketDiscovery,
     OversightLoop,
@@ -142,22 +142,22 @@ class Engine:
         self._last_book_ts: dict[str, float] = {}
         # Inventory entry timestamps for exit urgency (token_id -> first open ts)
         self._pos_entry_ts: dict[str, float] = {}
-        # LLM / V3 governance: wired only when XAI_API_KEY is in .env
-        self.grok_agent: GrokAgent | None = None
-        self.gov_agent: GovernedGrokAgent | None = None
+        # LLM / V3 governance: wired only when DEEPSEEK_API_KEY is in .env
+        self.deepseek_agent: DeepSeekAgent | None = None
+        self.gov_agent: GovernedDeepSeekAgent | None = None
         self.oversight_loop: OversightLoop | None = None
         self.llm_gov: LLMGovernance | None = None
         self._llm_actions: list = []
-        self._llm_enabled = bool(cfg.secrets.xai_api_key)
+        self._llm_enabled = bool(cfg.secrets.deepseek_api_key)
         self._per_market_spread_mult: dict[str, float] = {}
-        # ── Grok per-market trading authority ─────────────────
-        # Grok sets these via oversigt actions; engine reads them
-        # on every requote. Grok = sizing + aggression authority.
+        # ── DeepSeek per-market trading authority ─────────────────
+        # DeepSeek sets these via oversigt actions; engine reads them
+        # on every requote. DeepSeek = sizing + aggression authority.
         self._grok_aggression: dict[str, float] = {}        # 0.5-2.0 (1.0 = normal)
         self._grok_band_override: dict[str, float] = {}      # 0.2-0.8
-        # ─── Grok automated triggers (0 API cost, sub-second evaluation) ──
-        from polymaker.intelligence.grok_triggers import GrokTrigger
-        self._grok_triggers: list[GrokTrigger] = []
+        # ─── DeepSeek automated triggers (0 API cost, sub-second evaluation) ──
+        from polymaker.intelligence.deepseek_triggers import DeepSeekTrigger
+        self._deepseek_triggers: list[DeepSeekTrigger] = []
         # ────────────────────────────────────────────────────────────────
         # ─────────────────────────────────────────────────────
         # V3: long-term memory + self-improve + review
@@ -183,19 +183,19 @@ class Engine:
         agent: Any | None = None,
         force_capital_usdc: float | None = None,
     ) -> bool:
-        """Wire governed Grok + oversight + discovery on the live/paper path.
+        """Wire governed DeepSeek + oversight + discovery on the live/paper path.
 
         Called from :meth:`start`. Extracted so unit tests can drive the
         **shipped** wiring with a mock agent (no network).
 
         Returns True when LLM stack is active. Conditions:
-        - ``XAI_API_KEY`` present (or a mock ``agent`` injected), and
+        - ``DEEPSEEK_API_KEY`` present (or a mock ``agent`` injected), and
         - bankroll_usdc > 0 (or ``force_capital_usdc``).
 
         On any failure, leaves deterministic path intact and returns False.
         """
         if agent is None and not self._llm_enabled:
-            log.info("llm_wire_skipped", reason="no_xai_api_key")
+            log.info("llm_wire_skipped", reason="no_deepseek_api_key")
             return False
         _cap = float(
             force_capital_usdc
@@ -208,11 +208,11 @@ class Engine:
             return False
         try:
             if agent is not None:
-                self.grok_agent = agent  # type: ignore[assignment]
+                self.deepseek_agent = agent  # type: ignore[assignment]
             else:
-                self.grok_agent = GrokAgent(api_key=self.cfg.secrets.xai_api_key)
+                self.deepseek_agent = DeepSeekAgent(api_key=self.cfg.secrets.deepseek_api_key)
             self.llm_gov = LLMGovernance(capital_usdc=_cap)
-            self.gov_agent = GovernedGrokAgent(self.grok_agent, self.llm_gov)  # type: ignore[arg-type]
+            self.gov_agent = GovernedDeepSeekAgent(self.deepseek_agent, self.llm_gov)  # type: ignore[arg-type]
 
             _mem_path = Path(self.cfg.paths.db).parent / "agent_memory.db"
             self.memory = AgentMemory(db_path=str(_mem_path))
@@ -234,9 +234,9 @@ class Engine:
                         _first.model_dump() if hasattr(_first, "model_dump") else {}
                     )
 
-            # Facade: same chat_json_tool shape as GrokAgent, but every
+            # Facade: same chat_json_tool shape as DeepSeekAgent, but every
             # structured call is logged/sanitized through LLMGovernance.
-            facade = _GovernedJsonFacade(self.grok_agent, self.llm_gov)
+            facade = _GovernedJsonFacade(self.deepseek_agent, self.llm_gov)
             self._gov_facade = facade
 
             self._discovery_agent = MarketDiscovery(
@@ -250,7 +250,7 @@ class Engine:
                 snapshot_provider=self._oversight_snapshot,
             )
             self._llm_enabled = True
-            model = getattr(self.grok_agent, "model", "mock")
+            model = getattr(self.deepseek_agent, "model", "mock")
             log.info(
                 "llm_wired",
                 capital_usdc=_cap,
@@ -261,7 +261,7 @@ class Engine:
         except Exception:  # noqa: BLE001
             log.exception("llm_wire_failed — running deterministic only")
             self._llm_enabled = False
-            self.grok_agent = None
+            self.deepseek_agent = None
             self.gov_agent = None
             self.llm_gov = None
             self.oversight_loop = None
@@ -336,7 +336,7 @@ class Engine:
             self._spawn("heartbeat", self._heartbeat_loop)
             self._user_started = True
 
-        # ── V3 LLM wiring (governed Grok when key + bankroll present) ──
+        # ── V3 LLM wiring (governed DeepSeek when key + bankroll present) ──
         self.wire_llm_stack()
         # ──────────────────────────────────────────────────────────────
 
@@ -353,7 +353,7 @@ class Engine:
         if self.cfg.engine.auto_discovery_hot_reload:
             self._spawn("hot_reload", self._hot_reload_loop)
 
-        # ── V3 LLM supervised loops (Grok 4.5) ────────────────────────
+        # ── V3 LLM supervised loops (DeepSeek) ────────────────────────
         if self._llm_enabled and self.oversight_loop is not None:
             self._spawn("oversight", self._oversight_loop_task)
             self._spawn("improve", self._improve_loop)
@@ -636,9 +636,9 @@ class Engine:
     # ── V3 LLM oversight ─────────────────────────────────────────────
 
     def _oversight_snapshot(self) -> dict[str, Any]:
-        """Build a rich snapshot for Grok's 10-min oversight commentary.
+        """Build a rich snapshot for DeepSeek's 10-min oversight commentary.
 
-        Includes everything Grok needs to make informed decisions:
+        Includes everything DeepSeek needs to make informed decisions:
         equity/pnl trends, per-market reward share, regime state,
         fill quality, spread overrides, capital allocation, and
         adverse selection signals. No fluff — every field has a
@@ -927,7 +927,7 @@ class Engine:
             log.info("oversight_deferred", action=atype, cid=cid[:8], reason=reason)
             return {"action": atype, "status": "deferred_to_self_improve", "cid": cid[:8]}
 
-        # ── Grok trading authority: sizing, aggression, band, rotation ──
+        # ── DeepSeek trading authority: sizing, aggression, band, rotation ──
 
         if atype == "size_up" or atype == "size_down":
             if not cid:
@@ -940,7 +940,7 @@ class Engine:
                 cur = max(0.5, cur / max(mult, 1.01))
             self._grok_aggression[cid] = cur
             self._wake_cid(cid)
-            log.info("grok_size_adjust", cid=cid[:8], aggression=round(cur, 2), mult=mult, reason=reason)
+            log.info("llm_size_adjust", cid=cid[:8], aggression=round(cur, 2), mult=mult, reason=reason)
             return {"action": atype, "status": "applied", "cid": cid[:8], "aggression": cur}
 
         if atype == "go_aggressive" or atype == "go_defensive":
@@ -960,7 +960,7 @@ class Engine:
                 self._grok_aggression[cid] = max(0.5, cur_aggression * 0.7)
             self._grok_band_override[cid] = band
             self._wake_cid(cid)
-            log.info("grok_stance_adjust", cid=cid[:8], band=round(band, 2),
+            log.info("llm_stance_adjust", cid=cid[:8], band=round(band, 2),
                      aggression=round(self._grok_aggression[cid], 2), reason=reason)
             return {"action": atype, "status": "applied", "cid": cid[:8],
                     "band_position": band, "aggression": self._grok_aggression[cid]}
@@ -974,17 +974,17 @@ class Engine:
                 if src_cap >= amt:
                     self._discovery_capital[src] = src_cap - amt
                     self._discovery_capital[dst] = float(self._discovery_capital.get(dst, 0)) + amt
-                    log.info("grok_rotate_capital", src=src[:8], dst=dst[:8],
+                    log.info("llm_rotate_capital", src=src[:8], dst=dst[:8],
                              amt=round(amt, 2), reason=reason)
                     return {"action": "rotate_capital", "status": "applied",
                             "src": src[:8], "dst": dst[:8], "amount": amt}
             return {"action": "rotate_capital", "status": "rejected", "reason": "invalid_params"}
 
         if atype == "set_trigger":
-            from polymaker.intelligence.grok_triggers import (
+            from polymaker.intelligence.deepseek_triggers import (
                 TRIGGER_ACTIONS,
                 TRIGGER_CONDITIONS,
-                GrokTrigger,
+                DeepSeekTrigger,
             )
             cond = str(params.get("condition") or params.get("cond") or "")
             thresh = float(params.get("threshold", params.get("thresh", 0)) or 0)
@@ -993,12 +993,12 @@ class Engine:
             if cond not in TRIGGER_CONDITIONS or trig_action not in TRIGGER_ACTIONS:
                 return {"action": "set_trigger", "status": "rejected",
                         "reason": f"invalid_condition({cond})_or_action({trig_action})"}
-            trig = GrokTrigger(
+            trig = DeepSeekTrigger(
                 condition=cond, threshold=thresh, action=trig_action,
                 market=market, reason=reason, set_by="grok",
             )
-            self._grok_triggers.append(trig)
-            log.info("grok_trigger_set", condition=cond, threshold=thresh,
+            self._deepseek_triggers.append(trig)
+            log.info("llm_trigger_set", condition=cond, threshold=thresh,
                      action=trig_action, market=market[:8] if market else "portfolio")
             return {"action": "set_trigger", "status": "applied",
                     "condition": cond, "threshold": thresh, "trigger_action": trig_action}
@@ -1064,7 +1064,7 @@ class Engine:
                 await self.run_oversight_cycle_once()
             except Exception:
                 log.exception("oversight_loop_error")
-            await asyncio.sleep(600)  # 10 min — faster reaction to Grok
+            await asyncio.sleep(600)  # 10 min — faster reaction to DeepSeek
 
     async def _improve_loop(self) -> None:
         """Auto self-improve: every 6h or on strategy decay."""
@@ -1123,7 +1123,7 @@ class Engine:
                     result = run_daily_review(
                         summary=summary,
                         memory=self.memory,
-                        api_key=self.cfg.secrets.xai_api_key,
+                        api_key=self.cfg.secrets.deepseek_api_key,
                     )
                     _md = render_markdown(summary, result)
                     log.info("daily_review_complete", grade=result.grade)
@@ -1198,7 +1198,7 @@ class Engine:
             profile = next(iter(self.cfg.profiles.values()))
         if profile is None:
             profile = StrategyProfile()
-        # No hard market cap — Grok decides count. Capital gate is the only limit.
+        # No hard market cap — DeepSeek decides count. Capital gate is the only limit.
         added = 0
         for rank in rankings:
             cid = str(getattr(rank, "condition_id", "") or "")
@@ -1267,14 +1267,14 @@ class Engine:
                 )
                 continue
 
-            # Grok's suggested_size_pct is the authority. No floor — Grok
+            # DeepSeek's suggested_size_pct is the authority. No floor — DeepSeek
             # decides the allocation. Capital gate ensures reward eligibility.
             alloc = max(bankroll * max(size_pct, 0.001), gate.recommended_base_size_usdc)
             self._discovery_capital[cid] = min(alloc, bankroll * 0.4)
 
             if cid in self.metas:
-                # Already trading: Grok updates size preference on profile.
-                # Grok's allocation is authoritative; don't max(old, gate).
+                # Already trading: DeepSeek updates size preference on profile.
+                # DeepSeek's allocation is authoritative; don't max(old, gate).
                 cur = self.profiles.get(cid, profile)
                 grok_size = bankroll * size_pct
                 self.profiles[cid] = cur.model_copy(update={
@@ -1402,7 +1402,7 @@ class Engine:
                 log.exception("rebalance_loop_error")
 
     def _apply_trigger_action(self, violation: Any) -> None:
-        """Execute a triggered Grok guardrail — zero API calls."""
+        """Execute a triggered DeepSeek guardrail — zero API calls."""
         cid = getattr(violation.trigger, "market", None) or ""
         action = getattr(violation.trigger, "action", "alert_only")
         mult = float(getattr(violation.trigger, "mult", 0.7) or 0.7)
@@ -2184,7 +2184,7 @@ class Engine:
                     shortfall=round(reward_gate.required_for_two_sided - reward_gate.bankroll_usdc * 0.95, 2),
                 )
 
-        # Scale sizes to Grok's per-market allocation when available,
+        # Scale sizes to DeepSeek's per-market allocation when available,
         # otherwise fall back to global bankroll formula.
         _effective_bankroll = self._discovery_capital.get(cid, 0.0)
         if _effective_bankroll > 0:
@@ -2231,7 +2231,7 @@ class Engine:
         # Quarantine → reduce_only (entries off, exits on). Size scale stays
         # 1.0 so exit legs are not zeroed; non-quarantine applies deg cut.
         size_scale = rd.size_scale * (1.0 if quarantined else float(deg.size_multiplier))
-        # ── Grok trading authority: per-market aggression ──
+        # ── DeepSeek trading authority: per-market aggression ──
         _grok_agg = float(self._grok_aggression.get(cid, 1.0))
         if abs(_grok_agg - 1.0) > 0.005:
             size_scale *= _grok_agg
@@ -2260,15 +2260,15 @@ class Engine:
                 base = min(1.0, base + 0.35)
             return base
 
-        # ── Grok automated triggers: evaluate 24/7, zero API cost ──
-        # Grok set these on the 10-min oversight cycle. They fire
-        # sub-second here on every requote without calling Grok.
-        if self._grok_triggers:
-            from polymaker.intelligence.grok_triggers import evaluate_triggers
+        # ── DeepSeek automated triggers: evaluate 24/7, zero API cost ──
+        # DeepSeek set these on the 10-min oversight cycle. They fire
+        # sub-second here on every requote without calling DeepSeek.
+        if self._deepseek_triggers:
+            from polymaker.intelligence.deepseek_triggers import evaluate_triggers
             snap = self._oversight_snapshot()
-            violations = evaluate_triggers(self._grok_triggers, snap)
+            violations = evaluate_triggers(self._deepseek_triggers, snap)
             for v in violations:
-                log.warning("grok_trigger_fired", **v.as_dict())
+                log.warning("llm_trigger_fired", **v.as_dict())
                 self._apply_trigger_action(v)
         # ────────────────────────────────────────────────────────
 
@@ -2322,7 +2322,7 @@ class Engine:
             intel_reason = f"{intel_reason}+gov_x{round(gov_spread_mult, 2)}"
         # ─────────────────────────────────────────────────────────────
 
-        # ── Grok band override: Grok says 'go_aggressive/defensive' ──
+        # ── DeepSeek band override: DeepSeek says 'go_aggressive/defensive' ──
         _grok_band = self._grok_band_override.get(cid)
         if _grok_band is not None and isinstance(intel_band_frac, (int, float)):
             intel_band_frac = float(_grok_band)
@@ -3077,10 +3077,10 @@ def _hours_to_end(end_date_iso: str | None, now: float) -> float | None:
 
 
 class _GovernedJsonFacade:
-    """GrokAgent-compatible ``chat_json_tool`` that always hits LLMGovernance.
+    """DeepSeekAgent-compatible ``chat_json_tool`` that always hits LLMGovernance.
 
     OversightLoop and MarketDiscovery call ``(args, resp) = agent.chat_json_tool(...)``.
-    :class:`GovernedGrokAgent` returns a :class:`GovernedResponse` instead, so we
+    :class:`GovernedDeepSeekAgent` returns a :class:`GovernedResponse` instead, so we
     wrap the raw agent + governance here and keep that call shape while ensuring
     every structured LLM response is audited via ``check_and_log`` (AC2).
     """

@@ -1,4 +1,4 @@
-"""Tests for the GovernedGrokAgent integration.
+"""Tests for the GovernedDeepSeekAgent integration.
 
 These verify that the wrapper actually enforces governance on
 real LLM-shaped responses, not just the underlying LLMGovernance
@@ -14,12 +14,12 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 from polymaker.intelligence.agent import ToolCall
-from polymaker.intelligence.governed_agent import GovernedGrokAgent, GovernedResponse
+from polymaker.intelligence.governed_agent import GovernedDeepSeekAgent, GovernedResponse
 from polymaker.intelligence.llm_governance import LLMGovernance
 
 
 def _mock_agent(content: str, tool_calls: list | None = None) -> Any:
-    """Build a mock GrokAgent that returns the given content."""
+    """Build a mock DeepSeekAgent that returns the given content."""
     agent = MagicMock()
     resp = MagicMock()
     resp.content = content
@@ -42,7 +42,7 @@ def _gov(tmp_path: Path) -> LLMGovernance:
 def test_wrapped_chat_returns_governed_response(tmp_path):
     agent = _mock_agent("Hello")
     gov = _gov(tmp_path)
-    wrapped = GovernedGrokAgent(agent, gov)
+    wrapped = GovernedDeepSeekAgent(agent, gov)
 
     msgs = [{"role": "user", "content": "hi"}]
     result = asyncio.run(wrapped.chat(msgs))
@@ -55,7 +55,7 @@ def test_wrapped_chat_returns_governed_response(tmp_path):
 def test_wrapped_chat_logs_decision(tmp_path):
     agent = _mock_agent("spread_mult=1.2")
     gov = _gov(tmp_path)
-    wrapped = GovernedGrokAgent(agent, gov)
+    wrapped = GovernedDeepSeekAgent(agent, gov)
     asyncio.run(wrapped.chat([{"role": "user", "content": "p"}]))
     with gov.log_path.open() as fh:
         rows = [json.loads(line) for line in fh if line.strip()]
@@ -71,7 +71,7 @@ def test_wrapped_chat_blocks_directional_bet(tmp_path):
     tc = ToolCall(id="tc1", name="quote", arguments={"side": "BUY_YES", "size": 100})
     agent = _mock_agent("", tool_calls=[tc])
     gov = _gov(tmp_path)
-    wrapped = GovernedGrokAgent(agent, gov)
+    wrapped = GovernedDeepSeekAgent(agent, gov)
     result = asyncio.run(wrapped.chat([{"role": "user", "content": "p"}]))
     assert result.governance.approved is False
     assert "directional" in result.governance.rejection_reason
@@ -81,7 +81,7 @@ def test_wrapped_chat_caps_size_in_tool_call(tmp_path):
     tc = ToolCall(id="tc1", name="quote", arguments={"size_pct": 0.9, "spread_mult": 1.2})
     agent = _mock_agent("", tool_calls=[tc])
     gov = _gov(tmp_path)
-    wrapped = GovernedGrokAgent(agent, gov)
+    wrapped = GovernedDeepSeekAgent(agent, gov)
     # Pass confidence so size scaling kicks in.
     result = asyncio.run(wrapped.chat(
         [{"role": "user", "content": "p"}], confidence=1.0
@@ -98,7 +98,7 @@ def test_wrapped_chat_rejects_forbidden_risk_param(tmp_path):
     tc = ToolCall(id="tc1", name="quote", arguments={"signature_type": 0, "spread_mult": 1.1})
     agent = _mock_agent("", tool_calls=[tc])
     gov = _gov(tmp_path)
-    wrapped = GovernedGrokAgent(agent, gov)
+    wrapped = GovernedDeepSeekAgent(agent, gov)
     result = asyncio.run(wrapped.chat([{"role": "user", "content": "p"}]))
     assert result.governance.approved is True
     assert "signature_type" in result.governance.rejected_keys
@@ -115,7 +115,7 @@ def test_wrapped_chat_json_tool_governed(tmp_path):
     agent.chat_json_tool = AsyncMock(return_value=(parsed, resp))
 
     gov = _gov(tmp_path)
-    wrapped = GovernedGrokAgent(agent, gov)
+    wrapped = GovernedDeepSeekAgent(agent, gov)
     msgs = [{"role": "user", "content": "rank this"}]
     result = asyncio.run(wrapped.chat_json_tool(
         msgs, tool_name="rank", tool_schema={"type": "object", "properties": {}}
@@ -130,7 +130,7 @@ def test_wrapped_chat_json_tool_governed(tmp_path):
 def test_record_llm_fill_updates_daily_loss(tmp_path):
     agent = _mock_agent("")
     gov = _gov(tmp_path)
-    wrapped = GovernedGrokAgent(agent, gov)
+    wrapped = GovernedDeepSeekAgent(agent, gov)
     wrapped.record_llm_fill(-100.0)  # > 5% of 1000
     assert gov.daily_loss.halted is True
 
@@ -138,7 +138,7 @@ def test_record_llm_fill_updates_daily_loss(tmp_path):
 def test_daily_halt_blocks_subsequent_chat(tmp_path):
     agent = _mock_agent("spread_mult=1.5")
     gov = _gov(tmp_path)
-    wrapped = GovernedGrokAgent(agent, gov)
+    wrapped = GovernedDeepSeekAgent(agent, gov)
     gov.record_llm_fill(-100.0)  # halt
     result = asyncio.run(wrapped.chat([{"role": "user", "content": "p"}]))
     assert result.governance.approved is False
@@ -167,7 +167,7 @@ def test_slow_llm_triggers_fallback(tmp_path):
         log_path=tmp_path / "llm.jsonl",
         dead_llm_timeout_s=0.05,  # 50ms
     )
-    wrapped = GovernedGrokAgent(agent, gov)
+    wrapped = GovernedDeepSeekAgent(agent, gov)
     result = asyncio.run(wrapped.chat([{"role": "user", "content": "p"}]))
     assert result.governance.approved is False
     assert result.governance.fallback_to_deterministic is True
@@ -179,7 +179,7 @@ def test_slow_llm_triggers_fallback(tmp_path):
 def test_context_recorded_in_log(tmp_path):
     agent = _mock_agent("ok")
     gov = _gov(tmp_path)
-    wrapped = GovernedGrokAgent(agent, gov)
+    wrapped = GovernedDeepSeekAgent(agent, gov)
     asyncio.run(wrapped.chat(
         [{"role": "user", "content": "p"}],
         context={"cid": "0xabc", "regime": "TRENDING"},

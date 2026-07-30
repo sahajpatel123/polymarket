@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -40,6 +43,26 @@ def test_render_app_has_layouts() -> None:
     assert "paintAge" in html
     assert "#nav button" in html
     assert 'e.key === "Escape"' in html
+    assert "AbortController" in html
+    assert "const esc" in html
+    assert "condition_id || marketId" in html
+
+
+def test_rendered_app_javascript_is_syntax_valid() -> None:
+    """Catch browser-breaking JS errors that string-presence tests cannot see."""
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is not installed; Python dashboard checks still run")
+    html = render_app_html()
+    script = html.split("<script>", 1)[1].split("</script>", 1)[0]
+    checked = subprocess.run(
+        [node, "--check", "-"],
+        input=script,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert checked.returncode == 0, checked.stderr
 
 
 def test_metrics_bits_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -350,10 +373,26 @@ def test_live_server_snapshot_endpoint(tmp_path: Path) -> None:
     metrics = tmp_path / "metrics-paper.jsonl"
     t0 = 1_000_000.0
     rows = [
-        {"ts": t0, "event": "quote", "condition_id": "0xc1", "side": "BUY",
-         "price": 0.48, "size": 10, "in_reward_band": True, "inventory_net": 0},
-        {"ts": t0 + 1, "event": "fill", "condition_id": "0xc1", "side": "BUY",
-         "price": 0.48, "size": 5, "mid": 0.5, "inventory_net": 5},
+        {
+            "ts": t0,
+            "event": "quote",
+            "condition_id": "0xc1",
+            "side": "BUY",
+            "price": 0.48,
+            "size": 10,
+            "in_reward_band": True,
+            "inventory_net": 0,
+        },
+        {
+            "ts": t0 + 1,
+            "event": "fill",
+            "condition_id": "0xc1",
+            "side": "BUY",
+            "price": 0.48,
+            "size": 5,
+            "mid": 0.5,
+            "inventory_net": 5,
+        },
     ]
     metrics.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
 
@@ -379,6 +418,7 @@ def test_live_server_snapshot_endpoint(tmp_path: Path) -> None:
         assert "Pulse" in html
         with urllib.request.urlopen(url + "healthz", timeout=2) as resp:
             hz = json.loads(resp.read().decode())
+            assert "default-src 'self'" in resp.headers.get("Content-Security-Policy", "")
             assert resp.headers.get("X-Content-Type-Options") == "nosniff"
             assert resp.headers.get("X-Frame-Options") == "DENY"
             assert resp.headers.get("Referrer-Policy") == "no-referrer"
@@ -386,6 +426,54 @@ def test_live_server_snapshot_endpoint(tmp_path: Path) -> None:
         assert hz.get("mode") == "PAPER"
         assert "health" in hz
         assert "version" in hz
+    finally:
+        dash.stop()
+
+
+def test_live_server_ephemeral_port_is_reachable() -> None:
+    def snap() -> dict:
+        return {"ts": time.time(), "health": "OK", "mode": "PAPER"}
+
+    dash = LiveDashboard(snap, host="127.0.0.1", port=0, open_browser=False)
+    url = dash.start()
+    try:
+        assert ":0/" not in url
+        with urllib.request.urlopen(url + "healthz", timeout=2) as resp:
+            assert resp.status == 200
+            assert json.loads(resp.read().decode())["ok"] is True
+    finally:
+        dash.stop()
+
+
+def test_healthz_fails_when_snapshot_is_unavailable() -> None:
+    def bad_snap() -> dict:
+        raise RuntimeError("boom")
+
+    dash = LiveDashboard(bad_snap, host="127.0.0.1", port=0, open_browser=False)
+    url = dash.start()
+    try:
+        for path in ("api/snapshot", "healthz"):
+            with pytest.raises(urllib.error.HTTPError) as exc_info:
+                urllib.request.urlopen(url + path, timeout=2)
+            assert exc_info.value.code == 503
+            assert json.loads(exc_info.value.read().decode())["error"] == "snapshot unavailable"
+    finally:
+        dash.stop()
+
+
+def test_healthz_fails_for_stale_snapshot_data() -> None:
+    def stale_snap() -> dict:
+        return {"ts": time.time() - 60, "health": "OK", "mode": "PAPER"}
+
+    dash = LiveDashboard(stale_snap, host="127.0.0.1", port=0, open_browser=False)
+    url = dash.start()
+    try:
+        with pytest.raises(urllib.error.HTTPError) as exc_info:
+            urllib.request.urlopen(url + "healthz", timeout=2)
+        assert exc_info.value.code == 503
+        body = json.loads(exc_info.value.read().decode())
+        assert body["error"] == "snapshot data is stale"
+        assert body["source_age_s"] >= 60
     finally:
         dash.stop()
 

@@ -18,7 +18,7 @@ Components:
 - RiskState: dynamic stop-loss, adaptive position limits
 - SelfEvaluation: calibration, decay detection, PnL attribution
 - SmartExecutor: timing, anti-gaming, iceberg sizing
-- GrokAgent: xAI Grok 4.5 reasoning client (tool-calling)
+- DeepSeekAgent: xAI Grok 4.5 reasoning client (tool-calling)
 - AgentMemory: long-term SQLite memory
 - OversightLoop: 30-min commentary + action queue
 - MarketDiscovery: LLM-ranked Gamma market selection
@@ -49,7 +49,7 @@ from polymaker.intelligence.adaptive_spread import (
 from polymaker.intelligence.agent import (
     DEFAULT_MODEL,
     AgentResponse,
-    GrokAgent,
+    DeepSeekAgent,
     TokenUsage,
     ToolCall,
     function_tool,
@@ -70,9 +70,9 @@ from polymaker.intelligence.execution import (
     OrderTimingOptimizer,
     SmartExecutor,
 )
-from polymaker.intelligence.governed_agent import GovernedGrokAgent, GovernedResponse
-from polymaker.intelligence.grok_triggers import (
-    GrokTrigger,
+from polymaker.intelligence.governed_agent import GovernedDeepSeekAgent, GovernedResponse
+from polymaker.intelligence.deepseek_triggers import (
+    DeepSeekTrigger,
     TriggerViolation,
     evaluate_triggers,
 )
@@ -213,10 +213,10 @@ __all__ = [
     "DEFAULT_LLM_SIZE_MULT",
     "DEFAULT_PAPER_SECONDS",
     "GovernanceDecision",
-    "GrokAgent",
-    "GovernedGrokAgent",
+    "DeepSeekAgent",
+    "GovernedDeepSeekAgent",
     "GovernedResponse",
-    "GrokTrigger",
+    "DeepSeekTrigger",
     "TriggerViolation",
     "evaluate_triggers",
     "IcebergSizer",

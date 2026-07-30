@@ -5,8 +5,8 @@ tweaks (spread / regime thresholds) may apply immediately when the LLM says
 ``paper_validation_required=false``; everything else goes draft → paper →
 promote or reject.
 
-LLM calls use ``grok-4-1-fast-reasoning`` only (never a non-reasoning SKU).
-``XAI_API_KEY`` is read from the environment — never embedded in source.
+LLM calls use ``deepseek-reasoner`` only (never a non-reasoning SKU).
+``DEEPSEEK_API_KEY`` is read from the environment — never embedded in source.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from polymaker.intelligence.self_eval import SelfEvaluation
 
 log = logging.getLogger("polymaker.intelligence.self_improve")
 
-REASONING_MODEL = "grok-4-1-fast-reasoning"
+REASONING_MODEL = "deepseek-reasoner"
 XAI_CHAT_URL = "https://api.x.ai/v1/chat/completions"
 
 SAFE_IMMEDIATE_KEYS: frozenset[str] = frozenset({
@@ -269,15 +269,15 @@ def call_grok_reasoning(
 ) -> dict[str, Any]:
     if model != REASONING_MODEL and "reasoning" not in model.lower():
         raise ValueError(f"refusing non-reasoning model {model!r}; required {REASONING_MODEL!r}")
-    key = api_key if api_key is not None else os.environ.get("XAI_API_KEY", "")
+    key = api_key if api_key is not None else os.environ.get("DEEPSEEK_API_KEY", "")
     if not key:
-        raise RuntimeError("XAI_API_KEY not set in environment / .env")
+        raise RuntimeError("DEEPSEEK_API_KEY not set in environment / .env")
 
     try:
         import asyncio
 
-        from polymaker.intelligence.agent import GrokAgent  # type: ignore
-        agent = GrokAgent(api_key=key, model=model)
+        from polymaker.intelligence.agent import DeepSeekAgent  # type: ignore
+        agent = DeepSeekAgent(api_key=key, model=model)
         async def _ago() -> dict[str, Any]:
             resp = await agent.chat([
                 {"role": "system", "content": system},
@@ -289,7 +289,7 @@ def call_grok_reasoning(
         except RuntimeError:
             return asyncio.run(_ago())
     except Exception as exc:
-        log.debug("GrokAgent bridge unavailable (%s); using direct HTTPS", exc)
+        log.debug("DeepSeekAgent bridge unavailable (%s); using direct HTTPS", exc)
 
     payload = {
         "model": model,

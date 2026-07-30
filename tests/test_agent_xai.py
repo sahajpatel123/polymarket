@@ -1,4 +1,4 @@
-"""Tests for GrokAgent — mocked HTTP only."""
+"""Tests for DeepSeekAgent — mocked HTTP only."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import pytest
 from polymaker.intelligence.agent import (
     DEFAULT_MODEL,
     SOFT_WARN_TOKENS,
-    GrokAgent,
+    DeepSeekAgent,
     estimate_cost_usd,
     resolve_model,
 )
@@ -69,17 +69,17 @@ async def test_default_model_is_reasoning() -> None:
 
     assert "reasoning" in DEFAULT_MODEL
     assert is_reasoning_model(DEFAULT_MODEL)
-    assert resolve_model({"XAI_MODEL": DEFAULT_MODEL}) == DEFAULT_MODEL
+    assert resolve_model({"DEEPSEEK_MODEL": DEFAULT_MODEL}) == DEFAULT_MODEL
     with pytest.raises(ValueError):
-        resolve_model({"XAI_MODEL": "grok-mini-chat"})
+        resolve_model({"DEEPSEEK_MODEL": "deepseek-chat"})
     # Must not treat "non-reasoning-*" as a reasoning SKU (substring trap)
     with pytest.raises(ValueError):
-        resolve_model({"XAI_MODEL": "non-reasoning-chat"})
-    assert not is_reasoning_model("non-reasoning-chat")
+        resolve_model({"DEEPSEEK_MODEL": "non-reasoning"})
+    assert not is_reasoning_model("non-reasoning")
     # Explicit override still allowed when user opts in
     assert (
-        resolve_model({"XAI_MODEL": "grok-mini-chat", "XAI_ALLOW_NON_REASONING": "1"})
-        == "grok-mini-chat"
+        resolve_model({"DEEPSEEK_MODEL": "deepseek-chat", "DEEPSEEK_ALLOW_NON_REASONING": "1"})
+        == "deepseek-chat"
     )
 
 
@@ -102,7 +102,7 @@ async def test_chat_tool_schema_and_cost_logging() -> None:
 
     transport = _MockTransport(handler)
     client = httpx.AsyncClient(transport=transport, base_url="https://api.x.ai/v1")
-    agent = GrokAgent(
+    agent = DeepSeekAgent(
         api_key="test-key-not-real",
         client=client,
         metrics_sink=events.append,
@@ -139,7 +139,7 @@ async def test_retry_on_429_then_success() -> None:
 
     transport = _MockTransport(handler)
     client = httpx.AsyncClient(transport=transport, base_url="https://api.x.ai/v1")
-    agent = GrokAgent(api_key="k", client=client)
+    agent = DeepSeekAgent(api_key="k", client=client)
     try:
         resp = await agent.chat([{"role": "user", "content": "x"}], kind="retry")
         assert resp.content == "done"
@@ -155,7 +155,7 @@ async def test_4xx_surfaces_without_infinite_retry() -> None:
 
     transport = _MockTransport(handler)
     client = httpx.AsyncClient(transport=transport, base_url="https://api.x.ai/v1")
-    agent = GrokAgent(api_key="k", client=client)
+    agent = DeepSeekAgent(api_key="k", client=client)
     try:
         with pytest.raises(httpx.HTTPStatusError) as ei:
             await agent.chat([{"role": "user", "content": "x"}])
@@ -179,7 +179,7 @@ async def test_soft_warn_no_hard_cap_stop() -> None:
 
     transport = _MockTransport(handler)
     client = httpx.AsyncClient(transport=transport, base_url="https://api.x.ai/v1")
-    agent = GrokAgent(api_key="k", client=client, metrics_sink=events.append)
+    agent = DeepSeekAgent(api_key="k", client=client, metrics_sink=events.append)
     try:
         resp = await agent.chat([{"role": "user", "content": "big"}])
         assert resp.content == "huge"
@@ -193,12 +193,12 @@ async def test_soft_warn_no_hard_cap_stop() -> None:
 
 @pytest.mark.asyncio
 async def test_missing_api_key_raises() -> None:
-    agent = GrokAgent(api_key="", env={"XAI_API_KEY": ""})
+    agent = DeepSeekAgent(api_key="", )
     with pytest.raises(RuntimeError, match="XAI_API_KEY"):
         await agent.chat([{"role": "user", "content": "x"}])
 
 
 def test_semaphore_and_rate_bounds_exist() -> None:
-    agent = GrokAgent(api_key="k", max_concurrent=10, max_req_per_min=60)
+    agent = DeepSeekAgent(api_key="k", max_concurrent=10, max_req_per_min=60)
     assert agent._sem._value == 10  # noqa: SLF001
     assert agent._limiter.max_per_min == 60

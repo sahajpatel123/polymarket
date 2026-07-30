@@ -1,15 +1,15 @@
-"""Bridge between LLMGovernance and the GrokAgent.
+"""Bridge between LLMGovernance and the DeepSeekAgent.
 
-Wraps an existing ``GrokAgent`` so every call goes through
+Wraps an existing ``DeepSeekAgent`` so every call goes through
 ``LLMGovernance.check_and_log`` before the response reaches the
 caller. The agent itself doesn't know about governance — this is
 the *only* integration point.
 
 Usage in the engine::
 
-    agent = GrokAgent(api_key=...)
+    agent = DeepSeekAgent(api_key=...)
     gov = LLMGovernance(capital_usdc=500, log_path=...)
-    wrapped = GovernedGrokAgent(agent, gov)
+    wrapped = GovernedDeepSeekAgent(agent, gov)
     response = await wrapped.chat(messages, tools=...)
     if response.approved:
         apply(response.actions)
@@ -21,7 +21,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from polymaker.intelligence.agent import AgentResponse, GrokAgent
+from polymaker.intelligence.agent import AgentResponse, DeepSeekAgent
 from polymaker.intelligence.llm_governance import GovernanceDecision, LLMGovernance
 
 
@@ -39,8 +39,8 @@ class GovernedResponse:
     context: dict[str, Any]
 
 
-class GovernedGrokAgent:
-    """Wraps a ``GrokAgent`` with mandatory governance.
+class GovernedDeepSeekAgent:
+    """Wraps a ``DeepSeekAgent`` with mandatory governance.
 
     The wrapper preserves the agent's interface (it forwards ``chat``
     and ``chat_json_tool``) but routes every response through
@@ -48,12 +48,12 @@ class GovernedGrokAgent:
     tells the caller whether the LLM output was approved.
     """
 
-    def __init__(self, agent: GrokAgent, governance: LLMGovernance) -> None:
+    def __init__(self, agent: DeepSeekAgent, governance: LLMGovernance) -> None:
         self._agent = agent
         self._gov = governance
 
     @property
-    def agent(self) -> GrokAgent:
+    def agent(self) -> DeepSeekAgent:
         return self._agent
 
     @property

@@ -1,10 +1,9 @@
-"""Grok 4.5 (xAI) client for Polymaker V3 — JSON tool-calling only.
+"""DeepSeek client for Polymaker V3 — JSON tool-calling only.
 
 Contract:
-  - REST: https://api.x.ai/v1/chat/completions
-  - Default model: grok-4-1-fast-reasoning (env XAI_MODEL may override, but
-    non-reasoning ids are rejected unless XAI_ALLOW_NON_REASONING=1).
-  - Auth: XAI_API_KEY from environment only (never hardcode).
+  - REST: https://api.deepseek.com/v1/chat/completions (OpenAI-compatible)
+  - Default model: deepseek-chat (fast); deepseek-reasoner for reasoning calls
+  - Auth: DEEPSEEK_API_KEY from environment only (never hardcode).
   - Actions must arrive as tool calls / structured JSON — free text is
     commentary only.
   - Token policy: NO hard stop. Soft-warn when a call uses ≥50k total tokens.
@@ -31,13 +30,16 @@ import httpx
 
 log = logging.getLogger("polymaker.intelligence.agent")
 
-# ── Pricing (USD per 1M tokens) — grok-4-1-fast-reasoning ────────────────
-# Source: xAI published list pricing for this model family (verify periodically).
-PRICE_INPUT_PER_MTOK_USD = 0.20
-PRICE_OUTPUT_PER_MTOK_USD = 0.50
+# ── Pricing (USD per 1M tokens) — DeepSeek ──────────────────────────
+# Source: https://api-docs.deepseek.com/quick_start/pricing
+PRICE_INPUT_PER_MTOK_USD = 0.14     # deepseek-chat input
+PRICE_OUTPUT_PER_MTOK_USD = 0.28    # deepseek-chat output
+PRICE_REASONER_INPUT = 0.55         # deepseek-reasoner input
+PRICE_REASONER_OUTPUT = 2.19        # deepseek-reasoner output (incl. reasoning)
 
-DEFAULT_MODEL = "grok-4-1-fast-reasoning"
-DEFAULT_BASE_URL = "https://api.x.ai/v1"
+DEFAULT_MODEL = "deepseek-chat"
+REASONING_MODEL = "deepseek-reasoner"
+DEFAULT_BASE_URL = "https://api.deepseek.com/v1"
 SOFT_WARN_TOKENS = 50_000
 MAX_CONCURRENT = 10
 MAX_REQ_PER_MIN = 60
@@ -48,40 +50,34 @@ MetricsSink = Callable[[dict[str, Any]], None]
 
 
 def is_reasoning_model(model: str) -> bool:
-    """True for reasoning-capable xAI SKUs (reject non-reasoning variants)."""
+    """True for reasoning-capable DeepSeek SKUs."""
     lower = model.strip().lower()
-    # Explicit non-reasoning labels must never pass (even if they contain
-    # the substring "reasoning", e.g. "non-reasoning-chat").
-    if "non-reasoning" in lower or "nonreasoning" in lower:
-        return False
-    if "reasoning" in lower:
-        return True
-    # grok-4 family is reasoning-capable per product defaults
-    return lower.startswith("grok-4") or lower.startswith("grok4")
+    return "reasoner" in lower or "r1" in lower
+
+
+# ── Data classes ─────────────────────────────────────────────────────
 
 
 @dataclass
 class TokenUsage:
-    prompt_tokens: int = 0
-    completion_tokens: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
     reasoning_tokens: int = 0
     total_tokens: int = 0
-    estimated_usd: float = 0.0
+    estimated_cost_usd: float = 0.0
 
     def as_dict(self) -> dict[str, Any]:
         return {
-            "prompt_tokens": self.prompt_tokens,
-            "completion_tokens": self.completion_tokens,
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
             "reasoning_tokens": self.reasoning_tokens,
             "total_tokens": self.total_tokens,
-            "estimated_usd": round(self.estimated_usd, 8),
+            "estimated_cost_usd": self.estimated_cost_usd,
         }
 
 
 @dataclass
 class ToolCall:
-    """One structured tool invocation from the model."""
-
     id: str
     name: str
     arguments: dict[str, Any]
@@ -89,197 +85,60 @@ class ToolCall:
 
 @dataclass
 class AgentResponse:
-    """Normalized agent result."""
-
     content: str
     tool_calls: list[ToolCall] = field(default_factory=list)
     usage: TokenUsage = field(default_factory=TokenUsage)
-    model: str = DEFAULT_MODEL
+    model: str = ""
     raw: dict[str, Any] = field(default_factory=dict)
 
-    @property
-    def has_tools(self) -> bool:
-        return bool(self.tool_calls)
+
+# ── Main agent ───────────────────────────────────────────────────────
 
 
-def estimate_cost_usd(
-    prompt_tokens: int,
-    completion_tokens: int,
-    *,
-    input_per_mtok: float = PRICE_INPUT_PER_MTOK_USD,
-    output_per_mtok: float = PRICE_OUTPUT_PER_MTOK_USD,
-) -> float:
-    """Estimate USD cost from token counts."""
-    return (prompt_tokens / 1_000_000.0) * input_per_mtok + (
-        completion_tokens / 1_000_000.0
-    ) * output_per_mtok
+class DeepSeekAgent:
+    """Async DeepSeek chat client with tool-calling, retries, and cost logging.
 
-
-def _parse_usage(data: dict[str, Any]) -> TokenUsage:
-    u = data.get("usage") or {}
-    prompt = int(u.get("prompt_tokens") or u.get("input_tokens") or 0)
-    completion = int(u.get("completion_tokens") or u.get("output_tokens") or 0)
-    # Reasoning tokens may be nested under completion_tokens_details
-    details = u.get("completion_tokens_details") or u.get("output_tokens_details") or {}
-    reasoning = int(
-        u.get("reasoning_tokens")
-        or details.get("reasoning_tokens")
-        or 0
-    )
-    total = int(u.get("total_tokens") or (prompt + completion))
-    return TokenUsage(
-        prompt_tokens=prompt,
-        completion_tokens=completion,
-        reasoning_tokens=reasoning,
-        total_tokens=total,
-        estimated_usd=estimate_cost_usd(prompt, completion),
-    )
-
-
-def _parse_tool_calls(message: dict[str, Any]) -> list[ToolCall]:
-    out: list[ToolCall] = []
-    raw_calls = message.get("tool_calls") or []
-    for tc in raw_calls:
-        if not isinstance(tc, dict):
-            continue
-        fn = tc.get("function") or {}
-        name = str(fn.get("name") or tc.get("name") or "")
-        args_raw = fn.get("arguments") or tc.get("arguments") or "{}"
-        if isinstance(args_raw, dict):
-            args = args_raw
-        else:
-            try:
-                args = json.loads(args_raw) if args_raw else {}
-            except json.JSONDecodeError:
-                args = {"_raw": str(args_raw)}
-        if not isinstance(args, dict):
-            args = {"_value": args}
-        out.append(
-            ToolCall(
-                id=str(tc.get("id") or ""),
-                name=name,
-                arguments=args,
-            )
-        )
-    return out
-
-
-def resolve_model(env: dict[str, str] | None = None) -> str:
-    """Resolve model id; reject silent non-reasoning downgrades."""
-    e = env if env is not None else os.environ
-    model = (e.get("XAI_MODEL") or e.get("POLYMAKER_XAI_MODEL") or DEFAULT_MODEL).strip()
-    allow = (e.get("XAI_ALLOW_NON_REASONING") or "").strip() in ("1", "true", "yes")
-    if not allow and not is_reasoning_model(model):
-        raise ValueError(
-            f"model {model!r} does not look like a reasoning SKU; "
-            f"default is {DEFAULT_MODEL}. Set XAI_ALLOW_NON_REASONING=1 to override."
-        )
-    return model
-
-
-class RateLimiter:
-    """Sliding-window request limiter (max N requests per 60s)."""
-
-    def __init__(self, max_per_min: int = MAX_REQ_PER_MIN) -> None:
-        self.max_per_min = max_per_min
-        self._times: deque[float] = deque()
-        self._lock = asyncio.Lock()
-
-    async def acquire(self) -> None:
-        async with self._lock:
-            now = time.monotonic()
-            while self._times and now - self._times[0] >= 60.0:
-                self._times.popleft()
-            if len(self._times) >= self.max_per_min:
-                wait = 60.0 - (now - self._times[0]) + 0.01
-                await asyncio.sleep(max(wait, 0.01))
-                now = time.monotonic()
-                while self._times and now - self._times[0] >= 60.0:
-                    self._times.popleft()
-            self._times.append(time.monotonic())
-
-
-class GrokAgent:
-    """Async xAI chat client with tool-calling, retries, and cost logging."""
+    OpenAI-compatible API. Works with deepseek-chat and deepseek-reasoner.
+    """
 
     def __init__(
         self,
-        *,
         api_key: str | None = None,
-        model: str | None = None,
+        model: str = DEFAULT_MODEL,
         base_url: str = DEFAULT_BASE_URL,
-        timeout_s: float = 120.0,
-        max_concurrent: int = MAX_CONCURRENT,
-        max_req_per_min: int = MAX_REQ_PER_MIN,
         metrics_sink: MetricsSink | None = None,
-        client: httpx.AsyncClient | None = None,
-        env: dict[str, str] | None = None,
     ) -> None:
-        e = env if env is not None else dict(os.environ)
-        self.api_key = (api_key if api_key is not None else e.get("XAI_API_KEY") or "").strip()
-        self.model = model or resolve_model(e)
+        e = os.environ
+        self.api_key = (api_key if api_key is not None else e.get("DEEPSEEK_API_KEY", "")).strip()
+        self.model = model.strip() if model else DEFAULT_MODEL
         self.base_url = base_url.rstrip("/")
-        self.timeout_s = timeout_s
-        self._sem = asyncio.Semaphore(max_concurrent)
-        self._limiter = RateLimiter(max_req_per_min)
+
+        # Rate limiting
+        self._sem: asyncio.Semaphore = asyncio.Semaphore(MAX_CONCURRENT)
+        self._limiter = _TokenBucket(MAX_REQ_PER_MIN, 60.0)
+
+        # Metrics
         self._metrics_sink = metrics_sink
-        self._owns_client = client is None
-        self._client = client
-        self._soft_warns = 0
         self.call_count = 0
+        self.total_tokens = 0
+        self.total_cost_usd = 0.0
+        self._client: httpx.AsyncClient | None = None
 
     @property
-    def has_key(self) -> bool:
-        return bool(self.api_key)
+    def model_is_reasoning(self) -> bool:
+        return is_reasoning_model(self.model)
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None:
             self._client = httpx.AsyncClient(
                 base_url=self.base_url,
-                timeout=httpx.Timeout(self.timeout_s),
                 headers={
                     "Authorization": f"Bearer {self.api_key}",
                     "Content-Type": "application/json",
                 },
+                timeout=httpx.Timeout(120.0, connect=5.0),
             )
         return self._client
-
-    async def aclose(self) -> None:
-        if self._owns_client and self._client is not None:
-            await self._client.aclose()
-            self._client = None
-
-    def _emit_metrics(self, usage: TokenUsage, *, kind: str, model: str) -> None:
-        event = {
-            "event": "llm_call",
-            "ts": time.time(),
-            "kind": kind,
-            "model": model,
-            **usage.as_dict(),
-            "soft_warn": usage.total_tokens >= SOFT_WARN_TOKENS,
-        }
-        if usage.total_tokens >= SOFT_WARN_TOKENS:
-            self._soft_warns += 1
-            log.warning(
-                "llm_token_soft_warn total_tokens=%s threshold=%s call=%s",
-                usage.total_tokens,
-                SOFT_WARN_TOKENS,
-                kind,
-            )
-        log.info(
-            "llm_call model=%s prompt=%s completion=%s reasoning=%s total=%s usd=%.6f",
-            model,
-            usage.prompt_tokens,
-            usage.completion_tokens,
-            usage.reasoning_tokens,
-            usage.total_tokens,
-            usage.estimated_usd,
-        )
-        if self._metrics_sink is not None:
-            try:
-                self._metrics_sink(event)
-            except Exception:  # noqa: BLE001
-                log.exception("metrics_sink_failed")
 
     async def chat(
         self,
@@ -291,9 +150,8 @@ class GrokAgent:
         kind: str = "chat",
         extra_body: dict[str, Any] | None = None,
     ) -> AgentResponse:
-        """Send a chat completion; return content + structured tool calls."""
         if not self.api_key:
-            raise RuntimeError("XAI_API_KEY is not set")
+            raise RuntimeError("DEEPSEEK_API_KEY is not set")
 
         body: dict[str, Any] = {
             "model": self.model,
@@ -314,43 +172,33 @@ class GrokAgent:
                 try:
                     resp = await client.post("/chat/completions", json=body)
                     if resp.status_code in (429, 500, 502, 503, 504):
-                        wait = RETRY_BASE_S * (2**attempt)
-                        log.warning(
-                            "llm_retry status=%s attempt=%s wait=%.2fs",
-                            resp.status_code,
-                            attempt + 1,
-                            wait,
-                        )
+                        wait = RETRY_BASE_S * (2 ** attempt)
+                        log.warning("llm_retry status=%s attempt=%s wait=%.2fs",
+                                   resp.status_code, attempt + 1, wait)
                         await asyncio.sleep(wait)
                         last_err = httpx.HTTPStatusError(
-                            f"HTTP {resp.status_code}",
-                            request=resp.request,
-                            response=resp,
-                        )
+                            f"HTTP {resp.status_code}", request=resp.request, response=resp)
                         continue
                     if resp.status_code >= 400:
-                        # 4xx (other than 429): surface immediately
                         try:
                             detail = resp.json()
-                        except Exception:  # noqa: BLE001
+                        except Exception:
                             detail = resp.text
                         raise httpx.HTTPStatusError(
-                            f"xAI API error {resp.status_code}: {detail}",
-                            request=resp.request,
-                            response=resp,
-                        )
+                            f"DeepSeek API error {resp.status_code}: {detail}",
+                            request=resp.request, response=resp)
                     data = resp.json()
                     return self._normalize(data, kind=kind)
                 except httpx.TransportError as exc:
                     last_err = exc
-                    wait = RETRY_BASE_S * (2**attempt)
+                    wait = RETRY_BASE_S * (2 ** attempt)
                     log.warning("llm_transport_retry err=%s wait=%.2fs", exc, wait)
                     await asyncio.sleep(wait)
             assert last_err is not None
             raise last_err
 
     def _normalize(self, data: dict[str, Any], *, kind: str) -> AgentResponse:
-        usage = _parse_usage(data)
+        usage = _parse_usage(data, reasoning=self.model_is_reasoning)
         self._emit_metrics(usage, kind=kind, model=str(data.get("model") or self.model))
         self.call_count += 1
         choices = data.get("choices") or []
@@ -360,11 +208,8 @@ class GrokAgent:
         content = str(message.get("content") or "")
         tools = _parse_tool_calls(message)
         return AgentResponse(
-            content=content,
-            tool_calls=tools,
-            usage=usage,
-            model=str(data.get("model") or self.model),
-            raw=data,
+            content=content, tool_calls=tools, usage=usage,
+            model=str(data.get("model") or self.model), raw=data,
         )
 
     async def chat_json_tool(
@@ -376,27 +221,22 @@ class GrokAgent:
         kind: str = "tool",
         description: str = "",
     ) -> tuple[dict[str, Any], AgentResponse]:
-        """Force a single named tool and return its parsed arguments + full response."""
-        tools = [
-            {
-                "type": "function",
-                "function": {
-                    "name": tool_name,
-                    "description": description or tool_name,
-                    "parameters": tool_schema,
-                },
-            }
-        ]
+        tools = [{
+            "type": "function",
+            "function": {
+                "name": tool_name,
+                "description": description or tool_name,
+                "parameters": tool_schema,
+            },
+        }]
         resp = await self.chat(
-            messages,
-            tools=tools,
+            messages, tools=tools,
             tool_choice={"type": "function", "function": {"name": tool_name}},
             kind=kind,
         )
         for tc in resp.tool_calls:
             if tc.name == tool_name:
                 return tc.arguments, resp
-        # Fallback: try parse content as JSON object
         try:
             obj = json.loads(resp.content)
             if isinstance(obj, dict):
@@ -405,18 +245,123 @@ class GrokAgent:
             pass
         return {}, resp
 
+    def _emit_metrics(self, usage: TokenUsage, *, kind: str, model: str) -> None:
+        self.total_tokens += usage.total_tokens
+        self.total_cost_usd += usage.estimated_cost_usd
+        if usage.total_tokens >= SOFT_WARN_TOKENS:
+            log.warning("llm_soft_warn tokens=%s cost=%.4f model=%s kind=%s",
+                        usage.total_tokens, usage.estimated_cost_usd, model, kind)
+        if self._metrics_sink is None:
+            return
+        event = {
+            "event": "llm_call",
+            "ts": time.time(),
+            "kind": kind,
+            "model": model,
+            "input_tokens": usage.input_tokens,
+            "output_tokens": usage.output_tokens,
+            "reasoning_tokens": usage.reasoning_tokens,
+            "total_tokens": usage.total_tokens,
+            "estimated_cost_usd": usage.estimated_cost_usd,
+            "cumulative_tokens": self.total_tokens,
+            "cumulative_cost_usd": round(self.total_cost_usd, 6),
+        }
+        try:
+            self._metrics_sink(event)
+        except Exception:
+            log.exception("metrics_sink_failed")
 
-# OpenAI-compatible tool schema helpers used by oversight/discovery
-def function_tool(
-    name: str,
-    description: str,
-    parameters: dict[str, Any],
-) -> dict[str, Any]:
+
+# ── Backward-compat alias ────────────────────────────────────────────
+
+GrokAgent = DeepSeekAgent  # GrokAgent is now a DeepSeekAgent
+
+
+# ── OpenAI-compatible tool schema helper ─────────────────────────────
+
+def function_tool(name: str, description: str, parameters: dict[str, Any]) -> dict[str, Any]:
     return {
         "type": "function",
-        "function": {
-            "name": name,
-            "description": description,
-            "parameters": parameters,
-        },
+        "function": {"name": name, "description": description, "parameters": parameters},
     }
+
+
+# ── Token bucket rate limiter ────────────────────────────────────────
+
+
+def resolve_model(env: dict[str, str] | None = None) -> str:
+    """Resolve model from environment, rejecting non-reasoning unless allowed."""
+    e = env or os.environ
+    model = e.get("DEEPSEEK_MODEL", DEFAULT_MODEL)
+    if is_reasoning_model(model):
+        return model
+    if e.get("DEEPSEEK_ALLOW_NON_REASONING", "") == "1":
+        return model
+    raise ValueError(f"Non-reasoning model {model!r} not allowed unless DEEPSEEK_ALLOW_NON_REASONING=1")
+
+
+def estimate_cost_usd(model: str, input_tokens: int, output_tokens: int) -> float:
+    """Estimate DeepSeek cost in USD for a call."""
+    if is_reasoning_model(model):
+        return (input_tokens / 1_000_000) * PRICE_REASONER_INPUT + (output_tokens / 1_000_000) * PRICE_REASONER_OUTPUT
+    return (input_tokens / 1_000_000) * PRICE_INPUT_PER_MTOK_USD + (output_tokens / 1_000_000) * PRICE_OUTPUT_PER_MTOK_USD
+
+
+class _TokenBucket:
+    def __init__(self, rate: float, period: float = 1.0) -> None:
+        self.rate = rate
+        self.period = period
+        self._tokens = rate
+        self._ts = time.monotonic()
+
+    async def acquire(self) -> None:
+        while True:
+            now = time.monotonic()
+            elapsed = now - self._ts
+            self._tokens = min(self.rate, self._tokens + elapsed * (self.rate / self.period))
+            self._ts = now
+            if self._tokens >= 1:
+                self._tokens -= 1
+                return
+            await asyncio.sleep(0.1)
+
+
+# ── Parsing helpers ──────────────────────────────────────────────────
+
+
+def _parse_usage(data: dict[str, Any], *, reasoning: bool = False) -> TokenUsage:
+    u = data.get("usage") or {}
+    inp = int(u.get("prompt_tokens", 0) or 0)
+    out = int(u.get("completion_tokens", 0) or 0)
+    reasoning_tokens = int(
+        u.get("completion_tokens_details", {}).get("reasoning_tokens", 0) or 0
+    )
+    total = int(u.get("total_tokens", inp + out + reasoning_tokens) or 0)
+
+    if reasoning:
+        cost_in = (inp / 1_000_000) * PRICE_REASONER_INPUT
+        cost_out = (out / 1_000_000) * PRICE_REASONER_OUTPUT
+    else:
+        cost_in = (inp / 1_000_000) * PRICE_INPUT_PER_MTOK_USD
+        cost_out = (out / 1_000_000) * PRICE_OUTPUT_PER_MTOK_USD
+    return TokenUsage(
+        input_tokens=inp, output_tokens=out,
+        reasoning_tokens=reasoning_tokens, total_tokens=total,
+        estimated_cost_usd=round(cost_in + cost_out, 6),
+    )
+
+
+def _parse_tool_calls(message: dict[str, Any]) -> list[ToolCall]:
+    raw = message.get("tool_calls") or []
+    out: list[ToolCall] = []
+    for tc in raw:
+        tc_id = str(tc.get("id", ""))
+        fn = tc.get("function") or {}
+        name = str(fn.get("name", ""))
+        args_str = str(fn.get("arguments", "{}"))
+        try:
+            args = json.loads(args_str)
+        except json.JSONDecodeError:
+            args = {"_raw_args": args_str}
+        out.append(ToolCall(id=tc_id, name=name, arguments=args))
+    return out

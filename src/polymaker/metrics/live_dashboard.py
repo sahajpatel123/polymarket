@@ -36,6 +36,7 @@ log = logging.getLogger("polymaker.metrics.live_dashboard")
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+_SNAPSHOT_STALE_S = 15.0
 
 
 def _require_loopback_host(host: str) -> str:
@@ -151,7 +152,11 @@ def _db_cache_get(path: Path, kind: str) -> Any | None:
         if hit is None:
             return None
         cached_at, mtime, size, payload = hit
-        if mtime == st.st_mtime and size == st.st_size and (time.time() - cached_at) < _DB_CACHE_TTL_S:
+        if (
+            mtime == st.st_mtime
+            and size == st.st_size
+            and (time.time() - cached_at) < _DB_CACHE_TTL_S
+        ):
             return payload
     except OSError:
         return None
@@ -191,16 +196,10 @@ def _read_pnl(db_path: Path) -> dict[str, float | None]:
         conn.close()
         if row is not None:
             out["equity"] = float(row["equity"]) if row["equity"] is not None else None
-            out["daily_pnl"] = (
-                float(row["daily_pnl"]) if row["daily_pnl"] is not None else None
-            )
-            out["net_cash"] = (
-                float(row["net_cash"]) if row["net_cash"] is not None else None
-            )
+            out["daily_pnl"] = float(row["daily_pnl"]) if row["daily_pnl"] is not None else None
+            out["net_cash"] = float(row["net_cash"]) if row["net_cash"] is not None else None
             out["inventory_value"] = (
-                float(row["inventory_value"])
-                if row["inventory_value"] is not None
-                else None
+                float(row["inventory_value"]) if row["inventory_value"] is not None else None
             )
         _db_cache_set(db_path, "pnl", out)
     except Exception:
@@ -291,12 +290,8 @@ def _metrics_bits(metrics_log: Path, *, force: bool = False) -> dict[str, Any]:
             "inventory_peak": round(rep.inventory_drift_abs_peak, 2),
             "markout": {k: round(v, 6) for k, v in rep.markout.items()},
             "markets": sorted(rep.markets),
-            "reward_accrual": {
-                k: round(v, 4) for k, v in rep.reward_accrual_usdc.items()
-            },
-            "inventory_net": {
-                k: round(v, 4) for k, v in rep.inventory_net_end.items()
-            },
+            "reward_accrual": {k: round(v, 4) for k, v in rep.reward_accrual_usdc.items()},
+            "inventory_net": {k: round(v, 4) for k, v in rep.inventory_net_end.items()},
         }
         _cache_put(_METRICS_CACHE, key, (now, mtime, size, payload))
         return payload
@@ -345,9 +340,7 @@ def build_insights(snap: DashboardSnapshot) -> list[str]:
 
     frac = snap.risk.get("exposure_frac")
     if isinstance(frac, (int, float)) and frac >= 0.7:
-        soft.append(
-            f"Total exposure at {frac:.0%} of cap — size taper may already be on."
-        )
+        soft.append(f"Total exposure at {frac:.0%} of cap — size taper may already be on.")
     if snap.mode == "PAPER" and snap.n_fill == 0 and snap.n_quote > 50:
         soft.append("Paper is quoting but has no fills — reward farming posture, not PnL proof.")
     if snap.capital_usdc <= 0 and snap.risk.get("running"):
@@ -367,11 +360,15 @@ def build_insights(snap: DashboardSnapshot) -> list[str]:
         soft.append("No open orders despite markets — regime may be HALTED/EVENT or WS blind.")
     halted_n = int(snap.risk.get("halted_markets") or 0)
     if halted_n > 0 and snap.n_markets > 0 and halted_n >= max(1, snap.n_markets // 2):
-        soft.append(f"{halted_n}/{snap.n_markets} markets halted — check Gamma closed/not-accepting.")
+        soft.append(
+            f"{halted_n}/{snap.n_markets} markets halted — check Gamma closed/not-accepting."
+        )
 
     tips = critical + soft
     if not tips:
-        tips.append("Steady state. Watch Pulse for health color; switch to Book for per-market drift.")
+        tips.append(
+            "Steady state. Watch Pulse for health color; switch to Book for per-market drift."
+        )
     return tips[:4]
 
 
@@ -550,9 +547,7 @@ def build_snapshot_from_engine(engine: Any) -> DashboardSnapshot:
             cap_total = float(getattr(rcfg, "max_total_exposure_usdc", 0) or 0)
             risk_extra["exposure_usdc"] = round(exposure, 2)
             risk_extra["max_total_exposure_usdc"] = cap_total
-            risk_extra["exposure_frac"] = (
-                round(exposure / cap_total, 3) if cap_total > 0 else None
-            )
+            risk_extra["exposure_frac"] = round(exposure / cap_total, 3) if cap_total > 0 else None
             risk_extra["max_market_notional_usdc"] = float(
                 getattr(rcfg, "max_market_notional_usdc", 0) or 0
             )
@@ -945,6 +940,10 @@ code.copyable:hover {{ color: var(--mint); }}
 (function() {{
   const $ = (id) => document.getElementById(id);
   const fmt = (n, d=2) => (n === null || n === undefined || Number.isNaN(n)) ? "—" : Number(n).toFixed(d);
+  const esc = (v) => String(v ?? "").replace(/[&<>'"]/g, (c) => ({{
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;"
+  }}[c]));
+  const classToken = (v) => String(v ?? "—").replace(/[^a-z0-9_-]/gi, "-");
   const money = (n) => {{
     if (n === null || n === undefined) return "—";
     const v = Number(n);
@@ -963,7 +962,16 @@ code.copyable:hover {{ color: var(--mint); }}
       await navigator.clipboard.writeText(text);
       toast("Copied " + text);
     }} catch (e) {{
-      toast("Copy failed");
+      // Clipboard is unavailable in some hardened / older localhost contexts.
+      const area = document.createElement("textarea");
+      area.value = text;
+      area.style.position = "fixed";
+      area.style.opacity = "0";
+      document.body.appendChild(area);
+      area.select();
+      const copied = document.execCommand("copy");
+      area.remove();
+      toast(copied ? ("Copied " + text) : "Copy failed");
     }}
   }}
 
@@ -1003,12 +1011,16 @@ code.copyable:hover {{ color: var(--mint); }}
     mb.innerHTML = rows.map(m => {{
       const inv = Number(m.inventory_net) || 0;
       const invCls = inv > 0 ? "pos" : (inv < 0 ? "neg" : "");
+      const marketId = String(m.id || "—");
+      const copyId = String(m.condition_id || marketId);
+      const regime = String(m.regime || "—");
+      const cooloff = Number(m.cooloff_s) || 0;
       return `<tr>
-      <td><code class="copyable" data-copy="${{m.id}}" title="click to copy">${{m.id}}</code></td>
-      <td><span class="regime regime-${{m.regime || "QUIET"}}">${{m.regime || "—"}}${{m.cooloff_s ? " ·" + m.cooloff_s + "s" : ""}}</span></td>
+      <td><code class="copyable" data-copy="${{esc(copyId)}}" title="click to copy full condition id">${{esc(marketId)}}</code></td>
+      <td><span class="regime regime-${{classToken(regime)}}">${{esc(regime)}}${{cooloff ? " ·" + esc(cooloff) + "s" : ""}}</span></td>
       <td class="${{invCls}}">${{fmt(m.inventory_net, 2)}}</td>
       <td>${{fmt(m.reward_accrual, 3)}}</td>
-      <td style="color:var(--muted);max-width:28ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${{m.question || ""}}</td>
+      <td style="color:var(--muted);max-width:28ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${{esc(m.question)}}</td>
     </tr>`;
     }}).join("");
     mb.querySelectorAll("code.copyable").forEach(el => {{
@@ -1123,10 +1135,10 @@ code.copyable:hover {{ color: var(--mint); }}
     const labels = {{ market_ws: "market WS", user_ws: "user WS", heartbeat: "heartbeat", outage: "outage" }};
     linkBox.innerHTML = order.filter(k => k in L).map(k => {{
       const st = String(L[k]);
-      const stCls = st === "n/a" ? "na" : (st === "—" ? "dash" : st.replace(/[^a-z0-9-]/gi, ""));
+      const stCls = st === "n/a" ? "na" : (st === "—" ? "dash" : classToken(st));
       const cls = "link-chip link-" + stCls;
       const extra = (k === "heartbeat" && L.heartbeat_failures) ? " ·" + L.heartbeat_failures : "";
-      return `<span class="${{cls}}">${{labels[k] || k}} · ${{st}}${{extra}}</span>`;
+      return `<span class="${{cls}}">${{esc(labels[k] || k)}} · ${{esc(st)}}${{esc(extra)}}</span>`;
     }}).join("");
 
     const rs = $("regime-summary");
@@ -1138,7 +1150,7 @@ code.copyable:hover {{ color: var(--mint); }}
     const rOrder = ["HALTED", "PAUSED", "EVENT", "REDUCE_ONLY", "TRENDING", "QUIET", "—"];
     const keys = rOrder.filter(k => counts[k]).concat(Object.keys(counts).filter(k => !rOrder.includes(k)));
     rs.innerHTML = keys.length
-      ? keys.map(k => `<span class="link-chip regime regime-${{k}}">${{k}} · ${{counts[k]}}</span>`).join("")
+      ? keys.map(k => `<span class="link-chip regime regime-${{classToken(k)}}">${{esc(k)}} · ${{esc(counts[k])}}</span>`).join("")
       : "";
 
     const ul = $("insights");
@@ -1203,7 +1215,7 @@ code.copyable:hover {{ color: var(--mint); }}
         const sz = Number(p.size) || 0;
         const cls = sz > 0 ? "pos" : (sz < 0 ? "neg" : "");
         return `<tr>
-        <td><code>${{p.token}}</code></td><td class="${{cls}}">${{fmt(p.size, 2)}}</td><td>${{fmt(p.avg_price, 3)}}</td>
+        <td><code>${{esc(p.token)}}</code></td><td class="${{cls}}">${{fmt(p.size, 2)}}</td><td>${{fmt(p.avg_price, 3)}}</td>
       </tr>`;
       }}).join("");
     }}
@@ -1220,12 +1232,12 @@ code.copyable:hover {{ color: var(--mint); }}
     $("fill-rate").textContent = nq > 0 ? (Math.round((nf / nq) * 1000) / 10) + "%" : "—";
     $("n-markets").textContent = String(s.n_markets || 0);
     const mk = s.markout || {{}};
-    const keys = ["30s", "120s", "300s"].filter(k => k in mk);
+    const markoutKeys = ["30s", "120s", "300s"].filter(k => k in mk);
     const mbody = $("markout-body");
-    if (!keys.length) {{
+    if (!markoutKeys.length) {{
       mbody.innerHTML = '<tr><td colspan="2" class="empty">No markouts yet</td></tr>';
     }} else {{
-      mbody.innerHTML = keys.map(k => {{
+      mbody.innerHTML = markoutKeys.map(k => {{
         const v = mk[k];
         const cls = (typeof v === "number" && v < 0) ? "neg" : ((typeof v === "number" && v > 0) ? "pos" : "");
         return `<tr><td>${{k}}</td><td class="${{cls}}">${{fmt(v, 5)}}</td></tr>`;
@@ -1233,11 +1245,15 @@ code.copyable:hover {{ color: var(--mint); }}
     }}
   }}
 
+  let tickInFlight = false;
   async function tick() {{
-    if (document.visibilityState === "hidden") return;
+    if (document.visibilityState === "hidden" || tickInFlight) return;
+    tickInFlight = true;
     const dot = $("conn");
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
     try {{
-      const r = await fetch("/api/snapshot", {{ cache: "no-store" }});
+      const r = await fetch("/api/snapshot", {{ cache: "no-store", signal: controller.signal }});
       if (!r.ok) throw new Error("HTTP " + r.status);
       paint(await r.json());
       dot.className = "conn conn-ok";
@@ -1245,7 +1261,13 @@ code.copyable:hover {{ color: var(--mint); }}
     }} catch (e) {{
       dot.className = "conn conn-bad";
       dot.title = "snapshot failed";
+      const health = $("health");
+      health.textContent = "OFFLINE";
+      health.className = "health-big health-CRITICAL";
       $("health-detail").textContent = "Waiting for bot snapshot… (" + e.message + ")";
+    }} finally {{
+      clearTimeout(timeout);
+      tickInFlight = false;
     }}
   }}
   document.addEventListener("visibilitychange", () => {{
@@ -1271,6 +1293,12 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", content_type)
         self.send_header("Cache-Control", "no-store")
+        self.send_header(
+            "Content-Security-Policy",
+            "default-src 'self'; base-uri 'none'; form-action 'none'; "
+            "frame-ancestors 'none'; connect-src 'self'; img-src 'self' data:; "
+            "style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'",
+        )
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("Referrer-Policy", "no-referrer")
@@ -1281,11 +1309,14 @@ class _Handler(BaseHTTPRequestHandler):
     def _snapshot(self) -> dict[str, Any]:
         fn = getattr(self.server, "snapshot_fn", None)
         if not callable(fn):
-            return {"error": "no snapshot_fn"}
+            raise RuntimeError("no snapshot function configured")
         payload = fn()
-        if isinstance(payload, dict) and "error" not in payload:
-            self.server.last_snapshot = payload  # type: ignore[attr-defined]
-            self.server.last_snapshot_at = time.time()  # type: ignore[attr-defined]
+        if not isinstance(payload, dict):
+            raise TypeError("snapshot function returned a non-object payload")
+        if "error" in payload:
+            raise RuntimeError("snapshot function returned an error payload")
+        self.server.last_snapshot = payload  # type: ignore[attr-defined]
+        self.server.last_snapshot_at = time.time()  # type: ignore[attr-defined]
         return payload
 
     def do_GET(self) -> None:  # noqa: N802
@@ -1298,10 +1329,29 @@ class _Handler(BaseHTTPRequestHandler):
                 payload = self._snapshot()
                 body = json.dumps(payload, default=str).encode("utf-8")
                 self._send(200, body, "application/json")
-            except Exception as exc:
-                self._send(500, json.dumps({"error": str(exc)}).encode("utf-8"), "application/json")
+            except Exception:  # noqa: BLE001 - handler must keep serving after a bad snapshot
+                log.exception("dashboard_snapshot_failed")
+                self._send(
+                    503,
+                    b'{"error":"snapshot unavailable"}',
+                    "application/json",
+                )
             return
         if path == "/healthz":
+            # A health probe needs to exercise the same snapshot path as the UI.
+            # Otherwise an old successful browser refresh could make healthz look
+            # healthy forever after the engine/dashboard data path has failed.
+            try:
+                self._snapshot()
+            except Exception:  # noqa: BLE001 - return a reliable probe response
+                log.exception("dashboard_health_snapshot_failed")
+                self._send(
+                    503,
+                    b'{"ok":false,"error":"snapshot unavailable"}',
+                    "application/json",
+                )
+                return
+
             last = getattr(self.server, "last_snapshot", None)
             last_at = getattr(self.server, "last_snapshot_at", None)
             info: dict[str, Any] = {"ok": True}
@@ -1313,20 +1363,18 @@ class _Handler(BaseHTTPRequestHandler):
                     info["version"] = last.get("version")
             if isinstance(last_at, (int, float)):
                 info["snapshot_age_s"] = round(time.time() - float(last_at), 2)
-            # Probe once if nothing cached yet (cold start).
-            if last is None:
-                with contextlib.suppress(Exception):
-                    self._snapshot()
-                    last = getattr(self.server, "last_snapshot", None)
-                    if isinstance(last, dict):
-                        info["health"] = last.get("health")
-                        info["mode"] = last.get("mode")
-                        info["ts"] = last.get("ts")
-                        if last.get("version"):
-                            info["version"] = last.get("version")
-                        info["snapshot_age_s"] = 0.0
             if info.get("health") == "CRITICAL":
                 info["ok"] = False
+            ts = info.get("ts")
+            if isinstance(ts, (int, float)):
+                source_age = time.time() - float(ts)
+                info["source_age_s"] = round(max(0.0, source_age), 2)
+                if source_age > _SNAPSHOT_STALE_S:
+                    info["ok"] = False
+                    info["error"] = "snapshot data is stale"
+            elif last is None:
+                info["ok"] = False
+                info["error"] = "snapshot unavailable"
             body = json.dumps(info).encode("utf-8")
             self._send(200 if info["ok"] else 503, body, "application/json")
             return
@@ -1334,8 +1382,17 @@ class _Handler(BaseHTTPRequestHandler):
 
 
 def _pick_port(host: str, preferred: int, span: int = 15) -> int:
+    if not 0 <= preferred <= 65535:
+        raise ValueError("dashboard port must be in the range 0..65535")
+    # Port 0 asks the OS for an ephemeral port. Its concrete value is only
+    # known after ThreadingHTTPServer binds, so return it unchanged here.
+    if preferred == 0:
+        return 0
+    family = socket.AF_INET6 if ":" in host else socket.AF_INET
     for port in range(preferred, preferred + span):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        if port > 65535:
+            break
+        with socket.socket(family, socket.SOCK_STREAM) as s:
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
                 s.bind((host, port))
@@ -1343,6 +1400,12 @@ def _pick_port(host: str, preferred: int, span: int = 15) -> int:
             except OSError:
                 continue
     raise OSError(f"no free dashboard port near {preferred}")
+
+
+class _IPv6ThreadingHTTPServer(ThreadingHTTPServer):
+    """ThreadingHTTPServer variant for the supported ``::1`` bind target."""
+
+    address_family = socket.AF_INET6
 
 
 class LiveDashboard:
@@ -1368,13 +1431,16 @@ class LiveDashboard:
         if self._httpd is not None:
             return self.url
         port = _pick_port(self.host, self.port)
-        httpd = ThreadingHTTPServer((self.host, port), _Handler)
+        server_cls = _IPv6ThreadingHTTPServer if ":" in self.host else ThreadingHTTPServer
+        httpd = server_cls((self.host, port), _Handler)
         httpd.snapshot_fn = self.snapshot_fn  # type: ignore[attr-defined]
         httpd.last_snapshot = None  # type: ignore[attr-defined]
         httpd.last_snapshot_at = None  # type: ignore[attr-defined]
         self._httpd = httpd
-        self.port = port
-        self.url = f"http://{self.host}:{port}/"
+        # An ephemeral port (0) is resolved only after server construction.
+        self.port = int(httpd.server_address[1])
+        url_host = f"[{self.host}]" if ":" in self.host else self.host
+        self.url = f"http://{url_host}:{self.port}/"
         t = threading.Thread(target=httpd.serve_forever, name="polymaker-dashboard", daemon=True)
         t.start()
         self._thread = t

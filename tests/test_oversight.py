@@ -29,7 +29,7 @@ class FakeAgent:
             tool_calls=[
                 ToolCall(id="1", name="oversight_report", arguments=self.payload)
             ],
-            usage=TokenUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15),
+            usage=TokenUsage(input_tokens=10, output_tokens=5, total_tokens=15),
         )
         return self.payload, resp
 
