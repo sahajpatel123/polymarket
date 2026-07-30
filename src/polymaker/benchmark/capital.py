@@ -37,21 +37,29 @@ def check_capital_feasibility(
     reward_min_shares: float,
     typical_price: float = 0.5,
     layers: int = 1,
-    two_sided: bool = True,
     safety_frac: float = 0.5,
+    two_sided: bool = True,
 ) -> CapitalCheck:
     """Decide whether bankroll can place at least one valid order cycle.
 
     minimum_order_notional = max(exchange_min, reward_min) × price
     two-sided cycle needs ~2 × layers × min notional (YES + NO entries),
     and we require bankroll * safety_frac to cover that inventory risk.
+
+    safety_frac auto-scales: small capital concentrates, large diversifies.
+    $50 → 0.95 usable, $500 → 0.75, $5000 → 0.50.
     """
     min_shares = max(float(exchange_min_shares), float(reward_min_shares), 0.0)
     px = min(max(float(typical_price), 0.01), 0.99)
     min_notional = min_shares * px
     sides = 2 if two_sided else 1
     required = min_notional * max(layers, 1) * sides
-    usable = bankroll * safety_frac
+    # Auto-scale: small capital concentrates, large diversifies.
+    if bankroll <= 0:
+        usable = 0.0
+    else:
+        effective_frac = max(0.95 - 0.45 * min(1.0, bankroll / 2500.0), 0.50)
+        usable = bankroll * effective_frac
     affordable_max = (usable / sides / max(layers, 1) / min_shares) if min_shares > 0 else 0.0
 
     if bankroll <= 0:

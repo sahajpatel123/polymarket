@@ -2166,27 +2166,23 @@ class Engine:
         )
         self._reward_eligibility[cid] = reward_gate
         if reward_gate.skip:
-            log.info(
-                "market_skip_capital",
-                condition_id=cid,
-                cid=cid[:8],
-                reason=reward_gate.reason,
-                rewards_min_size=reward_gate.min_shares,
-                bankroll_usdc=reward_gate.bankroll_usdc,
-                required_two_sided_usdc=reward_gate.required_two_sided_usdc,
-            )
-            self.metrics.emit(
-                "capital_skip",
-                ts=now,
-                condition_id=cid,
-                reason=reward_gate.reason,
-                bankroll_usdc=reward_gate.bankroll_usdc,
-                min_order_notional_usdc=reward_gate.min_order_notional_usdc,
-                required_two_sided_usdc=reward_gate.required_two_sided_usdc,
-                paper=self.paper,
-            )
-            await self._cancel_market_orders(cid, meta, reason="capital_ineligible")
-            return
+            # Warn once per market, not every requote cycle.
+            if not hasattr(self, '_undersized_warned'):
+                self._undersized_warned: set[str] = set()
+            if cid not in self._undersized_warned:
+                self._undersized_warned.add(cid)
+                gategood: bool = reward_gate.recommended_base_size_usdc > 0
+                gateinfo: str = (f"$reward_min_shortfall={reward_gate.shortfall_pct_pct}%_of_cap"
+                    if getattr(reward_gate, "shortfall_pct_pct", None) else "")
+                log.info(
+                    "capital_info",
+                    cid=cid[:8],
+                    bankroll_usdc=round(bankroll, 2),
+                    rewards_min_size=getattr(meta, "rewards_min_size", 0),
+                    reward_eligible=False,
+                    quoting_at_exchange_min=not gategood,
+                    shortfall=round(reward_gate.required_for_two_sided - reward_gate.bankroll_usdc * 0.95, 2),
+                )
 
         # Scale sizes to Grok's per-market allocation when available,
         # otherwise fall back to global bankroll formula.
