@@ -43,8 +43,9 @@ def test_fv_jump_triggers_event_and_cooloff():
     assert m.decide(_inp(fv=0.60, prev_fv=0.50), p) == Regime.EVENT
     # still in cooloff a moment later even without a jump
     assert m.decide(_inp(now=1030.0, fv=0.60, prev_fv=0.60), p) == Regime.EVENT
-    # after cooloff expires, back to quiet
-    assert m.decide(_inp(now=1100.0, fv=0.60, prev_fv=0.60, vol_ratio=0.0), p) == Regime.QUIET
+    # after cooloff expires (200s later), back to quiet
+    assert m.decide(_inp(now=1200.0, fv=0.60, prev_fv=0.60, vol_ratio=0.0), p) == Regime.QUIET
+
 
 
 
