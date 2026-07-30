@@ -673,7 +673,8 @@ class Engine:
 
             # Regime + estimators
             regime_m = self.regime_m.get(cid)
-            regime_state = str(regime_m.current if regime_m else "QUIET")
+            regime_state = str(getattr(regime_m, "current_regime", getattr(regime_m, "current", "QUIET")) if regime_m else "QUIET")
+
             est = self.est.get(cid)
             vol_ratio = float(getattr(est.vol, "ratio", 0) or 0)
             tox = float(getattr(est.markout, "toxicity", 0) or 0)

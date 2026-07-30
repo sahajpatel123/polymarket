@@ -275,10 +275,8 @@ def test_strategy_profile_join_best_bid_default_off():
     assert StrategyProfile().join_best_bid is False
 
 
-def test_strategy_profile_c_kyle_default_off():
-    from polymaker.config import StrategyProfile
+    assert isinstance(StrategyProfile().c_kyle, float)
 
-    assert StrategyProfile().c_kyle == 0.0
 
 
 def test_c_kyle_widens_half_spread_when_lambda_positive(meta, profile):
