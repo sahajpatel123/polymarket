@@ -1056,7 +1056,13 @@ class Engine:
         return results
 
     async def _oversight_loop_task(self) -> None:
-        """Run the OversightLoop and drain actions into the engine."""
+        """Continuous DeepSeek oversight — runs 24/7 with 30s between calls.
+
+        DeepSeek is cheap enough ($0.96/day at 2K tokens/call, 60 calls/hr)
+        for continuous strategic awareness. The trigger system provides
+        sub-second automated reactions (zero API cost). DeepSeek provides
+        the continuous strategic layer on top.
+        """
         if self.oversight_loop is None:
             return
         while self._running:
@@ -1064,7 +1070,7 @@ class Engine:
                 await self.run_oversight_cycle_once()
             except Exception:
                 log.exception("oversight_loop_error")
-            await asyncio.sleep(600)  # 10 min — faster reaction to DeepSeek
+            await asyncio.sleep(30)  # continuous — DeepSeek sees every market move
 
     async def _improve_loop(self) -> None:
         """Auto self-improve: every 6h or on strategy decay."""
@@ -1312,13 +1318,13 @@ class Engine:
         return added
 
     async def _llm_discovery_loop(self) -> None:
-        """LLM-ranked market discovery every 3 min — immediate activation."""
+        """Continuous DeepSeek market discovery — new markets every 90s."""
         if self._discovery_agent is None:
             return
         while self._running:
             try:
                 await self.run_llm_discovery_cycle_once()
-                await asyncio.sleep(180)  # 3 min
+                await asyncio.sleep(90)  # 90s — DeepSeek finds markets near-instantly
             except Exception:
                 log.exception("llm_discovery_loop_error")
                 await asyncio.sleep(30)
