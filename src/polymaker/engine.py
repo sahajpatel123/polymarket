@@ -182,6 +182,9 @@ class Engine:
         self._last_improve_ts: float = 0.0
         self._last_review_ts: float = 0.0
         self._discovery_agent: MarketDiscovery | None = None
+        # ── Per-hour reward tracking ──────────────────────────
+        self._hourly_fills: dict[str, int] = {}  # cid → fills this hour
+        self._hour_start_ts: float = time.time()
         # LLM-ranked selection (last discovery rankings + governed facade)
         self._llm_rankings: list[Any] = []
         self._gov_facade: Any | None = None
@@ -1966,6 +1969,8 @@ class Engine:
         cid = self._token_cid.get(fill.token_id)
         if cid is None:
             return
+        # Per-hour tracking
+        self._hourly_fills[cid] = self._hourly_fills.get(cid, 0) + 1
         est = self.est[cid]
         fv = est.last_fv if est.last_fv is not None else fill.price
         meta = self.metas[cid]
@@ -2293,7 +2298,28 @@ class Engine:
                 size_scale *= _kelly_adj
         except Exception:
             pass
-        # ─────────────────────────────────────────────────────────
+        # ── Reward-rate sizing: bigger orders on high-reward markets ──
+        try:
+            _rew_rate = float(getattr(meta, "rewards_daily_rate", 0) or 0)
+            _rew_min = float(getattr(meta, "rewards_min_size", 200) or 200)
+            if _rew_rate > 0 and _rew_min > 0:
+                _rew_efficiency = _rew_rate / _rew_min
+                _base = 0.02 / 200
+                _rew_mult = min(3.0, max(0.3, _rew_efficiency / max(_base, 1e-6)))
+                size_scale *= _rew_mult
+        except Exception:
+            pass
+        # ── Per-hour tracking: tighten winners, flag dead markets ──
+        if now - self._hour_start_ts > 3600:
+            # Reset hourly counters
+            for _c in self._hourly_fills:
+                _count = self._hourly_fills.get(_c, 0)
+                if _count == 0 and _c in self.metas and _c not in self._quarantined:
+                    log.info("hourly_zero_fills", cid=_c[:8],
+                             hint="market may need tighter quotes or be dropped")
+            self._hourly_fills.clear()
+            self._hour_start_ts = now
+        # ───────────────────────────────────────────────────────
         use_intel = p.use_intelligence and not deg.use_baseline_profile and not quarantined
 
         # Shared decision pipeline (same as replay): regime + intel + quotes.
@@ -2328,29 +2354,29 @@ class Engine:
             for v in violations:
                 log.warning("llm_trigger_fired", **v.as_dict())
                 self._apply_trigger_action(v)
-        # ── Avellaneda-Stoikov optimal spread: vol + inventory + risk ──
-        # Compute the AS-optimal half-spread and use it to scale our
-        # quoting spread when inventory is building or vol is high.
-        _as_mult = 1.0
+        # ── Reward-band targeting: Polymarket pays flat per qualifying order ──
+        # Wider spread = fewer fills = less reward capture. Place at band edges,
+        # adjusted by inventory skew. AS model informs inventory skew only.
+        _reward_band_edge = 1.0  # band position: 0=mid, 1=band edge
         try:
             _as_mid = float(micro) if micro is not None else 0.5
-            _inv_shares = float(pos_yes.size) - float(pos_no.size)  # net YES exposure (signed)
-            _sigma = float(getattr(est.vol, "short_value", 0.0) or 0.0)
+            _inv_shares = float(pos_yes.size) - float(pos_no.size)
+            _sigma = float(getattr(est.vol, "short_value", 0.0) or 0.001)
             _gamma = gamma_from_profile(float(getattr(p, "risk_aversion", 0.0) or 0.0))
-            _liq = float(getattr(meta, "liquidity_num", 0) or getattr(meta, "liquidity", 0) or 5000)
+            _liq = float(getattr(meta, "liquidity_num", 0) or 5000)
             _kappa = kappa_from_liquidity(_liq)
             _as_in = ASInputs(mid=_as_mid, inventory=_inv_shares, sigma=max(_sigma, 1e-6),
                               time_horizon_s=3600, gamma=_gamma, kappa=_kappa)
             _as_out = avellaneda_stoikov(_as_in)
-            if _as_out.half_spread > 0 and _as_mid > 0:
-                _as_spread_ticks = _as_out.half_spread / max(meta.tick_size, 1e-6)
-                _bb_p = float(yes_book.best_bid.price) if yes_book and yes_book.best_bid else 0
-                _ba_p = float(yes_book.best_ask.price) if yes_book and yes_book.best_ask else 0
-                _current_spread_ticks = (_ba_p - _bb_p) / meta.tick_size if _ba_p > 0 and _bb_p > 0 else 2.0
-                if _as_spread_ticks > _current_spread_ticks * 0.8:
-                    _as_mult = min(3.0, _as_spread_ticks / max(_current_spread_ticks, 0.5))
+            # AS skew tells us direction to lean within the band (inventory reduction)
+            _skew_frac = abs(_as_out.skew) / max(_as_mid * 0.05, 1e-6)
+            _reward_band_edge = max(0.15, min(1.0, 1.0 - _skew_frac * 0.3))
+            # Toxicity: push toward band edge (more passive) when risky
+            _tox = float(getattr(est.markout, "toxicity", 0.05) or 0.05)
+            if _tox > 0.1:
+                _reward_band_edge = max(_reward_band_edge, 0.7)
         except Exception:
-            _as_mult = 1.0
+            _reward_band_edge = 0.5
         # ──────────────────────────────────────────────────────────
 
         pipe = build_targets(
@@ -2403,22 +2429,24 @@ class Engine:
             intel_reason = f"{intel_reason}+gov_x{round(gov_spread_mult, 2)}"
         # ─────────────────────────────────────────────────────────────
 
-        # ── Avellaneda-Stoikov optimal spread: vol + inventory aware ──
-        if abs(_as_mult - 1.0) > 0.01:
-            intel_spread_mult *= _as_mult
-            intel_spread_mult = max(0.5, min(3.0, intel_spread_mult))
-            intel_reason = f"{intel_reason}+AS_x{round(_as_mult, 2)}"
-        # ─────────────────────────────────────────────────────────────
+        # ── Reward-band targeting: position within band, not widen spread ──
+        # Polymarket pays flat per qualifying order. Wider spread = fewer fills.
+        # Position orders at the band edge adjusted by inventory skew.
+        if isinstance(intel_band_frac, (int, float)):
+            intel_band_frac = float(_reward_band_edge)
+            intel_reason = f"{intel_reason}+RB_x{round(_reward_band_edge, 2)}"
+        # ────────────────────────────────────────────────────────────────
 
-        # ── HMM pre-volatility: widen BEFORE the spike hits ──────
+        # ── HMM pre-volatility: push toward band edge when risky ──
         _hmm_m = self._hmm.get(cid)
         if _hmm_m is not None:
-            _hmm_m.update(float(micro))  # feed mid-price, not volatility
+            _hmm_m.update(float(micro))
             if _hmm_m.n_updates > 3 and _hmm_m.alpha[1] > 0.65:
-                _hmm_widen = 1.0 + (_hmm_m.alpha[1] - 0.5) * 0.5
-                intel_spread_mult *= _hmm_widen
-                intel_spread_mult = max(0.5, min(3.0, intel_spread_mult))
-                intel_reason = f"{intel_reason}+HMM_x{round(_hmm_widen, 2)}"
+                # High-vol predicted: move toward band edge (more passive)
+                # Never widen spread — Polymarket rewards are flat per order
+                if isinstance(intel_band_frac, (int, float)):
+                    intel_band_frac = max(intel_band_frac, 0.7)
+                intel_reason = f"{intel_reason}+HMM_defensive"
         # ───────────────────────────────────────────────────────
 
         # ── DeepSeek band override: DeepSeek says 'go_aggressive/defensive' ──
