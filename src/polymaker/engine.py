@@ -39,8 +39,8 @@ from polymaker.execution.gateway import ExecutionGateway
 from polymaker.execution.reconciler import reconcile
 from polymaker.intelligence import (
     DecisionFramework,
-    GovernedDeepSeekAgent,
     DeepSeekAgent,
+    GovernedDeepSeekAgent,
     LLMGovernance,
     MarketDiscovery,
     OversightLoop,
@@ -61,6 +61,12 @@ from polymaker.risk.degradation import DegradationDetector
 from polymaker.risk.manager import RiskManager
 from polymaker.state.store import StateStore
 from polymaker.state.tracker import UserEventProcessor
+from polymaker.strategy.avellaneda_stoikov import (
+    ASInputs,
+    avellaneda_stoikov,
+    gamma_from_profile,
+    kappa_from_liquidity,
+)
 from polymaker.strategy.decision_pipeline import build_targets
 from polymaker.strategy.estimators import (
     FlowEstimator,
@@ -68,6 +74,7 @@ from polymaker.strategy.estimators import (
     MultiHorizonMarkout,
     VolEstimator,
 )
+from polymaker.strategy.kelly import KellyInputs, kelly_size
 from polymaker.strategy.quoting import compute_fair_value
 from polymaker.strategy.regime import RegimeMachine
 from polymaker.userstream.client import UserStream
@@ -2177,17 +2184,13 @@ class Engine:
                 self._undersized_warned: set[str] = set()
             if cid not in self._undersized_warned:
                 self._undersized_warned.add(cid)
-                gategood: bool = reward_gate.recommended_base_size_usdc > 0
-                gateinfo: str = (f"$reward_min_shortfall={reward_gate.shortfall_pct_pct}%_of_cap"
-                    if getattr(reward_gate, "shortfall_pct_pct", None) else "")
                 log.info(
-                    "capital_info",
-                    cid=cid[:8],
+                    "capital_info", cid=cid[:8],
                     bankroll_usdc=round(bankroll, 2),
                     rewards_min_size=getattr(meta, "rewards_min_size", 0),
                     reward_eligible=False,
-                    quoting_at_exchange_min=not gategood,
-                    shortfall=round(reward_gate.required_for_two_sided - reward_gate.bankroll_usdc * 0.95, 2),
+                    quoting_at_exchange_min=True,
+                    shortfall=round(reward_gate.required_two_sided_usdc - reward_gate.bankroll_usdc * 0.95, 2),
                 )
 
         # Scale sizes to DeepSeek's per-market allocation when available,
@@ -2241,7 +2244,23 @@ class Engine:
         _grok_agg = float(self._grok_aggression.get(cid, 1.0))
         if abs(_grok_agg - 1.0) > 0.005:
             size_scale *= _grok_agg
-        # ──────────────────────────────────────────────────────
+        # ── Kelly optimal sizing: bet proportional to estimated edge ──
+        try:
+            _fill_r = max(0.01, min(0.99, self._recent_fill_rate()))
+            _tox = max(0.001, float(getattr(est.markout, "toxicity", 0.05) or 0.05))
+            _ki = KellyInputs(
+                win_prob=_fill_r,
+                net_odds=0.01 / _tox,  # edge inversely proportional to toxicity
+                bankroll=float(self._effective_capital),
+                kelly_fraction=float(getattr(p, "kelly_fraction", 0.5) or 0.5),
+            )
+            _ko = kelly_size(_ki)
+            if 0 < _ko.fraction < 1.0:
+                _kelly_adj = min(2.5, max(0.3, _ko.fraction * 5.0))
+                size_scale *= _kelly_adj
+        except Exception:
+            pass
+        # ─────────────────────────────────────────────────────────
         use_intel = p.use_intelligence and not deg.use_baseline_profile and not quarantined
 
         # Shared decision pipeline (same as replay): regime + intel + quotes.
@@ -2276,7 +2295,30 @@ class Engine:
             for v in violations:
                 log.warning("llm_trigger_fired", **v.as_dict())
                 self._apply_trigger_action(v)
-        # ────────────────────────────────────────────────────────
+        # ── Avellaneda-Stoikov optimal spread: vol + inventory + risk ──
+        # Compute the AS-optimal half-spread and use it to scale our
+        # quoting spread when inventory is building or vol is high.
+        _as_mult = 1.0
+        try:
+            _as_mid = float(micro) if micro is not None else 0.5
+            _inv_shares = max(0.0, float(pos_yes.size) + float(pos_no.size))
+            _sigma = float(getattr(est.vol, "short_value", 0.0) or 0.0)
+            _gamma = gamma_from_profile(float(getattr(p, "risk_aversion", 0.0) or 0.0))
+            _liq = float(getattr(meta, "liquidity_num", 0) or getattr(meta, "liquidity", 0) or 5000)
+            _kappa = kappa_from_liquidity(_liq)
+            _as_in = ASInputs(mid=_as_mid, inventory=_inv_shares, sigma=max(_sigma, 1e-6),
+                              time_horizon_s=3600, gamma=_gamma, kappa=_kappa)
+            _as_out = avellaneda_stoikov(_as_in)
+            if _as_out.half_spread > 0 and _as_mid > 0:
+                _as_spread_ticks = _as_out.half_spread / max(meta.tick_size, 1e-6)
+                _bb_p = float(yes_book.best_bid.price) if yes_book and yes_book.best_bid else 0
+                _ba_p = float(yes_book.best_ask.price) if yes_book and yes_book.best_ask else 0
+                _current_spread_ticks = (_ba_p - _bb_p) / meta.tick_size if _ba_p > 0 and _bb_p > 0 else 2.0
+                if _as_spread_ticks > _current_spread_ticks * 0.8:
+                    _as_mult = min(3.0, _as_spread_ticks / max(_current_spread_ticks, 0.5))
+        except Exception:
+            _as_mult = 1.0
+        # ──────────────────────────────────────────────────────────
 
         pipe = build_targets(
             meta=meta,
@@ -2326,6 +2368,13 @@ class Engine:
             intel_spread_mult *= gov_spread_mult
             intel_spread_mult = max(0.5, min(3.0, intel_spread_mult))
             intel_reason = f"{intel_reason}+gov_x{round(gov_spread_mult, 2)}"
+        # ─────────────────────────────────────────────────────────────
+
+        # ── Avellaneda-Stoikov optimal spread: vol + inventory aware ──
+        if abs(_as_mult - 1.0) > 0.01:
+            intel_spread_mult *= _as_mult
+            intel_spread_mult = max(0.5, min(3.0, intel_spread_mult))
+            intel_reason = f"{intel_reason}+AS_x{round(_as_mult, 2)}"
         # ─────────────────────────────────────────────────────────────
 
         # ── DeepSeek band override: DeepSeek says 'go_aggressive/defensive' ──
