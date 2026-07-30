@@ -2268,19 +2268,26 @@ class Engine:
         _grok_agg = float(self._grok_aggression.get(cid, 1.0))
         if abs(_grok_agg - 1.0) > 0.005:
             size_scale *= _grok_agg
-        # ── Kelly optimal sizing: bet proportional to estimated edge ──
+        # ── Kelly optimal sizing (real module): bet proportional to edge ──
         try:
-            _fill_r = max(0.01, min(0.99, self._recent_fill_rate()))
-            _tox = max(0.001, float(getattr(est.markout, "toxicity", 0.05) or 0.05))
+            _edge_per_share = float(getattr(est.markout, "short_value", 0.001) or 0.001)
+            # Markout positive = edge for maker (price moved in our favor after fill)
+            if _edge_per_share <= 0:
+                _edge_per_share = 0.0005  # minimal edge when no data
+            _sigma = float(getattr(est.vol, "short_value", 0.0) or est.vol.short_value or 0.001)
             _ki = KellyInputs(
-                win_prob=_fill_r,
-                net_odds=0.01 / _tox,  # edge inversely proportional to toxicity
-                bankroll=float(self._effective_capital),
-                kelly_fraction=float(getattr(p, "kelly_fraction", 0.5) or 0.5),
+                edge=_edge_per_share,
+                sigma=max(_sigma, 1e-6),
+                time_horizon_s=3600.0,
+                bankroll_usdc=float(self._effective_capital),
+                inventory_shares=float(pos_yes.size) + float(pos_no.size),
+                max_inventory_shares=float(getattr(p, "q_max_usdc", 500) or 500) / max(typical_px, 0.01),
+                kelly_fraction=float(getattr(p, "kelly_fraction", 0.25) or 0.25),
+                price=float(micro) if micro else 0.5,
             )
             _ko = kelly_size(_ki)
-            if 0 < _ko.fraction < 1.0:
-                _kelly_adj = min(2.5, max(0.3, _ko.fraction * 5.0))
+            if _ko.fraction > 0:
+                _kelly_adj = min(3.0, max(0.3, _ko.fraction * 10.0))
                 size_scale *= _kelly_adj
         except Exception:
             pass
@@ -2325,7 +2332,7 @@ class Engine:
         _as_mult = 1.0
         try:
             _as_mid = float(micro) if micro is not None else 0.5
-            _inv_shares = max(0.0, float(pos_yes.size) + float(pos_no.size))
+            _inv_shares = float(pos_yes.size) - float(pos_no.size)  # net YES exposure (signed)
             _sigma = float(getattr(est.vol, "short_value", 0.0) or 0.0)
             _gamma = gamma_from_profile(float(getattr(p, "risk_aversion", 0.0) or 0.0))
             _liq = float(getattr(meta, "liquidity_num", 0) or getattr(meta, "liquidity", 0) or 5000)

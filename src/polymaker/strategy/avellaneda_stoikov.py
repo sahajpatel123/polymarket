@@ -100,10 +100,12 @@ def avellaneda_stoikov(inp: ASInputs) -> ASOutput:
     skew = inp.inventory * inp.gamma * sigma_sq * T
     reservation = inp.mid - skew
 
-    # Optimal half-spread: volatility term + order arrival term
+    # Optimal spread (δ): volatility term + order arrival term.
+    # δ = γσ²T + (2/γ)ln(1+γ/κ) — exactly from Avellaneda-Stoikov (2008).
     vol_term = inp.gamma * sigma_sq * T
     arrival_term = (2.0 / inp.gamma) * math.log(1.0 + inp.gamma / inp.kappa)
-    half_spread = 0.5 * (vol_term + arrival_term)
+    delta = vol_term + arrival_term
+    half_spread = delta * 0.5  # bid/ask are δ/2 from reservation
 
     bid = reservation - half_spread
     ask = reservation + half_spread
