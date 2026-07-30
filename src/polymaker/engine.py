@@ -370,7 +370,7 @@ class Engine:
         self._spawn("supervisor", self._supervise)
         self.risk.reset_day()
         # ── Auto-compounding: track starting equity for growth scaling ──
-        self._day_start_equity = self.risk.equity()
+        self._day_start_equity = self.risk.equity
         if self._day_start_equity > 0 and self._base_capital > 0:
             self._effective_capital = self._day_start_equity
             log.info("compounding_init",
@@ -2982,7 +2982,7 @@ class Engine:
             # ── Auto compounding: update effective bankroll from PnL ──
             if self._day_start_equity > 0 and self._base_capital > 0:
                 try:
-                    equity = self.risk.equity()
+                    equity = self.risk.equity
                     growth = equity / max(self._day_start_equity, 0.01)
                     # Only compound up (never shrink from compounding).
                     if growth > 1.01:  # 1%+ growth = compound

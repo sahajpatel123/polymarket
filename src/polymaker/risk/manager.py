@@ -38,6 +38,7 @@ class RiskManager:
         self._order_attempts = 0
         self._order_errors = 0
         self._cumulative_gas_cost = 0.0  # cumulative on-chain gas cost (USDC)
+        self._per_token_realized_pnl: dict[str, float] = {}  # token_id -> cumulative realized PnL from fills
 
     @property
     def cfg(self) -> RiskConfig:
@@ -47,6 +48,13 @@ class RiskManager:
     # ── PnL bookkeeping ─────────────────────────────────────────────────
     def note_fill(self, fill: Fill) -> None:
         self._net_cash += (fill.price * fill.size) * (1 if fill.side is Side.SELL else -1)
+        if fill.side is Side.SELL:
+            pos = self._store.position(fill.token_id)
+            cost_basis = pos.avg_price if pos.avg_price > 0 else fill.price
+            realized = (fill.price - cost_basis) * fill.size
+            self._per_token_realized_pnl[fill.token_id] = (
+                self._per_token_realized_pnl.get(fill.token_id, 0.0) + realized
+            )
 
     def update_mark(self, token_id: str, fv: float) -> None:
         self._marks[token_id] = fv
@@ -210,23 +218,20 @@ class RiskManager:
     def _market_pnl(self, meta: MarketMeta) -> float:
         """Per-market realized + unrealized PnL for kill-switch monitoring.
 
-        Realized: net cash from fills on this market's tokens.
-        Unrealized: mark-to-market on remaining inventory vs avg_price.
+        Realized: cumulative PnL from completed SELL fills on this market's tokens.
+        Unrealized: mark-to-market drift on remaining inventory vs avg_price.
         """
+        realized = 0.0
+        for tok in (meta.yes.token_id, meta.no.token_id):
+            realized += self._per_token_realized_pnl.get(tok, 0.0)
         unrealized = 0.0
         for tok in (meta.yes.token_id, meta.no.token_id):
             pos = self._store.position(tok)
             if pos.size <= 0:
                 continue
-            # Realized PnL is the difference between current mark and avg_price
             mark = self._marks.get(tok, pos.avg_price or 0.5)
             unrealized += (mark - pos.avg_price) * pos.size
-        # Note: realized PnL from fills is tracked via _net_cash; per-market
-        # realized would need fill-by-token tracking which we approximate via
-        # the inventory cost basis vs current mark. Return unrealized only
-        # for the kill-switch (the realized component is already in the
-        # global daily_pnl via _net_cash).
-        return unrealized
+        return realized + unrealized
 
 
 def _headroom(current: float, cap: float) -> float:

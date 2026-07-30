@@ -412,9 +412,14 @@ class Config(BaseModel):
         }
         markets = [MarketEntry(**m) for m in (mkts.get("markets") or [])]
 
+        wallet_dict = main.get("wallet", {})
+        gamma_env = os.environ.get("GAMMA_BASE_URL") or os.environ.get("GAMMA_HOST")
+        if gamma_env:
+            wallet_dict["gamma_host"] = gamma_env
+
         risk = RiskConfig(**main.get("risk", {})).resolve_from_bankroll()
         return cls(
-            wallet=WalletConfig(**main.get("wallet", {})),
+            wallet=WalletConfig(**wallet_dict),
             engine=EngineConfig(**main.get("engine", {})),
             risk=risk,
             execution=ExecutionConfig(**main.get("execution", {})),
@@ -424,6 +429,7 @@ class Config(BaseModel):
             secrets=Secrets(),
             config_dir=cdir,
         )
+
 
     
 
