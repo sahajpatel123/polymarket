@@ -182,23 +182,29 @@ class MarkoutTracker:
 
 
 class MultiHorizonMarkout:
-    """Multi-horizon markout tracker for more nuanced toxicity estimation.
+    """Multi-horizon markout tracker with scalper-speed short horizons.
 
-    Tracks markout at multiple time horizons (e.g., 30s, 120s, 300s) and
-    produces a weighted toxicity score. Short-horizon markout is more
-    relevant for current quoting decisions (recent fills indicate
-    current toxicity), while long-horizon markout provides a baseline.
+    Tracks markout at six time horizons for nuanced toxicity estimation:
 
-    The combined toxicity is a weighted average where short horizons
-    have higher weight (more relevant to current state).
+      1s   — instant fill quality: was this a toxic sweep? (weight 0.25)
+      3s   — micro-price recovery: did the mid bounce back?  (weight 0.20)
+      10s  — short-term adverse selection: is flow persistent? (weight 0.20)
+      30s  — baseline markout                               (weight 0.15)
+      120s — long-term drift                                (weight 0.10)
+      300s — persistent positioning                         (weight 0.10)
+
+    Short horizons dominate the weighted toxicity score because they are
+    most relevant for current quoting decisions (pull quotes immediately
+    when a fill is instantly toxic). Long horizons provide a sanity check
+    against over-reacting to micro-jitter.
     """
 
     __slots__ = ("_horizons", "_pending", "_markouts", "_weights")
 
     def __init__(
         self,
-        horizons_s: tuple[float, ...] = (30.0, 120.0, 300.0),
-        weights: tuple[float, ...] = (0.5, 0.3, 0.2),
+        horizons_s: tuple[float, ...] = (1.0, 3.0, 10.0, 30.0, 120.0, 300.0),
+        weights: tuple[float, ...] = (0.25, 0.20, 0.20, 0.15, 0.10, 0.10),
         ewma_halflife_s: float = 1800.0,
     ) -> None:
         self._horizons = horizons_s
@@ -243,6 +249,20 @@ class MultiHorizonMarkout:
         if not self._horizons:
             return 0.0
         return max(0.0, -self._markouts[self._horizons[0]].value)
+
+    @property
+    def medium_term_markout(self) -> float:
+        """10s-horizon markout (clean signal for scalp fill quality evaluation).
+
+        The 1s markout catches toxic sweeps but is noisy; the 10s horizon
+        filters micro-jitter and reflects whether the fill had lasting impact.
+        Used by the online optimizer for fitness evaluation.
+        """
+        if len(self._horizons) < 3:
+            return 0.0
+        # horizons are (1s, 3s, 10s, 30s, 120s, 300s) — index 2 is 10s
+        h10s = self._horizons[2] if len(self._horizons) > 2 else self._horizons[-1]
+        return self._markouts[h10s].value
 
     @property
     def long_term_toxicity(self) -> float:

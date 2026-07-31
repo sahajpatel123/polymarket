@@ -112,7 +112,7 @@ def test_quant_edge_embeds_fill_readiness(tmp_path: Path) -> None:
         )
     j.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
     baseline = StrategyProfile()
-    candidate = profile_from_overrides(baseline, {"use_advanced_quoting": True})
+    candidate = profile_from_overrides(baseline, {"use_as_reservation_price": True})
     result = evaluate_quant_edge(
         j,
         _meta(),

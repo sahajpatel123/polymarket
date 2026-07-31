@@ -12,12 +12,12 @@ required before any quant-edge technique counts as "implemented":
 Usage:
   uv run python scripts/quant_edge_eval.py \\
       --journal fixtures/regime_dense.jsonl \\
-      --candidate-overrides '{"use_advanced_quoting": true}'
+      --candidate-overrides '{"use_as_reservation_price": true}'
 
   uv run python scripts/quant_edge_eval.py \\
       --journal livecfg/journal/paper.jsonl \\
       --config-dir livecfg --baseline-profile live-tiny \\
-      --candidate-overrides '{"use_advanced_quoting": true}' \\
+      --candidate-overrides '{"use_as_reservation_price": true}' \\
       --holdout-frac 0.3 --n-chunks 5
 """
 
@@ -140,7 +140,7 @@ def main() -> int:
     else:
         # Default candidate: same baseline + advanced quoting on
         if not cand_ov and not args.candidate_profile:
-            cand_ov = {"use_advanced_quoting": True}
+            cand_ov = {"use_as_reservation_price": True}
         candidate = profile_from_overrides(baseline, cand_ov)
 
     if args.slug:

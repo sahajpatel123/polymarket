@@ -79,7 +79,7 @@ def test_requires_paper_for_unsafe_even_if_llm_says_no() -> None:
     assert requires_paper({"gamma": 0.7}, llm_flag=False) is False
     assert "gamma" in SAFE_IMMEDIATE_KEYS
     # Unknown / non-allowlist key forces paper.
-    assert requires_paper({"use_advanced_quoting": True}, llm_flag=False) is True
+    assert requires_paper({"use_as_reservation_price": True}, llm_flag=False) is True
     assert requires_paper({"gamma": 0.7}, llm_flag=True) is True
 
 
@@ -186,15 +186,15 @@ def test_forbidden_only_yields_no_safe_overrides(tmp_path: Path) -> None:
             "suggestion": "turn on advanced quoting",
             "expected_impact_pct": 5.0,
             "paper_validation_required": True,
-            "profile_overrides": {"use_advanced_quoting": True},
+            "profile_overrides": {"use_as_reservation_price": True},
         }
 
     improver = SelfImprover(history=hist, llm=llm)
-    improver.set_live_profile({"use_advanced_quoting": False, "gamma": 0.5})
+    improver.set_live_profile({"use_as_reservation_price": False, "gamma": 0.5})
     result = improver.run(_decaying_eval())
     assert not result.promoted
     assert "no_safe_overrides" in result.errors
-    assert "use_advanced_quoting" in (result.suggestion.stripped_keys if result.suggestion else [])
+    assert "use_as_reservation_price" in (result.suggestion.stripped_keys if result.suggestion else [])
     hist.close()
 
 
@@ -263,9 +263,9 @@ def test_coerce_and_strip_advanced() -> None:
     assert coerced["gamma"] == 0.8
     assert coerced["layers"] == 2
     assert coerced["join_best_bid"] is True
-    clean, stripped = strip_forbidden({"gamma": 1.0, "use_advanced_quoting": True, "q_max_usdc": 9})
+    clean, stripped = strip_forbidden({"gamma": 1.0, "use_as_reservation_price": True, "q_max_usdc": 9})
     assert "gamma" in clean
-    assert "use_advanced_quoting" in stripped
+    assert "use_as_reservation_price" in stripped
     assert "q_max_usdc" in stripped
 
 

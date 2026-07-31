@@ -186,18 +186,18 @@ async def estimate_resolution_probability(
     *,
     reward_rate: float = 0.0,
     volume: float = 0.0,
+    calibrator: Any | None = None,  # ResolutionCalibrator
 ) -> ResolutionSignal:
     """Ask DeepSeek for P(event), compute alpha, return the signal.
 
-    This is the core resolution-arb engine. Callable from the engine
-    every hour per market. Costs ~500 tokens (<$0.001).
+    When a calibrator is provided with >= 10 records, the raw LLM
+    estimate is bias-corrected via Platt scaling before computing alpha.
 
     Returns a ResolutionSignal that the engine can use to bias quoting
     or take directional positions.
     """
     prompt = build_resolution_prompt(question, market_price, reward_rate, volume)
     try:
-        # Use chat_json_tool for structured JSON output
         parsed, resp = await agent.chat_json_tool(
             messages=[{"role": "user", "content": prompt}],
             tool_name="probability_estimate",
@@ -213,11 +213,10 @@ async def estimate_resolution_probability(
             kind="resolution",
             description="Estimate true probability of an event resolving to YES",
         )
-        est_p = float(parsed.get("estimated_probability", market_price))
+        raw_p = float(parsed.get("estimated_probability", market_price))
         conf = float(parsed.get("confidence", 0.3))
         reasoning = str(parsed.get("reasoning", ""))
     except Exception:
-        # Fallback: no LLM or LLM failed — return neutral signal
         log.warning("resolution_probability_failed — using market price as estimate")
         return ResolutionSignal(
             condition_id="",
@@ -231,8 +230,18 @@ async def estimate_resolution_probability(
             reasoning="fallback_no_llm",
         )
 
-    est_p = max(0.01, min(0.99, est_p))
+    raw_p = max(0.01, min(0.99, raw_p))
     conf = max(0.0, min(1.0, conf))
+
+    # Apply Platt-scaled calibration correction if available
+    if calibrator is not None and hasattr(calibrator, "calibrated_p"):
+        est_p = calibrator.calibrated_p(raw_p)
+        cal_info = calibrator.summary()
+        if cal_info["n_records"] >= 10:
+            reasoning = f"[calib:α={cal_info['alpha']},β={cal_info['beta']},ece={cal_info['ece_pct']}] {reasoning}"
+    else:
+        est_p = raw_p
+
     alpha = compute_alpha(market_price, est_p)
     direction = direction_from_prices(market_price, est_p)
 

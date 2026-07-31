@@ -71,6 +71,45 @@ class QuoteInputs:
     # band frac so adaptive passive offsets can widen further from mid.
     intel_buy_offset_ticks: int | None = None
     intel_skip: bool = False  # brain says do not quote entries
+    # Kelly sizing (single path, no double-counting).
+    # When both are > 0, Kelly scales the position size proportional to
+    # edge/variance (optimal growth rate). Set to 0 to use profile base_size only.
+    kelly_fraction: float = 0.0
+    bankroll_usdc: float = 0.0
+    liquidity: float = 0.0  # for time-horizon estimation
+
+
+def _kelly_multiplier(
+    edge: float, sigma: float, time_horizon_s: float,
+    bankroll_usdc: float, inventory_shares: float, max_inventory_shares: float,
+    kelly_fraction: float, price: float,
+) -> float:
+    """Compute a size multiplier from Kelly-optimal sizing.
+
+    Returns 1.0 when there's not enough data for Kelly. The multiplier
+    is applied on top of the profile's base_size_usdc/layers, so this
+    is a pure multiplicative adjustment (not a replacement).
+    """
+    from polymaker.strategy.kelly import KellyInputs, kelly_size
+    if bankroll_usdc <= 0 or kelly_fraction <= 0 or sigma <= 0 or time_horizon_s <= 0:
+        return 1.0
+    inp = KellyInputs(
+        edge=max(edge, 1e-6),
+        sigma=sigma,
+        time_horizon_s=time_horizon_s,
+        bankroll_usdc=bankroll_usdc,
+        inventory_shares=inventory_shares,
+        max_inventory_shares=max(max_inventory_shares, 1.0),
+        kelly_fraction=min(kelly_fraction, 1.0),
+        price=max(price, 1e-6),
+        min_size_shares=0.0,
+    )
+    out = kelly_size(inp)
+    if out.fraction <= 0:
+        return 1.0
+    # Map Kelly fraction (pct of bankroll to risk) to a size multiplier
+    # on the profile's base_size: 2% of bankroll → 1.1x, 20% → 2.0x.
+    return min(3.0, max(0.3, 1.0 + out.fraction * 5.0))
 
 
 def construct_quotes(inp: QuoteInputs) -> TargetQuotes:
@@ -93,7 +132,13 @@ def construct_quotes(inp: QuoteInputs) -> TargetQuotes:
 
     # Inventory skew: quadratic taper near |u|→1 so edge compounds without
     # over-skewing mid-range inventory (linear gamma·σ·u under-reacts at tails).
-    skew = p.gamma * inp.vol_short * u * (1.0 + 0.5 * abs(u))
+    # When use_as_reservation_price is True, use Avellaneda-Stoikov optimal
+    # reservation price instead: skew = gamma * sigma² * T * inventory (linear).
+    if bool(getattr(p, "use_as_reservation_price", False)):
+        _t_horizon = max(60.0, min(3600.0, 3600.0 / max(inp.liquidity / 1000.0, 1.0) ** 0.5))
+        skew = p.gamma * inp.vol_short ** 2 * _t_horizon * net_shares
+    else:
+        skew = p.gamma * inp.vol_short * u * (1.0 + 0.5 * abs(u))
 
     # ── half-spread: fee/AS economic floor + vol/tox + reward-band clamp ─
     econ = half_spread_floor(
@@ -141,9 +186,22 @@ def construct_quotes(inp: QuoteInputs) -> TargetQuotes:
     # need even smaller add-size to avoid bagging inventory.
     regime_scale = 0.35 if inp.regime == Regime.TRENDING else 1.0
     tox_scale = 1.0 / (1.0 + inp.toxicity * 12.0)
+    # Kelly sizing: single computation, no double-counting.
+    # Uses half-spread as edge proxy and accounts for current inventory.
+    _kelly_scale = _kelly_multiplier(
+        edge=delta,
+        sigma=max(inp.vol_short, 1e-6),
+        time_horizon_s=max(60.0, min(3600.0, 3600.0 / max(inp.liquidity / 1000.0, 1.0) ** 0.5)),
+        bankroll_usdc=max(inp.bankroll_usdc, 1.0),
+        inventory_shares=net_shares,
+        max_inventory_shares=q_max_shares,
+        kelly_fraction=inp.kelly_fraction,
+        price=max(inp.fv, tick),
+    )
     common_scale = (
         regime_scale
         * tox_scale
+        * _kelly_scale
         * _clamp(inp.risk_size_scale, 0.0, 1.0)
         * _clamp(inp.intel_size_scale, 0.0, 2.0)
     )
@@ -485,3 +543,55 @@ def _maybe_exit(
     size = math.floor(pos.size * 100) / 100
     if 0 < price < 1 and size >= m.min_order_size:
         quotes.append(Quote(token_id, Side.SELL, price, size))
+
+
+# ── Risk-managed TP/SL exit targets ─────────────────────────────────────
+
+
+def compute_tp_sl(
+    *,
+    fill_price: float,
+    fill_size: float,
+    fv: float,
+    tp_pct: float,
+    sl_pct: float,
+    max_risk_usdc: float,
+    tick: float,
+    dec: int,
+) -> tuple[Quote | None, Quote | None]:
+    """Compute take-profit and stop-loss exit quotes for a fill.
+
+    TP: sell at fill_price * (1 + tp_pct), capped at fill_price + 2*tick above FV.
+    SL: sell at fill_price * (1 - sl_pct), floored at fill_price - 2*tick below FV.
+
+    If max_risk_usdc > 0 and the SL size would risk more than that, size is
+    reduced so max loss ≤ max_risk_usdc. Returns (tp_quote, sl_quote) where
+    either may be None if the price would cross/become invalid.
+    """
+    tp = None
+    sl = None
+
+    tp_raw = fill_price * (1.0 + tp_pct) if tp_pct > 0 else 0.0
+    if tp_raw > 0:
+        # TP uncapped — if someone crosses at our profit target, we take it.
+        tp_price = round_to_tick(tp_raw, tick, dec, up=True)
+        if 0 < tp_price < 1.0 and tp_price > fill_price:
+            tp_size = math.floor(fill_size * 100) / 100
+            if tp_size > 0:
+                tp = Quote("", Side.SELL, tp_price, tp_size)
+
+    sl_raw = fill_price * (1.0 - sl_pct) if sl_pct > 0 else 0.0
+    if sl_raw > 0:
+        sl_raw = max(sl_raw, fv - 5.0 * tick)
+        sl_price = round_to_tick(sl_raw, tick, dec, up=False)
+        if 0 < sl_price < 1.0 and sl_price < fill_price:
+            sl_size = math.floor(fill_size * 100) / 100
+            if max_risk_usdc > 0 and sl_size > 0:
+                risk_per_share = fill_price - sl_price
+                if risk_per_share > 0:
+                    max_shares = max_risk_usdc / risk_per_share
+                    sl_size = min(sl_size, math.floor(max_shares * 100) / 100)
+            if sl_size > 0:
+                sl = Quote("", Side.SELL, sl_price, sl_size)
+
+    return tp, sl

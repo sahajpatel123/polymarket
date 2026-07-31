@@ -111,7 +111,7 @@ class RiskManager:
     def global_halt(self) -> tuple[bool, str]:
         if self._killed:
             return True, "manual_kill"
-        if self.daily_pnl <= -self._cfg.daily_loss_kill_usdc:
+        if self._cfg.daily_loss_kill_usdc > 0 and self.daily_pnl <= -self._cfg.daily_loss_kill_usdc:
             return True, f"daily_loss {self.daily_pnl:.0f}"
         if self.error_rate >= self._cfg.max_order_error_rate:
             return True, f"error_rate {self.error_rate:.2f}"

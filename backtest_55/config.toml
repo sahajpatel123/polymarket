@@ -40,10 +40,12 @@ market_notional_frac = 0.40
 event_group_frac = 0.50
 daily_loss_frac = 0.10
 market_loss_frac = 0.05
-max_market_concentration_pct = 0.25
-# Partial deploy: only this fraction of bankroll is live across markets;
-# rest is reserve (do not dump full capital into one event).
-capital_deploy_frac = 0.60
+max_market_concentration_pct = 0.50
+# Full deploy: 100% of bankroll is live. The number of markets is chosen
+# dynamically by recommend_max_markets() from bankroll + concentration cap:
+#   $55  -> 2 markets x $27.50
+#   $1000 -> up to hard cap, ~$100-250 per market
+capital_deploy_frac = 1.0
 # Soft-prefer markets ending within ~2 weeks when ranking portfolio.
 prefer_horizon_days = 14.0
 max_gas_cost_pct = 0.10

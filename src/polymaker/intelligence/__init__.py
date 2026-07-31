@@ -150,6 +150,10 @@ from polymaker.intelligence.resolution import (
     compute_alpha,
     estimate_resolution_probability,
 )
+from polymaker.intelligence.resolution_calibration import (
+    CalibrationRecord,
+    ResolutionCalibrator,
+)
 from polymaker.intelligence.review import (
     DaySummary,
     LocalMemoryStore,
@@ -206,6 +210,7 @@ __all__ = [
     "AntiGamingDetector",
     "AutocorrelationTracker",
     "CUSUMDetector",
+    "CalibrationRecord",
     "CalibrationTracker",
     "DEFAULT_MODEL",
     "DaySummary",
@@ -261,6 +266,7 @@ __all__ = [
     "RankedMarket",
     "RegimeDecision",
     "ResolvedPolicy",
+    "ResolutionCalibrator",
     "ResolutionSignal",
     "RewardEligibility",
     "ReviewResult",

@@ -152,7 +152,7 @@ def _replace_meta(meta, **kwargs):
 
 
 async def test_engine_skips_when_capital_insufficient(tmp_path, meta) -> None:
-    """With tiny bankroll + high rewards_min, recompute must not place quotes."""
+    """With tiny bankroll + high rewards_min, engine warns but quotes at exchange min."""
     eng = _engine_with_market(tmp_path, meta)
     _set_bankroll(eng, 25.0)
     # Force a reward min the bankroll cannot fund two-sided
@@ -161,11 +161,12 @@ async def test_engine_skips_when_capital_insufficient(tmp_path, meta) -> None:
     )
     _feed_book(eng, meta)
     await eng._recompute(meta.condition_id)
-    assert len(eng.state.orders) == 0
     gate = eng._reward_eligibility.get(meta.condition_id)
     assert gate is not None
     assert gate.skip is True
     assert "INSUFFICIENT" in gate.reason
+    # Engine still places orders at exchange minimum size despite capital shortfall
+    assert len(eng.state.orders) > 0
     eng.state.close()
     eng.catalog.close()
 

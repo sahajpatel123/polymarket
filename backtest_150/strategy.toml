@@ -26,7 +26,7 @@ reduce_only_hours   = 48
 halt_before_hours   = 6
 exit_urgency_s      = 900
 merge_min_size      = 20.0
-use_advanced_quoting = false
+use_as_reservation_price = false
 bankroll_usdc       = 0.0
 
 # Production candidate under 12h paper validation
@@ -58,7 +58,7 @@ reduce_only_hours   = 24
 halt_before_hours   = 2
 exit_urgency_s      = 900
 merge_min_size      = 20.0
-use_advanced_quoting = false
+use_as_reservation_price = false
 bankroll_usdc       = 0.0
 # Judgment: DecisionFramework gates dead/toxic tape and learns band position
 use_intelligence    = true

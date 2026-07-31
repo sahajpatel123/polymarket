@@ -56,8 +56,8 @@ NO  bid target = (1 − r) − δ
 Both entry legs are **BUY** (USDC collateral). A filled pair locks edge
 `1 − p − q` and can be merged back to collateral.
 
-**Size:** `base_size_usdc / price`, scaled by regime (TRENDING → 0.5), toxicity
-`1/(1+10·tox)`, risk headroom, and inventory taper `(1 − |u|)` on the adding
+**Size:** `base_size_usdc / price`, scaled by regime (TRENDING → 0.35), toxicity
+`1/(1+12·tox)`, risk headroom, and inventory taper `(1 − |u|)` on the adding
 side. Soft cap `q_soft_frac`: stop adding YES when `u ≥ q_soft_frac`, stop
 adding NO when `u ≤ −q_soft_frac`. REDUCE_ONLY posts exits only.
 
@@ -68,13 +68,8 @@ so reward-eligible resting orders actually score.
 
 **Exits** (`_maybe_exit`): SELL held inventory at a maker price between
 `token_FV + δ` and `best_bid + tick`, walked by urgency ∈ [0,1].
-REDUCE_ONLY forces urgency ≥ 0.5.
-
-> **Note:** `QuoteInputs.yes_exit_urgency` / `no_exit_urgency` default to `0.0`;
-> the engine does not currently compute hold-time / adverse-drift urgency from
-> `StrategyProfile.exit_urgency_s` (field exists for TOML compat, live path
-> unused). Exit urgency plumbing (engine → `QuoteInputs`) is preserved for
-> future use.
+REDUCE_ONLY forces urgency ≥ 0.5. Urgency is computed in the engine from
+hold time and `exit_urgency_s` (base), with toxicity bumps for adverse fills.
 
 ## Online estimators
 

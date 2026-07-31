@@ -41,7 +41,7 @@ SAFE_IMMEDIATE_KEYS: frozenset[str] = frozenset({
 FORBIDDEN_KEYS: frozenset[str] = frozenset({
     "q_max_usdc", "q_soft_frac", "base_size_usdc", "bankroll_usdc", "kelly_fraction",
     "max_open_orders_per_market", "reduce_only_hours", "halt_before_hours",
-    "merge_min_size", "reward_size_mult", "use_advanced_quoting",
+    "merge_min_size", "reward_size_mult", "use_as_reservation_price",
 })
 
 _FORBIDDEN_SUBSTRINGS = ("kill", "loss_cap", "daily_loss", "max_position", "exposure")
@@ -353,13 +353,20 @@ def _memory_snippets(memory: MemoryLike | None, n: int = 10) -> list[str]:
 
 
 IMPROVE_SYSTEM = (
-    "You are Polymaker's self-improvement analyst (reasoning required). "
+    "You are Polymaker's self-improvement analyst. Polymaker is a maker-only "
+    "market-making bot on Polymarket V2 that quotes post-only limit orders to earn "
+    "liquidity rewards (flat per qualifying order, within a reward band around mid) "
+    "and maker rebates (15-25% of taker fees from filled orders). Maker fee = 0%. "
+    "The strategy uses Avellaneda-Stoikov to position orders at the reward-band edge; "
+    "spread width does NOT change reward payout — only in-band survival matters. "
+    "Adverse selection on thin books is the #1 cost; TRENDING is frequently false "
+    "on quiet markets (regime machine already hardens against it). "
     "Given a trade journal and memory, return JSON only with keys: "
     "diagnosis (str), suggestion (str), expected_impact_pct (float), "
     "paper_validation_required (bool), profile_overrides (object of "
     "StrategyProfile field → new value). "
-    "Never propose changes to risk caps, daily loss, q_max_usdc, "
-    "base_size_usdc, bankroll, kelly_fraction, or use_advanced_quoting. "
+    "Never propose changes to risk caps, daily_loss_kill_usdc, q_max_usdc, "
+    "base_size_usdc, bankroll, kelly_fraction, or use_as_reservation_price. "
     "Prefer spread/regime-threshold tweaks. Be honest when no action helps."
 )
 

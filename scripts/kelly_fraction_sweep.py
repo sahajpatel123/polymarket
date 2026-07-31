@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Sweep kelly_fraction under advanced quoting (EV + OOS + significance).
 
-Baseline: use_advanced_quoting=true, kelly_fraction=0.25 (prior hard-coded).
+Baseline: use_as_reservation_price=true, kelly_fraction=0.25 (prior hard-coded).
 Candidates: other fractions. Prints quant_edge_eval verdict per value.
 
 Usage:
@@ -74,7 +74,7 @@ def main() -> int:
     base = load_named_profile(args.baseline_profile, config_dir=args.config_dir)
     # Advanced quoting ON with quarter-Kelly as the comparison baseline
     baseline = profile_from_overrides(
-        base, {"use_advanced_quoting": True, "kelly_fraction": 0.25, "bankroll_usdc": 30.0}
+        base, {"use_as_reservation_price": True, "kelly_fraction": 0.25, "bankroll_usdc": 30.0}
     )
     fracs = [float(x.strip()) for x in args.fractions.split(",") if x.strip()]
     meta = _meta(args)

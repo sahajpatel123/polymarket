@@ -23,6 +23,7 @@ dependencies = [
     "socksio>=1.0",
     "python-socks>=2.4",
     "py-builder-relayer-client>=0.0.2",
+    "scikit-learn>=1.5",
 ]
 
 [project.scripts]

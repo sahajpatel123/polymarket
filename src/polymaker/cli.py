@@ -78,27 +78,38 @@ def scan(
 def markets(
     config_dir: str = typer.Option("config", help="config directory"),
     limit: int = typer.Option(25, help="rows to show"),
+    scalp: bool = typer.Option(False, "--scalp", help="show only scalp-viable markets, ranked by scalp score"),
 ) -> None:
     """Show the top scored markets from the catalog."""
     from polymaker.catalog.store import CatalogStore
 
     cfg = Config.load(config_dir)
     store = CatalogStore(cfg.paths.db)
-    rows = store.top(limit)
+    rows = store.top(limit * 10 if scalp else limit)
     if not rows:
         console.print("[yellow]Catalog empty. Run `polymaker scan` first.[/yellow]")
         raise typer.Exit()
 
+    if scalp:
+        scalp_rows = [(m, sc) for m, sc in rows if sc.scalp_score > 0]
+        rows = sorted(scalp_rows, key=lambda ms: ms[1].scalp_score, reverse=True)[:limit]
+
     table = Table(title="Political markets by score")
-    for col in ("score", "reward/day", "rebate/day", "spread", "tick", "neg", "question"):
+    cols = ("score", "scalp", "reward/day", "rebate/day", "spread", "tick", "neg", "question")
+    for col in cols:
         table.add_column(col, justify="right" if col != "question" else "left")
     for meta, sc in rows:
+        scalp_cell = f"{sc.scalp_score:.2f}" if sc.scalp_score > 0 else "-"
         table.add_row(
-            f"{sc.score:.2f}", f"{meta.rewards_daily_rate:.0f}", f"{sc.rebate_potential:.0f}",
+            f"{sc.score:.2f}", scalp_cell, f"{meta.rewards_daily_rate:.0f}",
+            f"{sc.rebate_potential:.0f}",
             f"{sc.spread:.3f}", f"{meta.tick_size:g}", "Y" if meta.neg_risk else "-",
             meta.question[:60],
         )
     console.print(table)
+    if scalp and not any(ms[1].scalp_score > 0 for ms in scalp_rows):
+        console.print("[yellow]No scalp-viable markets yet — run `polymaker scan` to refresh, "
+                      "or widen the gate in catalog/scoring.py.[/yellow]")
     console.print("\nAdd one with: [bold]polymaker markets-add <slug>[/bold]  (slugs are in the catalog)")
 
 

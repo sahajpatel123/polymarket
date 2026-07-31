@@ -127,7 +127,7 @@ FORBIDDEN_LLM_PARAMS: frozenset[str] = frozenset({
     "halt_before_hours",
     "merge_min_size",
     "reward_size_mult",
-    "use_advanced_quoting",
+    "use_as_reservation_price",
 })
 
 # Forbidden LLM output fields: anything that smells like a direction.

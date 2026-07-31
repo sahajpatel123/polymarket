@@ -28,6 +28,9 @@ class MarketScore:
     estimated_share_of_pool: float = 0.0
     monopoly_diagnostic_usdc: float = 0.0
     capital_skip: bool = False
+    # Scalp profile ranking: flow-gated (0 if not scalp-viable). Kept additive
+    # so old score_json rows still deserialize (default 0.0).
+    scalp_score: float = 0.0
 
 
 def _mid(m: MarketMeta) -> float:
@@ -155,4 +158,97 @@ def score_market(m: MarketMeta, *, bankroll_usdc: float = 100.0) -> MarketScore:
         estimated_share_of_pool=round(plan.estimated_share_of_pool, 6),
         monopoly_diagnostic_usdc=round(plan.monopoly_diagnostic_usdc, 6),
         capital_skip=bool(plan.skip),
+        scalp_score=scalp_score(m),
     )
+
+
+# ── scalp-specific scoring (flow-gated market selection) ────────────────
+
+
+def scalp_viability(
+    m: MarketMeta,
+    *,
+    min_volume_24h: float = 5000.0,
+    max_spread_ticks: int = 5,
+    max_days_to_resolve: int = 30,
+) -> bool:
+    """Gate: is this market viable for the scalp-hot profile?
+
+    Scalping needs flow — a dead book can't be scalped regardless of quoting
+    speed. Three hard gates before we even consider scoring:
+
+      1. 24h CLOB volume ≥ floor (enough taker flow to fill our orders)
+      2. Spread ≤ max ticks (tight enough to capture the half-spread)
+      3. Days to end ≤ max (short-dated markets have faster resolution feedback)
+    """
+    if not m.fees_enabled:
+        return False
+    if m.volume_24hr < min_volume_24h:
+        return False
+
+    bb = m.best_bid or 0.0
+    ba = m.best_ask or 0.0
+    spread = ba - bb if bb > 0 and ba > 0 else 99.0
+    if spread / max(m.tick_size, 1e-9) > max_spread_ticks:
+        return False
+
+    if m.end_date_iso is not None:
+        try:
+            from datetime import datetime, timezone
+            end = datetime.fromisoformat(m.end_date_iso.replace("Z", "+00:00"))
+            days = (end - datetime.now(timezone.utc)).total_seconds() / 86400.0
+            if days > max_days_to_resolve:
+                return False
+        except (ValueError, TypeError):
+            pass
+
+    return True
+
+
+def scalp_trade_rate(m: MarketMeta) -> float:
+    """Estimated trades/hour from 24h volume and typical trade size.
+
+    Models the fill rate available to a scalp market maker. Used for ranking
+    scalp-viable markets by expected turnover (fills/hour).
+    """
+    if m.volume_24hr <= 0 or m.tick_size <= 0:
+        return 0.0
+    mid = _mid(m)
+    # Assume typical taker size is ~100 USDC notional
+    avg_trade_shares = 100.0 / max(mid, 0.01)
+    # Shares per day = volume_24h / mid
+    shares_per_day = m.volume_24hr / max(mid, 0.01)
+    trades_per_day = shares_per_day / max(avg_trade_shares, 1.0) if avg_trade_shares > 0 else 0.0
+    return trades_per_day / 24.0
+
+
+def scalp_score(m: MarketMeta) -> float:
+    """Scalp-specific market attractiveness score.
+
+    Primary drivers (sorted by weight):
+      - Fill rate (trades/hour) — can we actually scalp this book?
+      - Spread tightness — tighter = more edge per scalp
+      - Volume 24h — raw flow proxy
+      - Rewards — bonus, not primary (scalp is spread capture)
+
+    Returns 0.0 if the market fails scalp_viability gates.
+    """
+    if not scalp_viability(m):
+        return 0.0
+
+    mid = _mid(m)
+    bb = m.best_bid or 0.0
+    ba = m.best_ask or 0.0
+    spread = (ba - bb) / max(m.tick_size, 1e-9) if bb > 0 and ba > 0 else 99.0
+
+    trades_per_hour = scalp_trade_rate(m)
+    # Normalise: 5 trades/hr = 1.0, 0 = 0, cap at 2.0
+    flow_score = min(2.0, trades_per_hour / 5.0)
+    # Spread: 1 tick = 1.0, 5 ticks = 0.2, 10+ ticks = 0
+    spread_score = max(0.0, 1.0 - (spread - 1.0) / 10.0) if spread <= 10 else 0.0
+    # Volume bonus: log-scale
+    vol_score = min(1.0, max(0.0, (m.volume_24hr - 5000.0) / 50000.0))
+    # Reward bonus: small cap
+    rew_score = min(0.3, m.rewards_daily_rate / 500.0) if m.rewards_daily_rate > 0 else 0.0
+
+    return round(0.45 * flow_score + 0.25 * spread_score + 0.20 * vol_score + 0.10 * rew_score, 4)

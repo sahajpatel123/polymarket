@@ -100,13 +100,26 @@ def test_cusum_reset():
 
 
 def test_hmm_basic():
-    """HMM should classify high-vol state correctly."""
+    """HMM classifies volatility from innovations (changes), not levels."""
     hmm = VolatilityRegimeHMM(sigma_low=0.001, sigma_high=0.01)
-    # Feed calm observations
-    for _ in range(20):
+    # First call seeds the level, does NOT update state
+    hmm.update(0.50)
+    assert hmm.n_updates == 0  # first call is initialization only
+    assert hmm.alpha == [0.5, 0.5]  # prior preserved
+    # Feed calm observations (no change → innovation=0 → emission favors low-vol)
+    for _ in range(19):
         hmm.update(0.50)
-    # After calm, P(low-vol) should be high
-    assert hmm.alpha[0] > 0.5
+    # After 19 calm updates, P(low-vol) should be very high
+    assert hmm.alpha[0] > 0.99
+    assert hmm.n_updates == 19
+
+    # Now feed a jump to high-vol: large innovation
+    hmm2 = VolatilityRegimeHMM(sigma_low=0.001, sigma_high=0.01)
+    hmm2.update(0.50)  # seed
+    for _ in range(5):
+        hmm2.update(0.50)  # calm
+    hmm2.update(0.52)  # 20-tick jump → P(high-vol) spikes
+    assert hmm2.alpha[0] < 0.5
 
 
 def test_signal_processor_combines():

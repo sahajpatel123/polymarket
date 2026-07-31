@@ -1,4 +1,4 @@
-# 12h paper validation config — capital-adaptive, production live_scaled path.
+# 4h paper validation config — $50 capital test (new S-tier architecture)
 [wallet]
 chain_id = 137
 signature_type = 3
@@ -9,8 +9,8 @@ polygon_rpc = "https://polygon-bor-rpc.publicnode.com"
 
 [engine]
 debounce_ms = 250
-quoter_tick_s = 60
-reconcile_interval_s = 20
+quoter_tick_s = 30
+reconcile_interval_s = 15
 catalog_refresh_s = 300
 heartbeat = true
 heartbeat_interval_s = 5
@@ -31,19 +31,17 @@ dashboard_open_browser = true
 
 [risk]
 # Single capital knob — ALL caps derive from this. Change this number.
-# At $500: $25/market, $250 daily loss kill, $125 max drawdown.
-# At $1000: $50/market, $500 daily loss kill, $250 max drawdown.
-# Minimum viable capital for 200-share reward-min markets: ~$200.
-bankroll_usdc = 500.0
+# At $50: ~$2.5/market, ~$25 daily loss kill, ~$12.5 max drawdown.
+bankroll_usdc = 50.0
 total_exposure_frac = 1.0
 market_notional_frac = 0.40
 event_group_frac = 0.50
 daily_loss_frac = 0.10
 market_loss_frac = 0.05
-max_market_concentration_pct = 0.25
-# Partial deploy: only this fraction of bankroll is live across markets;
-# rest is reserve (do not dump full capital into one event).
-capital_deploy_frac = 0.60
+max_market_concentration_pct = 0.50
+# Full deploy: 100% of bankroll is live. Market count scales with capital
+# via recommend_max_markets(): $50 -> 2 x 50%, $1000 -> ~10 markets.
+capital_deploy_frac = 1.0
 # Soft-prefer markets ending within ~2 weeks when ranking portfolio.
 prefer_horizon_days = 14.0
 max_gas_cost_pct = 0.10
@@ -55,8 +53,8 @@ max_order_error_rate = 0.25
 max_total_exposure_usdc = 30.0
 max_event_group_loss_usdc = 15.0
 max_market_notional_usdc = 12.0
-daily_loss_kill_usdc = 3.0
-max_market_loss_usdc = 1.5
+daily_loss_kill_usdc = 5.0
+max_market_loss_usdc = 2.5
 
 
 [execution]

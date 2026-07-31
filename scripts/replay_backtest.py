@@ -6,7 +6,14 @@ No live connection. Output is analyzable with scripts/paper_metrics.py.
 Usage:
   uv run python scripts/replay_backtest.py --journal path/to/paper.jsonl \\
       --metrics /tmp/metrics-replay.jsonl
+  uv run python scripts/replay_backtest.py --profile scalp-hot \\
+      --journal journal/paper.jsonl --metrics /tmp/metrics-scalp.jsonl
   uv run python scripts/paper_metrics.py --log /tmp/metrics-replay.jsonl
+
+--profile loads a named profile from the strategy.toml in --config-dir
+(e.g. scalp-hot for the turnover-tuned scalp profile). --fill-mode defaults
+to conservative (promotion gate); pass optimistic/base to explore the
+upper bound of fill rate.
 """
 
 from __future__ import annotations
@@ -16,7 +23,7 @@ import json
 import sys
 from pathlib import Path
 
-from polymaker.config import StrategyProfile
+from polymaker.config import Config
 from polymaker.domain import MarketMeta, TokenMeta
 from polymaker.metrics.analyze import analyze
 from polymaker.replay import run_replay
@@ -51,6 +58,12 @@ def main() -> int:
     ap.add_argument("--no-token", default="no-token")
     ap.add_argument("--condition-id", default="0xreplay")
     ap.add_argument("--tick-size", type=float, default=0.01)
+    ap.add_argument("--config-dir", default="config", help="config dir with strategy.toml")
+    ap.add_argument("--profile", default="political-longdated",
+                    help="named StrategyProfile from strategy.toml (e.g. scalp-hot)")
+    ap.add_argument("--fill-mode", default="conservative",
+                    choices=("optimistic", "base", "conservative"),
+                    help="fill simulator mode (default conservative = promotion gate)")
     args = ap.parse_args()
 
     journal = Path(args.journal)
@@ -78,7 +91,15 @@ def main() -> int:
         rebate_rate=meta.rebate_rate,
     )
     metrics_path = Path(args.metrics)
-    result = run_replay(journal, meta, StrategyProfile(), metrics_path)
+    cfg = Config.load(args.config_dir)
+    profile = cfg.profiles.get(args.profile)
+    if profile is None:
+        print(f"status=NO_PROFILE profile={args.profile}", file=sys.stderr)
+        return 3
+    result = run_replay(
+        journal, meta, profile, metrics_path,
+        fill_mode=args.fill_mode,
+    )
     print(json.dumps({
         "events_read": result.events_read,
         "events_applied": result.events_applied,

@@ -170,44 +170,62 @@ class CUSUMDetector:
 class VolatilityRegimeHMM:
     """Hidden Markov Model with 2 states: low-vol and high-vol.
 
+    The emission model operates on the *innovation* (change between
+    consecutive observations), not on raw levels. This keeps sigma
+    parameters in volatility-of-change units, invariant to the
+    absolute price level.
+
     Forward algorithm for state probabilities:
       alpha_t(state) = P(state_t, observations_1..t)
       P(state_t | observations_1..t) = alpha_t(state) / sum(alpha_t)
 
-    Transition matrix (log-uniform prior):
+    Transition matrix:
       [[0.98, 0.02],   # stay in low-vol, transition to high-vol
        [0.05, 0.95]]   # transition to low-vol, stay in high-vol
 
-    Emission: Gaussian with state-dependent variance.
+    Emission: P(innovation | state) ~ N(0, sigma_state^2).
     """
 
-    # Transition matrix
-    T: list = field(default_factory=lambda: [[0.98, 0.02], [0.05, 0.95]])
-    # State-dependent volatility priors
+    # Transition matrix (columns sum to 1.0: each column = FROM that state)
+    # Column 0 = current low-vol: P(stay_low)=0.98, P(switch_high)=0.02
+    # Column 1 = current high-vol: P(switch_low)=0.05, P(stay_high)=0.95
+    T: list = field(default_factory=lambda: [[0.98, 0.05], [0.02, 0.95]])
+    # State-dependent volatility of INNOVATIONS (price changes), not levels
     sigma_low: float = 0.001
     sigma_high: float = 0.01
     # Current state probabilities [P(low), P(high)]
     alpha: list = field(default_factory=lambda: [0.5, 0.5])
     n_updates: int = 0
     last_observation: float = 0.0
+    _initialized: bool = False
 
     def update(self, observation: float) -> list[float]:
-        """Update with new mid-price observation.
+        """Update with a new observation (mid-price level).
+
+        Internally computes the innovation = observation - last_observation
+        and uses it for the emission model. The first call seeds the level
+        and returns the prior without updating.
 
         Returns [P(low-vol), P(high-vol)] posterior probabilities.
         """
-        # Emission probability: P(obs | state) = Gaussian with state sigma
+        if not self._initialized:
+            self.last_observation = observation
+            self._initialized = True
+            return list(self.alpha)
+
+        innovation = observation - self.last_observation
+
+        # Emission: P(innovation | state) ~ N(0, sigma^2)
         def emission_prob(sigma: float) -> float:
             return math.exp(
-                -0.5 * ((observation - self.last_observation) / sigma) ** 2
+                -0.5 * (innovation / sigma) ** 2
             ) / (sigma * math.sqrt(2 * math.pi))
+
         e = [emission_prob(self.sigma_low), emission_prob(self.sigma_high)]
-        # Predict
         pred = [
             sum(self.T[i][j] * self.alpha[j] for j in range(2))
             for i in range(2)
         ]
-        # Update
         unnorm = [pred[i] * e[i] for i in range(2)]
         total = sum(unnorm)
         if total > 0:

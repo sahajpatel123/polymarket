@@ -259,25 +259,32 @@ class StrategyProfile(BaseModel):
     end_date_taper_days: float = 7.0
     # exits
     merge_min_size: float = 20.0
-    # TOML-compat unused by live path (C-04) — engine never maps hold-time → urgency.
+    # Seconds hold-time → full exit urgency (engine maps hold / exit_urgency_s → [0,1]).
     exit_urgency_s: float = 900.0
+    # ── Risk-managed exits (TP/SL) ──
+    # Take-profit: exit at fill_price * (1 + take_profit_pct). 0 = disabled.
+    take_profit_pct: float = 0.0
+    # Stop-loss: exit at fill_price * (1 - stop_loss_pct). 0 = disabled.
+    stop_loss_pct: float = 0.0
+    # Max dollar loss per individual fill. If TP/SL are set and the fill size
+    # would exceed this risk, the exit is sized down. 0 = disabled.
+    max_risk_per_trade_usdc: float = 0.0
+    # Seconds before TP/SL exits start walking toward the touch (urgency ramp).
+    tp_sl_urgency_s: float = 60.0
     # ── order book safety ──
     # Max open orders per market (per side). Prevents order book accumulation
     # when the strategy requotes on every book change. With layers=3 and
     # max_open_orders_per_market=2, each side has at most 2 orders = 4 total
     # per market. Set to 0 to disable.
     max_open_orders_per_market: int = 0
-    # ── advanced quoting (Tier 2 opt-in) ──
-    # When True, the engine uses the Avellaneda-Stoikov optimal pricing
-    # model + Kelly-inspired sizing instead of the simple linear skew.
-    # See strategy/advanced_quoting.py and docs/ADVANCED_QUOTING.md.
-    # Default: False (use simple model for safety until backtested).
-    use_advanced_quoting: bool = False
+    # ── quoting model ──
+    # When True, inventory skew uses the Avellaneda-Stoikov reservation
+    # price (stochastic control) instead of the simpler quadratic heuristic.
+    # Kelly sizing runs unconditionally when kelly_fraction > 0.
+    use_as_reservation_price: bool = False
     # Total bankroll for Kelly sizing (USD). When 0, uses profile base_size.
-    # For a $30 paper account, set this to 30.0.
     bankroll_usdc: float = 0.0
-    # Fraction of full Kelly to deploy (0.25 = quarter-Kelly). Only used when
-    # use_advanced_quoting is True. Default matches prior hard-coded value.
+    # Fraction of full Kelly to deploy (0.25 = quarter-Kelly).
     kelly_fraction: float = 0.25
     # ── intelligence / judgment layer ──
     # When True, DecisionFramework gates quoting (skip dead/stale/toxic),

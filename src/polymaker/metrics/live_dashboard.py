@@ -28,7 +28,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlparse
 
 log = logging.getLogger("polymaker.metrics.live_dashboard")
@@ -54,7 +54,7 @@ def _require_loopback_host(host: str) -> str:
         "TRUE",
         "yes",
     }:
-        log.warning("dashboard_remote_bind_allowed", host=h)
+        log.warning("dashboard_remote_bind_allowed host=%s", h)
         return h
     raise ValueError(
         f"dashboard host {h!r} is not loopback; use 127.0.0.1 "
@@ -83,6 +83,9 @@ class DashboardSnapshot:
     n_cancel: int
     realized_spread_usdc: float
     inventory_peak: float
+    # Recent persisted equity marks, oldest first. Kept deliberately small so
+    # the live endpoint stays light while the UI can render a useful trend.
+    equity_history: list[dict[str, float]] = field(default_factory=list)
     markout: dict[str, float] = field(default_factory=dict)
     markets: list[dict[str, Any]] = field(default_factory=list)
     positions: list[dict[str, Any]] = field(default_factory=list)
@@ -126,23 +129,24 @@ def _read_outage(log_dir: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return payload if isinstance(payload, dict) else {}
     except Exception:
         return {}
 
 
-_DB_CACHE: dict[str, tuple[float, float, int, Any]] = {}
+_DB_CACHE: dict[str, tuple[float, float, int, object]] = {}
 _DB_CACHE_TTL_S = 1.5
 _CACHE_MAX_KEYS = 32
 
 
-def _cache_put(cache: dict[str, Any], key: str, value: Any) -> None:
+def _cache_put[CacheValue](cache: dict[str, CacheValue], key: str, value: CacheValue) -> None:
     cache[key] = value
     while len(cache) > _CACHE_MAX_KEYS:
         cache.pop(next(iter(cache)), None)
 
 
-def _db_cache_get(path: Path, kind: str) -> Any | None:
+def _db_cache_get(path: Path, kind: str) -> object | None:
     if not path.exists():
         return None
     try:
@@ -163,7 +167,7 @@ def _db_cache_get(path: Path, kind: str) -> Any | None:
     return None
 
 
-def _db_cache_set(path: Path, kind: str, payload: Any) -> None:
+def _db_cache_set(path: Path, kind: str, payload: object) -> None:
     try:
         st = path.stat()
         key = f"{kind}:{path.resolve()}"
@@ -183,7 +187,7 @@ def _read_pnl(db_path: Path) -> dict[str, float | None]:
         return out
     cached = _db_cache_get(db_path, "pnl")
     if isinstance(cached, dict):
-        return cached  # type: ignore[return-value]
+        return cast(dict[str, float | None], cached)
     try:
         import sqlite3
 
@@ -212,15 +216,21 @@ def _read_state_store(db_path: Path) -> tuple[int, list[dict[str, Any]]]:
         return 0, []
     cached = _db_cache_get(db_path, "state")
     if isinstance(cached, tuple) and len(cached) == 2:
-        return cached  # type: ignore[return-value]
+        cached_orders, cached_positions = cached
+        if isinstance(cached_orders, int) and isinstance(cached_positions, list):
+            return cached_orders, cast(list[dict[str, Any]], cached_positions)
     try:
         from polymaker.state.store import StateStore
 
         store = StateStore(db_path)
         snap = store.snapshot()
-        open_orders = int(snap.get("open_orders") or 0)
-        positions = []
-        for tok, p in (snap.get("positions") or {}).items():
+        open_orders_raw = snap.get("open_orders")
+        open_orders = int(open_orders_raw) if isinstance(open_orders_raw, int | float | str) else 0
+        positions: list[dict[str, Any]] = []
+        raw_positions = snap.get("positions")
+        for tok, p in raw_positions.items() if isinstance(raw_positions, dict) else []:
+            if not isinstance(p, dict):
+                continue
             if abs(float(p.get("size") or 0)) < 1e-9:
                 continue
             positions.append(
@@ -520,7 +530,7 @@ def build_snapshot_from_engine(engine: Any) -> DashboardSnapshot:
         )
     )
 
-    risk_extra = {
+    risk_extra: dict[str, Any] = {
         "halted_markets": len(getattr(engine, "_halted", set())),
         "llm_paused": len(getattr(engine, "_llm_paused", set())),
         "running": bool(getattr(engine, "_running", False)),
@@ -611,8 +621,9 @@ def build_snapshot_from_engine(engine: Any) -> DashboardSnapshot:
     snap.links = links
 
     dash = getattr(engine, "_live_dashboard", None)
-    if dash is not None and getattr(dash, "url", ""):
-        snap.url_hint = str(dash.url)
+    url_hint = getattr(dash, "url", None) if dash is not None else None
+    if isinstance(url_hint, str) and url_hint:
+        snap.url_hint = url_hint
 
     # Escalate health when live links are blind (engine path only).
     if not halt_reason:
@@ -1402,7 +1413,15 @@ def _pick_port(host: str, preferred: int, span: int = 15) -> int:
     raise OSError(f"no free dashboard port near {preferred}")
 
 
-class _IPv6ThreadingHTTPServer(ThreadingHTTPServer):
+class _DashboardHTTPServer(ThreadingHTTPServer):
+    """HTTP server with the snapshot state shared by request handlers."""
+
+    snapshot_fn: Callable[[], dict[str, Any]]
+    last_snapshot: dict[str, Any] | None
+    last_snapshot_at: float | None
+
+
+class _IPv6ThreadingHTTPServer(_DashboardHTTPServer):
     """ThreadingHTTPServer variant for the supported ``::1`` bind target."""
 
     address_family = socket.AF_INET6
@@ -1431,11 +1450,11 @@ class LiveDashboard:
         if self._httpd is not None:
             return self.url
         port = _pick_port(self.host, self.port)
-        server_cls = _IPv6ThreadingHTTPServer if ":" in self.host else ThreadingHTTPServer
+        server_cls = _IPv6ThreadingHTTPServer if ":" in self.host else _DashboardHTTPServer
         httpd = server_cls((self.host, port), _Handler)
-        httpd.snapshot_fn = self.snapshot_fn  # type: ignore[attr-defined]
-        httpd.last_snapshot = None  # type: ignore[attr-defined]
-        httpd.last_snapshot_at = None  # type: ignore[attr-defined]
+        httpd.snapshot_fn = self.snapshot_fn
+        httpd.last_snapshot = None
+        httpd.last_snapshot_at = None
         self._httpd = httpd
         # An ephemeral port (0) is resolved only after server construction.
         self.port = int(httpd.server_address[1])
@@ -1444,7 +1463,7 @@ class LiveDashboard:
         t = threading.Thread(target=httpd.serve_forever, name="polymaker-dashboard", daemon=True)
         t.start()
         self._thread = t
-        log.info("dashboard_listening", url=self.url)
+        log.info("dashboard_listening url=%s", self.url)
         if self.open_browser:
             with contextlib.suppress(Exception):
                 webbrowser.open(self.url)
@@ -1476,5 +1495,5 @@ def start_for_engine(
 
     dash = LiveDashboard(_snap, host=host, port=port, open_browser=open_browser)
     dash.start()
-    engine._live_dashboard = dash  # type: ignore[attr-defined]
+    engine._live_dashboard = dash
     return dash

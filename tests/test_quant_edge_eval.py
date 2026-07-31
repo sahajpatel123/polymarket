@@ -162,7 +162,7 @@ def test_quant_edge_eval_runs(tmp_path: Path):
     journal = tmp_path / "j.jsonl"
     _journal(journal, n=60)
     baseline = StrategyProfile()
-    candidate = profile_from_overrides(baseline, {"use_advanced_quoting": True})
+    candidate = profile_from_overrides(baseline, {"use_as_reservation_price": True})
     result = evaluate_quant_edge(
         journal,
         _meta(),
@@ -193,7 +193,7 @@ def test_quant_edge_eval_fill_mode_optimistic(tmp_path: Path):
     journal = tmp_path / "j.jsonl"
     _journal(journal, n=60)
     baseline = StrategyProfile()
-    candidate = profile_from_overrides(baseline, {"use_advanced_quoting": True})
+    candidate = profile_from_overrides(baseline, {"use_as_reservation_price": True})
     result = evaluate_quant_edge(
         journal,
         _meta(),

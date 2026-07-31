@@ -82,8 +82,8 @@ def test_kelly_fraction_profile_changes_size():
         second_bid=0.47, second_ask=0.53, bid_depth=200, ask_depth=200,
     )
     pos = Position(token_id="y", size=0.0)
-    base = StrategyProfile(use_advanced_quoting=True, bankroll_usdc=100.0, kelly_fraction=0.25)
-    half = StrategyProfile(use_advanced_quoting=True, bankroll_usdc=100.0, kelly_fraction=0.5)
+    base = StrategyProfile(bankroll_usdc=100.0, kelly_fraction=0.25)
+    half = StrategyProfile(bankroll_usdc=100.0, kelly_fraction=0.5)
 
     def _run(p: StrategyProfile):
         return compute_advanced_quotes(

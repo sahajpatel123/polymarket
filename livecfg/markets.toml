@@ -8,3 +8,8 @@ enabled = true
 slug    = "will-jd-vance-win-the-2028-republican-presidential-nomination"
 profile = "live_scaled"
 enabled = true
+
+[[markets]]
+slug    = "will-3-sanders-endorsees-win-august-4-primaries-20260727155934643"
+profile = "live_scaled"
+enabled = true

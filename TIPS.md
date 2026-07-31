@@ -88,13 +88,21 @@ so the failure modes below are ones that actually bit us, not hypotheticals.
 - **Liquidity rewards** = a *fixed* daily pool split by your Qmin share. Diminishing
   returns — past ~a third of the pool you're fighting yourself. Sweet spot is a
   small-to-mid size on a market with a real pool and light competition.
-- **Maker rebates** = 25% (most markets) or 20% (high-fee) of taker fees,
-  **uncapped** and volume-driven. Modest on quiet markets, dominant on busy ones —
-  but you only earn them on orders that **fill**, so they come coupled with
-  inventory/adverse-selection risk.
-- **Taker fee** = `rate × p(1-p)` per share. `rate` is 0.04 in the fee schedule and
-  the client library treats it as **4%** (≈2–3% of notional). **Verify against the
-  UI** — if it actually shows 0.4%, every rebate estimate is 10× too high.
+- **Maker rebates** = 15–25% of taker fees (varies by market; read live from
+  Gamma `feeSchedule.rebateRate`). **Uncapped** and volume-driven. Modest on quiet
+  markets, dominant on busy ones — but you only earn them on orders that **fill**,
+  so they come coupled with inventory/adverse-selection risk.
+- **Taker fee** = `feeRate × p × (1−p)` per share (V2 dynamic curve, peaks at 50¢).
+  | Category | `feeRate` | Effective at mid (50¢) | Notes |
+  |----------|-----------|------------------------|-------|
+  | Geopolitics & World Events | 0.00 (0%) | $0.00 | Entirely fee-free |
+  | Finance, Politics, Tech, Mentions | 0.04 (4%) | ~2% of notional | Most common |
+  | Sports, Economics, Culture, Weather | 0.05 (5%) | ~2.5% of notional | |
+  | Crypto | 0.07 (7%) | ~3.5% of notional | |
+  - On a BUY: fee is deducted in **shares** (you receive fewer tokens).
+  - On a SELL: fee is deducted in **USDC** (you receive less cash).
+  - Winnings are fee-free: winning shares always redeem for a full $1.00 USDC.
+  - **Confirmed:** `0.04` in the fee schedule means 4%, not 0.4%. Code math is correct.
 
 ## Recommended next directions
 
@@ -109,8 +117,6 @@ so the failure modes below are ones that actually bit us, not hypotheticals.
   things that actually decide profit: **fill probability** (are we at the touch when
   a taker crosses?) and **adverse selection** (where's the price 30–60s after a
   fill?). This turns the live losses above into a one-time data-collection cost.
-- **Confirm the fee rate** (4% vs 0.4%) from a real taker fill / the UI — it 10×'s
-  all rebate math.
 - **Per-fill markout logging** + a **reward-band watchdog** alert (fires if a
   resting order drifts outside the band, i.e. stops scoring). We were half-blind to
   toxicity until we added `tox`/`flowz` to the requote line — go further.

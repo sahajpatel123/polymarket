@@ -563,6 +563,10 @@ def _optimize_fixed_slots(
     used: set[str] = set()
     # Cap per market off FULL bankroll so slices stay small vs total wallet
     max_slice = max(1e-6, b * float(max_concentration))
+    # Fair slice: divide working capital across the allowed slots so the
+    # number of live markets scales with capital (not pinned at 1/conc).
+    # $55 @ N=2 -> $27.50 each; $1000 @ N=6 -> ~$167 each; etc.
+    slot_budget = max(1e-6, working / int(max_markets))
 
     while remaining > 1e-6 and len(picks) < int(max_markets):
         best: PortfolioPick | None = None
@@ -571,7 +575,7 @@ def _optimize_fixed_slots(
             cid = str(m.get("condition_id") or "")
             if not cid or cid in used:
                 continue
-            alloc = min(remaining, max_slice)
+            alloc = min(remaining, slot_budget, max_slice)
             if alloc <= 0:
                 continue
             kw = _market_kwargs(m)
@@ -649,21 +653,31 @@ def recommend_max_markets(
     capital_deploy_frac: float = 1.0,
     prefer_horizon_days: float = 0.0,
     candidate_slots: Sequence[int] = (1, 2, 3, 4, 6, 8, 10, 12, 16, 20),
+    min_capital_per_market_usdc: float | None = None,
 ) -> int:
     """Choose simultaneous market slots that maximize risk-adjusted portfolio $.
 
-    Not a fixed N — best N for *this* capital and reward surface.
+    Not a fixed N — best N for *this* capital and reward surface. When
+    ``min_capital_per_market_usdc`` is given, slots requiring more capital
+    than ``bankroll × deploy_frac / N`` are pruned (a market where we can't
+    quote at least a viable notional is not worth a slot).
     """
     b = max(0.0, float(bankroll_usdc))
     hard = max(1, int(hard_cap))
     if b <= 0 or not markets:
         return 1
+    deploy = min(1.0, max(0.05, float(capital_deploy_frac)))
+    slots = [int(n) for n in candidate_slots if 1 <= int(n) <= hard]
+    if min_capital_per_market_usdc is not None and min_capital_per_market_usdc > 0:
+        # A slot only makes sense if we can fund it with viable notional.
+        working = b * deploy
+        feasible = max(1, int(working / min_capital_per_market_usdc))
+        slots = [n for n in slots if n <= feasible]
+    if not slots:
+        slots = [1]
     best_n = 1
     best_ra = -1.0
-    for n in candidate_slots:
-        n_i = int(n)
-        if n_i < 1 or n_i > hard:
-            continue
+    for n_i in slots:
         port = _optimize_fixed_slots(
             markets,
             bankroll_usdc=b,
@@ -700,6 +714,7 @@ def _optimize_with_dynamic_slots(
     hard_cap_markets: int,
     capital_deploy_frac: float = 1.0,
     prefer_horizon_days: float = 0.0,
+    min_capital_per_market_usdc: float | None = None,
 ) -> MultiMarketPortfolio:
     n = recommend_max_markets(
         markets,
@@ -709,6 +724,7 @@ def _optimize_with_dynamic_slots(
         as_weight=as_weight,
         capital_deploy_frac=capital_deploy_frac,
         prefer_horizon_days=prefer_horizon_days,
+        min_capital_per_market_usdc=min_capital_per_market_usdc,
     )
     return _optimize_fixed_slots(
         markets,

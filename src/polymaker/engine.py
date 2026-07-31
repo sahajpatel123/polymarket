@@ -34,7 +34,7 @@ from polymaker.catalog.gamma import GammaClient, fetch_reward_rates, parse_marke
 from polymaker.catalog.scoring import score_market
 from polymaker.catalog.store import CatalogStore
 from polymaker.config import Config, StrategyProfile
-from polymaker.domain import Fill, MarketMeta, Regime, Side
+from polymaker.domain import Fill, MarketMeta, Quote, Regime, Side, TargetQuotes
 from polymaker.execution.gateway import ExecutionGateway
 from polymaker.execution.reconciler import reconcile
 from polymaker.intelligence import (
@@ -77,6 +77,9 @@ from polymaker.strategy.avellaneda_stoikov import (
     gamma_from_profile,
     kappa_from_liquidity,
 )
+from polymaker.strategy.fill_model import FillFeatures, FillModel, FillTrainingStore, extract_features
+from polymaker.strategy.online_opt import MarketOptimizer, OnlineOptimizerManager, OptimizerParams
+from polymaker.strategy.regime_strategies import StrategyContext, dispatch_strategy
 from polymaker.strategy.decision_pipeline import build_targets
 from polymaker.strategy.estimators import (
     FlowEstimator,
@@ -84,7 +87,6 @@ from polymaker.strategy.estimators import (
     MultiHorizonMarkout,
     VolEstimator,
 )
-from polymaker.strategy.kelly import KellyInputs, kelly_size
 from polymaker.strategy.quoting import compute_fair_value
 from polymaker.strategy.regime import RegimeMachine
 from polymaker.userstream.client import UserStream
@@ -120,6 +122,13 @@ class Engine:
         self.profiles: dict[str, StrategyProfile] = {}
         self.est: dict[str, MarketEstimators] = {}
         self.regime_m: dict[str, RegimeMachine] = {}
+        # S-tier pillars: fill model + regime strategies + online optimizer
+        self.fill_model = FillModel()
+        self.fill_store = FillTrainingStore()
+        self.opt_mgr = OnlineOptimizerManager()
+        self._last_model_retrain_ts: float = 0.0
+        # TP/SL risk-managed exits: condition_id → {token_id: (tp_quote, sl_quote)}
+        self._tp_sl_targets: dict[str, dict[str, tuple[Quote | None, Quote | None]]] = {}
         self._dirty: dict[str, asyncio.Event] = {}
         self._sweep: dict[str, bool] = {}
         self._merging: set[str] = set()
@@ -563,10 +572,7 @@ class Engine:
         return MarketEstimators(
             vol=VolEstimator(p.vol_short_halflife_s, p.vol_long_halflife_s),
             flow=FlowEstimator(p.flow_ewma_halflife_s),
-            markout=MultiHorizonMarkout(
-                horizons_s=(30.0, 120.0, 300.0),
-                weights=(0.5, 0.3, 0.2),
-            ),
+            markout=MultiHorizonMarkout(),
         )
 
     # ── dynamic market management (auto-discovery / hot-reload) ──────────
@@ -1644,6 +1650,9 @@ class Engine:
         conc = float(self.cfg.risk.max_market_concentration_pct or 0.4)
         deploy = float(getattr(self.cfg.risk, "capital_deploy_frac", 0.6) or 0.6)
         horizon = float(getattr(self.cfg.risk, "prefer_horizon_days", 14.0) or 0.0)
+        # Minimum viable notional per market so market count scales with
+        # capital: $55 -> ~2 markets, $1000 -> ~10, $5000 -> up to hard cap.
+        min_cap_mkt = _min_viable_market_capital(cand_dicts)
         dyn_n = recommend_max_markets(
             cand_dicts,
             bankroll_usdc=bankroll,
@@ -1651,6 +1660,7 @@ class Engine:
             max_concentration=conc,
             capital_deploy_frac=deploy,
             prefer_horizon_days=horizon,
+            min_capital_per_market_usdc=min_cap_mkt,
         )
         port = optimize_multi_market_portfolio(
             cand_dicts,
@@ -1673,9 +1683,10 @@ class Engine:
             for _sc_val, meta in sorted(scored, key=lambda x: -x[0]):
                 if meta.condition_id not in picked:
                     ordered.append(meta)
-            self._discovery_capital = {
-                p.condition_id: p.allocated_usdc for p in port.picks
-            }
+            self._discovery_capital.clear()
+            self._discovery_capital.update(
+                {p.condition_id: p.allocated_usdc for p in port.picks}
+            )
             log.info(
                 "discovery_portfolio",
                 n_picks=port.n_markets,
@@ -1685,7 +1696,7 @@ class Engine:
             )
         else:
             ordered = [m for _, m in sorted(scored, key=lambda x: -x[0])]
-            self._discovery_capital = {}
+            self._discovery_capital.clear()
 
         auto_count = sum(
             1 for cid in self.metas
@@ -1995,8 +2006,8 @@ class Engine:
     def _simulate_fills(self, tp: TradePrint) -> None:
         """Match a trade print against paper-mode resting orders and process fills.
 
-        Caller is responsible for acquiring self._fill_sim_lock to avoid
-        concurrent mutation of the fill simulator's internal state.
+        Runs synchronously on the event-loop thread from _on_trade (which never
+        yields), so no lock is needed — individual invocations are already atomic.
         """
         fills = self._fill_sim.match(tp.asset_id, tp.aggressor, tp.price, tp.size, tp.ts)
         if not fills:
@@ -2041,13 +2052,15 @@ class Engine:
         markout = -float(getattr(est.markout, "toxicity", 0.0) or 0.0)
         if hasattr(est.markout, "short_term_toxicity"):
             markout = -float(est.markout.short_term_toxicity or 0.0)
-        # Judgment: learn from fill edge + markout proxy (toxicity)
+        # Judgment + regime machine: learn from fill edge + markout proxy
         if p is not None and p.use_intelligence:
             tick = max(meta.tick_size, 1e-9)
-            # Offset of fill vs FV in ticks (BUY below FV → negative)
             offset = int(round((fill.price - token_fv) / tick))
             edge = (token_fv - fill.price) if fill.side is Side.BUY else (fill.price - token_fv)
             self.intel.record_fill(cid, offset, edge, markout)
+            rm = self.regime_m.get(cid)
+            if rm is not None:
+                rm.record_fill(offset, edge, markout)
         # Feed degradation detector (markout signed: + good for us)
         self.degradation.state_for(cid).record_fill(markout)
         self.degradation.global_state.record_fill(markout)
@@ -2062,6 +2075,47 @@ class Engine:
             pos = pos_yes if fill.token_id == meta.yes.token_id else pos_no
             if pos.size <= 0:
                 self._pos_entry_ts.pop(fill.token_id, None)
+        # ── Online optimizer: record fill outcome for hill-climbing ──
+        # Use 10s markout for fitness signal (cleaner than noisy 1s sweep detector).
+        opt_markout = -float(getattr(est.markout, "toxicity", 0.0) or 0.0)
+        if hasattr(est.markout, "medium_term_markout"):
+            opt_markout = float(getattr(est.markout, "medium_term_markout") or 0.0)
+        opt_params = OptimizerParams(
+            delta_min_ticks=float(p.delta_min_ticks) if p else 1.0,
+            layer_step_ticks=float(p.layer_step_ticks) if p else 2.0,
+            flow_fv_weight=float(p.flow_fv_weight) if p else 0.5,
+            gamma=float(p.gamma) if p else 0.1,
+            c_vol=float(p.c_vol) if p else 2.0,
+            c_tox=float(p.c_tox) if p else 15.0,
+        )
+        self.opt_mgr.record_fill(
+            condition_id=cid, params=opt_params,
+            markout=opt_markout, fill_size=fill.size, fill_price=fill.price,
+        )
+        # ────────────────────────────────────────────────────────────
+
+        # ── Risk-managed TP/SL exits: place on every BUY fill, clear on SELL ──
+        if p is not None and fill.side is Side.BUY and (p.take_profit_pct > 0 or p.stop_loss_pct > 0):
+            from polymaker.strategy.quoting import compute_tp_sl
+            tp, sl = compute_tp_sl(
+                fill_price=fill.price, fill_size=fill.size, fv=fv,
+                tp_pct=p.take_profit_pct, sl_pct=p.stop_loss_pct,
+                max_risk_usdc=p.max_risk_per_trade_usdc,
+                tick=meta.tick_size, dec=meta.price_decimals,
+            )
+            if tp is not None or sl is not None:
+                tp = tp.model_copy(update={"token_id": fill.token_id}) if tp else None
+                sl = sl.model_copy(update={"token_id": fill.token_id}) if sl else None
+                self._tp_sl_targets.setdefault(cid, {})[fill.token_id] = (tp, sl)
+                log.info("tp_sl_placed", cid=cid[:8], token=fill.token_id[:8],
+                         fill_price=round(fill.price, 4),
+                         tp=round(tp.price, 4) if tp else None,
+                         sl=round(sl.price, 4) if sl else None)
+        elif fill.side is Side.SELL:
+            _tp_sl_map = self._tp_sl_targets.get(cid, {})
+            _tp_sl_map.pop(fill.token_id, None)
+        # ─────────────────────────────────────────────────────────
+
         self.metrics.emit(
             "fill",
             ts=fill.ts,
@@ -2285,16 +2339,18 @@ class Engine:
         # Scale sizes to DeepSeek's per-market allocation when available,
         # otherwise fall back to global bankroll formula.
         _effective_bankroll = self._discovery_capital.get(cid, 0.0)
-        if _effective_bankroll > 0:
-            self.cfg.risk.bankroll_usdc = _effective_bankroll
-        p = self.risk.cfg.scale_profile_sizes(
-            p,
-            rewards_min_size=getattr(meta, "rewards_min_size", 0.0),
-            typical_price=typical_px,
-            exchange_min_shares=float(getattr(meta, "min_order_size", 5.0) or 5.0),
-        )
-        if _effective_bankroll > 0:
-            self.cfg.risk.bankroll_usdc = self._effective_capital  # restore global
+        _saved_bankroll = self.cfg.risk.bankroll_usdc
+        try:
+            if _effective_bankroll > 0:
+                self.cfg.risk.bankroll_usdc = _effective_bankroll
+            p = self.risk.cfg.scale_profile_sizes(
+                p,
+                rewards_min_size=getattr(meta, "rewards_min_size", 0.0),
+                typical_price=typical_px,
+                exchange_min_shares=float(getattr(meta, "min_order_size", 5.0) or 5.0),
+            )
+        finally:
+            self.cfg.risk.bankroll_usdc = _saved_bankroll
         if reward_gate.eligible and reward_gate.recommended_base_size_usdc > 0:
             p = p.model_copy(update={
                 "base_size_usdc": max(
@@ -2335,31 +2391,6 @@ class Engine:
         _grok_agg = float(self._grok_aggression.get(cid, 1.0))
         if abs(_grok_agg - 1.0) > 0.005:
             size_scale *= _grok_agg
-        # ── Kelly optimal sizing (real module): bet proportional to edge ──
-        try:
-            _edge_per_share = float(getattr(est.markout, "short_value", 0.001) or 0.001)
-            # Markout positive = edge for maker (price moved in our favor after fill)
-            if _edge_per_share <= 0:
-                _edge_per_share = 0.0005  # minimal edge when no data
-            _sigma = float(getattr(est.vol, "short_value", 0.0) or est.vol.short_value or 0.001)
-            _ki = KellyInputs(
-                edge=_edge_per_share,
-                sigma=max(_sigma, 1e-6),
-                time_horizon_s=3600.0,
-                bankroll_usdc=float(self._effective_capital),
-                inventory_shares=float(pos_yes.size) + float(pos_no.size),
-                max_inventory_shares=float(getattr(p, "q_max_usdc", 500) or 500) / max(typical_px, 0.01),
-                kelly_fraction=float(getattr(p, "kelly_fraction", 0.25) or 0.25),
-                price=float(micro) if micro else 0.5,
-            )
-            _ko = kelly_size(_ki)
-            if _ko.fraction > 0:
-                # Kelly fraction is the % of bankroll to risk. Map to size
-                # multiplier: 5% Kelly → 1.25x size, 30% → 2.5x.
-                _kelly_adj = min(3.0, max(0.3, 1.0 + _ko.fraction * 5.0))
-                size_scale *= _kelly_adj
-        except Exception:
-            pass
         # ── Resolution arbitrage bias: when market is wrong, lean in ──
         _res_sig = self._resolution_signals.get(cid)
         if _res_sig is not None and _res_sig.should_bias_quoting():
@@ -2376,7 +2407,7 @@ class Engine:
                 _rew_mult = min(3.0, max(0.3, _rew_efficiency / max(_base, 1e-6)))
                 size_scale *= _rew_mult
         except Exception:
-            pass
+            log.debug("reward_rate_sizing_skipped", cid=cid[:8], exc_info=True)
         # ── Per-hour tracking: tighten winners, flag dead markets ──
         if now - self._hour_start_ts > 3600:
             # Reset hourly counters
@@ -2444,7 +2475,15 @@ class Engine:
             if _tox > 0.1:
                 _reward_band_edge = max(_reward_band_edge, 0.7)
         except Exception:
+            log.warning("avellaneda_stoikov_sizing_failed", cid=cid[:8], exc_info=True)
             _reward_band_edge = 0.5
+        # ──────────────────────────────────────────────────────────
+
+        # ── Online optimizer: apply learned parameter overrides ──
+        opt = self.opt_mgr.get(cid)
+        opt_params = opt.get_params().to_profile_overrides()
+        p = p.model_copy(update={k: v for k, v in opt_params.items()
+                                  if hasattr(p, k)})
         # ──────────────────────────────────────────────────────────
 
         pipe = build_targets(
@@ -2475,6 +2514,29 @@ class Engine:
         if pipe is None:
             return
         tq = pipe.targets
+        # ── Fill model: filter out quotes predicted to be adverse ──
+        if self.fill_model.is_trained and not self.paper:
+            _mid = bb_p + ba_p if (bb_p := (yes_view.best_bid or fv)) and (ba_p := (yes_view.best_ask or fv)) else fv * 2
+            _mid = max(0.01, min(0.99, _mid / 2.0 if _mid > 1.0 else _mid))
+            _filtered: list[Quote] = []
+            for q in tq.quotes:
+                feats = extract_features(
+                    quote=q, meta=meta, mid=_mid,
+                    best_bid=yes_view.best_bid, best_ask=yes_view.best_ask,
+                    bid_depth=yes_view.bid_depth, ask_depth=yes_view.ask_depth,
+                    vol_ratio=est.vol.ratio, flow_z=est.flow.z_score,
+                    toxicity=float(getattr(est.markout, "toxicity", 0.0) or 0.0),
+                    regime=regime, hours_to_resolve=hours_to_end, now=now,
+                )
+                pred = self.fill_model.predict(feats)
+                if pred.should_quote:
+                    _filtered.append(q)
+                else:
+                    log.debug("fill_model_skip", cid=cid[:8], token=q.token_id[:8],
+                              side=q.side.value, prob_fill=round(pred.prob_fill, 3),
+                              markout=round(pred.expected_markout, 6))
+            tq = TargetQuotes(tq.condition_id, tq.regime, tuple(_filtered))
+        # ─────────────────────────────────────────────────────────────
         fv = pipe.fv
         regime = pipe.regime
         attr = pipe.attribution
@@ -2509,7 +2571,7 @@ class Engine:
         _hmm_m = self._hmm.get(cid)
         if _hmm_m is not None:
             _hmm_m.update(float(micro))
-            if _hmm_m.n_updates > 3 and _hmm_m.alpha[1] > 0.65:
+            if _hmm_m.n_updates > 2 and _hmm_m.alpha[1] > 0.65:
                 # High-vol predicted: move toward band edge (more passive)
                 # Never widen spread — Polymarket rewards are flat per order
                 if isinstance(intel_band_frac, (int, float)):
@@ -2523,6 +2585,24 @@ class Engine:
             intel_band_frac = float(_grok_band)
             intel_reason = f"{intel_reason}+grok_band={round(_grok_band, 2)}"
         # ─────────────────────────────────────────────────────────────
+
+        # ── Append risk-managed TP/SL exits to targets ──
+        _tp_sl_quotes: list[Quote] = []
+        _tp_sl_map = self._tp_sl_targets.get(cid, {})
+        for _tid, (_tp, _sl) in list(_tp_sl_map.items()):
+            _pos = self.state.position(_tid)
+            if _pos.size <= 0:
+                _tp_sl_map.pop(_tid, None)
+                continue
+            if _tp is not None:
+                _tp_sl_quotes.append(Quote(_tid, Side.SELL, _tp.price,
+                                            min(_tp.size, _pos.size)))
+            if _sl is not None:
+                _sl_size = min(_sl.size, _pos.size) if _sl.size > 0 else _pos.size
+                _tp_sl_quotes.append(Quote(_tid, Side.SELL, _sl.price, _sl_size))
+        if _tp_sl_quotes:
+            tq = TargetQuotes(tq.condition_id, tq.regime,
+                              tq.quotes + tuple(_tp_sl_quotes))
 
         live = self.state.orders_for(meta.yes.token_id) + self.state.orders_for(meta.no.token_id)
         plan = reconcile(tq, live, tick=meta.tick_size,
@@ -3102,6 +3182,7 @@ class Engine:
                 max_concentration=conc,
                 capital_deploy_frac=deploy,
                 prefer_horizon_days=horizon,
+                min_capital_per_market_usdc=_min_viable_market_capital(cands),
             )
         port = optimize_multi_market_portfolio(
             cands,
@@ -3159,6 +3240,27 @@ class Engine:
             "max_markets_recommended": max_m,
         }
 
+    # ── fill model retraining ──────────────────────────────────────────
+
+    def _retrain_fill_model(self) -> None:
+        """Periodically retrain the fill model from accumulated live fill data."""
+        now = time.time()
+        if now - self._last_model_retrain_ts < 300.0:  # every 5 min
+            return
+        arrs = self.fill_store.to_arrays()
+        if arrs is None:
+            return
+        X, yf, ym = arrs
+        try:
+            self.fill_model.train(X, yf, ym)
+            self._last_model_retrain_ts = now
+            log.info("fill_model_retrained", n_samples=len(yf),
+                     fill_rate=round(float(yf.mean()), 3))
+        except Exception:
+            log.warning("fill_model_retrain_failed", exc_info=True)
+
+    # ── maintenance loop ───────────────────────────────────────────────
+
     async def _maintenance_loop(self) -> None:
         """Periodic REST book refresh + auto-compounding."""
         while self._running:
@@ -3171,6 +3273,9 @@ class Engine:
                 self.emit_aspirational_vs_honest()
             with contextlib.suppress(Exception):
                 self.emit_share_adjusted_planning()
+            # ── Fill model: periodic retrain from accumulated fill data ──
+            with contextlib.suppress(Exception):
+                self._retrain_fill_model()
             # ── Auto compounding: update effective bankroll from PnL ──
             if self._day_start_equity > 0 and self._base_capital > 0:
                 try:
@@ -3269,6 +3374,36 @@ def _hours_to_end(end_date_iso: str | None, now: float) -> float | None:
         return hrs if hrs > 0.0 else None
     except (ValueError, TypeError):
         return None
+
+
+def _min_viable_market_capital(
+    cands: Sequence[dict[str, Any]],
+    *,
+    floor_usdc: float = 25.0,
+) -> float:
+    """Minimum notional needed to quote one market reward-viably.
+
+    Two-sided quoting needs ~2× ``rewards_min_size`` shares at the typical
+    price (one side each), floored at ``floor_usdc`` so tiny min-size markets
+    don't let the market count explode past what concentration allows.
+
+    This is what makes market count scale with capital: N = bankroll /
+    viable-per-market (capped by hard cap + concentration).
+    """
+    if not cands:
+        return floor_usdc
+    vals: list[float] = []
+    for m in cands:
+        rmin = float(m.get("rewards_min_size") or m.get("min_order_size") or 0.0)
+        px = float(m.get("typical_price") or m.get("mid") or 0.5)
+        if rmin > 0 and px > 0:
+            vals.append(2.0 * rmin * px)
+    if not vals:
+        return floor_usdc
+    # Median avoids a single whale-min market forcing over-concentration.
+    srt = sorted(vals)
+    med = srt[len(srt) // 2]
+    return max(floor_usdc, float(med))
 
 
 class _GovernedJsonFacade:

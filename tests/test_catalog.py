@@ -147,3 +147,92 @@ def test_scan_config_supports_multiple_categories():
     assert "politics" in cfg.tag_slugs
     assert "sports" in cfg.tag_slugs
     assert "crypto" in cfg.tag_slugs
+
+
+# ── scalp scoring (flow-gated market selection) ─────────────────────────
+
+SCALP_RAW = {
+    **RAW,
+    "conditionId": "0xscalp",
+    "volumeNum": 20000.0,
+    "volume24hrClob": 20000.0,
+    "bestBid": 0.48,
+    "bestAsk": 0.50,  # 2 ticks
+    "endDate": "2026-08-15T00:00:00Z",  # short-dated
+}
+
+
+def test_scalp_score_gates_dead_book():
+    from polymaker.catalog.scoring import scalp_score
+    hot = parse_market(SCALP_RAW, {"0xscalp": 100.0})
+    assert hot is not None
+    assert scalp_score(hot) > 0
+    # Same market, but no taker flow in the last 24h -> fails the volume gate
+    dead = parse_market({**SCALP_RAW, "volume24hrClob": 800.0}, {"0xscalp": 100.0})
+    assert dead is not None
+    assert scalp_score(dead) == 0.0
+    # Long-dated market -> fails the days-to-resolve gate
+    longdated = parse_market(
+        {**SCALP_RAW, "conditionId": "0xscalp2", "endDate": "2028-11-07T00:00:00Z"},
+        {"0xscalp2": 100.0},
+    )
+    assert longdated is not None
+    assert scalp_score(longdated) == 0.0
+    # Wide spread -> fails the spread gate
+    wide = parse_market(
+        {**SCALP_RAW, "conditionId": "0xscalp3", "bestBid": 0.45, "bestAsk": 0.55},
+        {"0xscalp3": 100.0},
+    )
+    assert wide is not None
+    assert scalp_score(wide) == 0.0
+
+
+def test_scalp_score_ranks_turnover_and_tightness():
+    from polymaker.catalog.scoring import scalp_score
+    active = parse_market({**SCALP_RAW, "volume24hrClob": 80000.0}, {"0xscalp": 100.0})
+    quiet = parse_market(
+        {**SCALP_RAW, "conditionId": "0xscalp4", "volume24hrClob": 6000.0},
+        {"0xscalp4": 100.0},
+    )
+    tight = parse_market(
+        {**SCALP_RAW, "conditionId": "0xscalp5", "bestBid": 0.495, "bestAsk": 0.505,
+         "volume24hrClob": 80000.0},
+        {"0xscalp5": 100.0},
+    )
+    assert active is not None and quiet is not None and tight is not None
+    assert scalp_score(active) > scalp_score(quiet)
+    assert scalp_score(tight) > scalp_score(active)
+
+
+def test_scalp_score_wired_into_market_score_and_store(tmp_path):
+    from polymaker.catalog.scoring import MarketScore, scalp_score
+    m = parse_market(SCALP_RAW, {"0xscalp": 100.0})
+    assert m is not None
+    sc = score_market(m)
+    assert sc.scalp_score == scalp_score(m)
+    assert sc.scalp_score > 0
+    store = CatalogStore(tmp_path / "scalp.db")
+    store.upsert_market(m)
+    stored_sc = store.top(10)[0][1]
+    assert stored_sc.scalp_score == sc.scalp_score
+    # Old score_json rows (no scalp_score key) still deserialize, defaulting to 0
+    import json
+    store._conn.execute(
+        "INSERT INTO markets(condition_id,question,slug,category,meta_json,score,score_json,scanned_ts) "
+        "VALUES(?,?,?,?,?,?,?,?)",
+        (
+            "0xold", "old", "old", "politics", "{}", 1.0,
+            json.dumps({
+                "condition_id": "0xold", "reward_density": 0.1, "rebate_potential": 0.0,
+                "spread": 0.02, "extremity": 0.0, "score": 1.0,
+            }),
+            1.0,
+        ),
+    )
+    store._conn.commit()
+    old = MarketScore(
+        condition_id="0xold", reward_density=0.1, rebate_potential=0.0,
+        spread=0.02, extremity=0.0, score=1.0,
+    )
+    assert old.scalp_score == 0.0
+    store.close()

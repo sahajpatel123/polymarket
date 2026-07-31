@@ -155,9 +155,10 @@ Not a backtester. Journal replay backtester is **not built**.
 
 Call these out before relying on them in strategy work:
 
-1. **`exit_urgency_s` still on StrategyProfile but UNUSED by live path** — exit
-   urgency stays 0 unless REDUCE_ONLY bumps it to 0.5 inside `_maybe_exit`.
-   The TOML field remains for profile compat; engine never maps hold-time → urgency.
+1. **`exit_urgency_s` is ACTIVE on the live path** — the engine maps hold-time to
+   urgency at `engine.py:_urgency()`: `base = min(1.0, hold / max(p.exit_urgency_s, 1.0))`.
+   Toxicity bumps add urgency for adverse fills. The TOML field controls how fast exits walk
+   toward the touch.
 2. **`end_date_taper_days` still on StrategyProfile but UNUSED** — only
    `reduce_only_hours` / `halt_before_hours` affect lifecycle. Field kept for
    TOML compat only.

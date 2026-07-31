@@ -75,10 +75,25 @@ class ExecutionGateway:
     def close(self) -> None:
         self._pool.shutdown(wait=False, cancel_futures=True)
 
-    async def _io(self, fn: Callable[..., _T], *args: Any) -> _T:
-        """Run a blocking client call on the dedicated pool."""
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(self._pool, fn, *args)
+    async def _io(self, fn: Callable[..., _T], *args: Any, timeout_s: float = 30.0) -> _T:
+        """Run a blocking client call on the dedicated pool with a timeout.
+
+        A hung CLOB client call stalls the coroutine (the underlying thread stays
+        alive in the pool, but we unblock the event loop). After enough timeouts
+        the pool is exhausted — that's a terminal state that requires a restart,
+        but it's better than silently hanging forever.
+        """
+        import asyncio as _asyncio
+        loop = _asyncio.get_running_loop()
+        try:
+            return await _asyncio.wait_for(
+                loop.run_in_executor(self._pool, fn, *args),
+                timeout=timeout_s,
+            )
+        except _asyncio.TimeoutError:
+            log.warning("io_timeout", fn=getattr(fn, "__name__", str(fn))[:40],
+                            timeout_s=timeout_s)
+            raise
 
     @property
     def creds(self) -> Any:
@@ -460,7 +475,11 @@ class ExecutionGateway:
             if isinstance(ba, dict) and k in ba:
                 try:
                     v = float(ba[k])
-                    return v / 1e6 if v > 1e6 else v
+                    # USDC/pUSD on Polygon is 6 decimals — divide raw wei-like
+                    # units. Historical heuristic (v>1e6→/1e6) breaks for
+                    # sub-$1 accounts where 500,000 raw = $0.50 but passes
+                    # the guard unchanged. Always scale.
+                    return v / 1e6
                 except (ValueError, TypeError):
                     return 0.0
         return 0.0
