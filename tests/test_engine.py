@@ -75,3 +75,128 @@ async def test_recompute_skips_when_book_empty(tmp_path, meta):
     assert len(eng.state.orders) == 0
     eng.state.close()
     eng.catalog.close()
+
+
+# ── fill-model quote filter (pure) ────────────────────────────────────────
+
+
+def _stub_est():
+    from types import SimpleNamespace
+    return SimpleNamespace(
+        vol=SimpleNamespace(ratio=1.0),
+        flow=SimpleNamespace(z=0.0),
+        markout=SimpleNamespace(toxicity=0.0),
+    )
+
+
+def _stub_model(deployable: bool, trained: bool = True, should_quote: bool = False):
+    from polymaker.strategy.fill_model import FillPrediction
+
+    class _Stub:
+        is_deployable = deployable
+        is_trained = trained
+
+        def predict(self, feats):
+            return FillPrediction(prob_fill=0.95, expected_markout=-0.01,
+                                  should_quote=should_quote, suggested_size_mult=2.0)
+
+    return _Stub()
+
+
+def _filter(meta, quotes, model, *, held=None, now=100.0, risk_cap=800.0):
+    from polymaker.engine import _filter_quotes_by_fill_model
+    from polymaker.marketdata.orderbook import OrderBook
+    from polymaker.strategy.fill_model import FillTrainingStore
+    from polymaker.strategy.regime import Regime
+
+    yb = OrderBook(meta.tick_size)
+    yb.apply_snapshot(bids=[(0.48, 500), (0.49, 500)],
+                      asks=[(0.50, 500), (0.51, 500)], ts=1.0)
+    nb = OrderBook(meta.tick_size)
+    nb.apply_snapshot(bids=[(0.48, 500), (0.49, 500)],
+                      asks=[(0.50, 500), (0.51, 500)], ts=1.0)
+    store = FillTrainingStore()
+    out = _filter_quotes_by_fill_model(
+        quotes, cid=meta.condition_id, meta=meta, tick=meta.tick_size,
+        mid=0.495, yes_view=yb.view(), yes_book=yb, no_book=nb,
+        yes_token=meta.yes.token_id, est=_stub_est(), fv=0.5,
+        now=now, hours_to_end=100.0, regime=Regime.QUIET,
+        model=model, store=store, sample_ts={},
+        risk_cap_usdc=risk_cap, held=held or {},
+    )
+    return out, store
+
+
+def test_fill_model_filter_active_drops_entries_keeps_exits(meta):
+    """Deployable model: non-exit quotes are dropped; SELL exits kept + sized."""
+    from polymaker.domain import Quote
+    yt = meta.yes.token_id
+    quotes = [
+        Quote(yt, Side.BUY, 0.49, 10.0),     # entry BUY at touch
+        Quote(yt, Side.SELL, 0.50, 10.0),    # exit SELL (we hold)
+    ]
+    out, store = _filter(meta, quotes, _stub_model(deployable=True),
+                         held={yt: 10.0})
+    assert len(out) == 1
+    assert out[0].side is Side.SELL  # exit never removed by the model
+    assert out[0].size == 20.0       # but still sized by suggested_size_mult
+    # kept quote recorded as a non-fill (online) training sample
+    assert len(store.features) == 1
+    assert list(store.source) == ["online"]
+
+
+def test_fill_model_filter_active_sizing_clamped(meta):
+    """Sizing is clamped by the per-market notional cap and min-order floor."""
+    from polymaker.domain import Quote
+    yt = meta.yes.token_id
+    quotes = [Quote(yt, Side.BUY, 0.49, 10.0)]
+    # cap $4 / 0.49 = 8.16 shares -> min(20, 8.16) = 8.16
+    out, _ = _filter(meta, quotes, _stub_model(deployable=True, should_quote=True),
+                     held={}, risk_cap=4.0)
+    assert out and abs(out[0].size - 8.16) < 0.01
+    # cap $1 / 0.49 = 2.04 shares < min_order_size=5 -> floored to 5.0
+    out2, _ = _filter(meta, quotes, _stub_model(deployable=True, should_quote=True),
+                      held={}, risk_cap=1.0)
+    assert out2 and out2[0].size == meta.min_order_size
+
+
+def test_fill_model_filter_shadow_uses_tree_gate(meta):
+    """Trained-but-not-validated model: tree gate still governs, no removal."""
+    from polymaker.domain import Quote
+    yt = meta.yes.token_id
+    quotes = [Quote(yt, Side.BUY, 0.49, 10.0)]
+    # Balanced book at 0.495 mid: tree returns 0.0 (mid<=0.6, shallow bid) ->
+    # the quote is skipped even though the model is trained (shadow).
+    out, _ = _filter(meta, quotes, _stub_model(deployable=False, trained=True))
+    assert out == []
+    # A cold (untrained) model behaves identically.
+    out2, _ = _filter(meta, quotes, _stub_model(deployable=False, trained=False))
+    assert out2 == []
+
+
+def test_fill_model_filter_shadow_logs_but_keeps_good_book(meta):
+    """Shadow model may not remove quotes the tree allows."""
+    from polymaker.domain import Quote
+    from polymaker.engine import _filter_quotes_by_fill_model
+    from polymaker.marketdata.orderbook import OrderBook
+    from polymaker.strategy.fill_model import FillTrainingStore
+    from polymaker.strategy.regime import Regime
+
+    yb = OrderBook(meta.tick_size)
+    yb.apply_snapshot(bids=[(0.48, 100), (0.49, 100)],   # thin bids
+                      asks=[(0.50, 1000), (0.51, 1000)], ts=1.0)  # deep asks
+    nb = OrderBook(meta.tick_size)
+    nb.apply_snapshot(bids=[(0.48, 100), (0.49, 100)],
+                      asks=[(0.50, 1000), (0.51, 1000)], ts=1.0)
+    yt = meta.yes.token_id
+    quotes = [Quote(yt, Side.BUY, 0.49, 10.0)]
+    out = _filter_quotes_by_fill_model(
+        quotes, cid=meta.condition_id, meta=meta, tick=meta.tick_size,
+        mid=0.495, yes_view=yb.view(), yes_book=yb, no_book=nb,
+        yes_token=yt, est=_stub_est(), fv=0.5, now=100.0, hours_to_end=100.0,
+        regime=Regime.QUIET, model=_stub_model(deployable=False, trained=True),
+        store=FillTrainingStore(), sample_ts={}, risk_cap_usdc=800.0, held={},
+    )
+    # imbalance -0.82 <= -0.2 -> tree says trade; shadow model may disagree
+    # but must NOT remove the quote.
+    assert len(out) == 1

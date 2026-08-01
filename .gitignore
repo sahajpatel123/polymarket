@@ -480,3 +480,21 @@ positions/
 data/
 *.whl
 session/
+
+# macOS junk
+.DS_Store
+
+# local state DBs (trading state — may contain addresses/session data)
+agent_memory.db
+agent_memory.db-*
+profile_history.db
+profile_history.db-*
+livecfg/*.db
+livecfg/*.db-*
+
+# data / model artifacts (not source)
+backtest_*/
+latest_reports/
+models/
+perf/
+.opencode/goal-archive.jsonl

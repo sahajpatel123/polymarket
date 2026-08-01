@@ -16,7 +16,7 @@ import dataclasses
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 from polymaker.alerts import (
     API_AUTH,
@@ -77,7 +77,13 @@ from polymaker.strategy.avellaneda_stoikov import (
     gamma_from_profile,
     kappa_from_liquidity,
 )
-from polymaker.strategy.fill_model import FillFeatures, FillModel, FillTrainingStore, extract_features
+from polymaker.strategy.fill_model import (
+    FillFeatures,
+    FillModel,
+    FillTrainingStore,
+    extract_features,
+    quality_filter_score,
+)
 from polymaker.strategy.online_opt import MarketOptimizer, OnlineOptimizerManager, OptimizerParams
 from polymaker.strategy.regime_strategies import StrategyContext, dispatch_strategy
 from polymaker.strategy.decision_pipeline import build_targets
@@ -126,7 +132,9 @@ class Engine:
         self.fill_model = FillModel()
         self.fill_store = FillTrainingStore()
         self.opt_mgr = OnlineOptimizerManager()
+        self._fill_sample_ts: dict[tuple[str, str, float], float] = {}
         self._last_model_retrain_ts: float = 0.0
+        self._fill_model_path = Path(cfg.paths.model_dir) / "fill_model.pkl"
         # TP/SL risk-managed exits: condition_id → {token_id: (tp_quote, sl_quote)}
         self._tp_sl_targets: dict[str, dict[str, tuple[Quote | None, Quote | None]]] = {}
         self._dirty: dict[str, asyncio.Event] = {}
@@ -306,6 +314,7 @@ class Engine:
     # ── lifecycle ───────────────────────────────────────────────────────
     async def start(self) -> None:
         self._running = True
+        self._load_persisted_fill_model()
         try:
             await self.gateway.connect()
         except Exception as exc:  # noqa: BLE001
@@ -702,8 +711,8 @@ class Engine:
             depth_imbalance = 0.0
             if yes_book is not None:
                 v = yes_book.view()
-                bb = v.best_bid.price if v.best_bid else 0
-                ba = v.best_ask.price if v.best_ask else 0
+                bb = v.best_bid if v.best_bid is not None else 0
+                ba = v.best_ask if v.best_ask is not None else 0
                 if bb > 0 and ba > 0:
                     spread = ba - bb
                 bd = v.bid_depth if hasattr(v, "bid_depth") else 0
@@ -2052,6 +2061,27 @@ class Engine:
         markout = -float(getattr(est.markout, "toxicity", 0.0) or 0.0)
         if hasattr(est.markout, "short_term_toxicity"):
             markout = -float(est.markout.short_term_toxicity or 0.0)
+        # Feed the fill-model training store (filled samples)
+        try:
+            _bk = self.md.book(fill.token_id)
+            if _bk is not None and not _bk.is_empty:
+                _v = _bk.view()
+                if _v.best_bid is not None and _v.best_ask is not None:
+                    _regime_s = self._last_regime.get(cid, "QUIET")
+                    _feats = extract_features(
+                        quote=Quote(fill.token_id, fill.side, fill.price, fill.size),
+                        meta=meta, mid=float(_v.mid or fv),
+                        best_bid=_v.best_bid, best_ask=_v.best_ask,
+                        bid_depth=_v.bid_depth, ask_depth=_v.ask_depth,
+                        vol_ratio=est.vol.ratio, flow_z=est.flow.z,
+                        toxicity=float(getattr(est.markout, "toxicity", 0.0) or 0.0),
+                        regime=Regime(_regime_s),
+                        hours_to_resolve=_hours_to_end(meta.end_date_iso, fill.ts),
+                        now=fill.ts,
+                    )
+                    self.fill_store.add(_feats, filled=True, markout=markout)
+        except Exception:
+            log.debug("fill_model_sample_failed", cid=cid[:8], exc_info=True)
         # Judgment + regime machine: learn from fill edge + markout proxy
         if p is not None and p.use_intelligence:
             tick = max(meta.tick_size, 1e-9)
@@ -2514,27 +2544,29 @@ class Engine:
         if pipe is None:
             return
         tq = pipe.targets
-        # ── Fill model: filter out quotes predicted to be adverse ──
-        if self.fill_model.is_trained and not self.paper:
-            _mid = bb_p + ba_p if (bb_p := (yes_view.best_bid or fv)) and (ba_p := (yes_view.best_ask or fv)) else fv * 2
-            _mid = max(0.01, min(0.99, _mid / 2.0 if _mid > 1.0 else _mid))
-            _filtered: list[Quote] = []
-            for q in tq.quotes:
-                feats = extract_features(
-                    quote=q, meta=meta, mid=_mid,
-                    best_bid=yes_view.best_bid, best_ask=yes_view.best_ask,
-                    bid_depth=yes_view.bid_depth, ask_depth=yes_view.ask_depth,
-                    vol_ratio=est.vol.ratio, flow_z=est.flow.z_score,
-                    toxicity=float(getattr(est.markout, "toxicity", 0.0) or 0.0),
-                    regime=regime, hours_to_resolve=hours_to_end, now=now,
-                )
-                pred = self.fill_model.predict(feats)
-                if pred.should_quote:
-                    _filtered.append(q)
-                else:
-                    log.debug("fill_model_skip", cid=cid[:8], token=q.token_id[:8],
-                              side=q.side.value, prob_fill=round(pred.prob_fill, 3),
-                              markout=round(pred.expected_markout, 6))
+        # ── Fill model: filter adverse quotes + collect training samples ──
+        # The ML model gates quotes ONLY after holdout validation on live
+        # samples (is_deployable); until then it runs in shadow and the
+        # empirical book-shape tree gates. Exit quotes (SELL of a held
+        # token) are never removed — risk reduction is not model-gated.
+        if not self.paper:
+            _mid = max(0.01, min(0.99, yes_view.mid if yes_view.mid is not None else fv))
+            _held: dict[str, float] = {}
+            if pos_yes.size > 0.0:
+                _held[yes_token] = pos_yes.size
+            if pos_no.size > 0.0:
+                _held[no_token] = pos_no.size
+            _filtered = _filter_quotes_by_fill_model(
+                tq.quotes,
+                cid=cid, meta=meta, tick=tick, mid=_mid,
+                yes_view=yes_view, yes_book=yes_book, no_book=no_book,
+                yes_token=yes_token, est=est, fv=fv, now=now,
+                hours_to_end=hours_to_end, regime=tq.regime,
+                model=self.fill_model, store=self.fill_store,
+                sample_ts=self._fill_sample_ts,
+                risk_cap_usdc=self.cfg.risk.max_market_notional_usdc,
+                held=_held,
+            )
             tq = TargetQuotes(tq.condition_id, tq.regime, tuple(_filtered))
         # ─────────────────────────────────────────────────────────────
         fv = pipe.fv
@@ -3242,8 +3274,63 @@ class Engine:
 
     # ── fill model retraining ──────────────────────────────────────────
 
+    def _load_persisted_fill_model(self) -> None:
+        """Load the last verified local model before any quote can be placed.
+
+        The model is NOT deployed on load: it must first win a holdout
+        validation on the live slice of the persisted buffer (samples the
+        engine itself recorded). Until then it runs in shadow and the
+        book-shape tree gates. Full-buffer holdout is logged as diagnostics.
+        """
+        if not self._fill_model_path.exists():
+            log.info("fill_model_cold_start", path=str(self._fill_model_path))
+            return
+        try:
+            model, store = FillModel.load_bundle(self._fill_model_path)
+            self.fill_model = model
+            if store is not None:
+                self.fill_store = store
+            self._last_model_retrain_ts = time.time()
+            metrics: dict[str, float | bool | int | str] | None = None
+            if model.is_trained and store is not None:
+                online = store.online_arrays()
+                if online is not None and len(online[0]) >= self.cfg.model.min_live_validation_samples:
+                    metrics = model.validate(
+                        *online,
+                        min_auc=self.cfg.model.min_auc,
+                        min_corr=self.cfg.model.min_markout_corr,
+                    )
+                else:
+                    arrs = store.to_arrays()
+                    if arrs is not None:
+                        metrics = model.holdout_metrics(
+                            *arrs,
+                            min_auc=self.cfg.model.min_auc,
+                            min_corr=self.cfg.model.min_markout_corr,
+                        )
+            log.info(
+                "fill_model_loaded",
+                path=str(self._fill_model_path),
+                trained=self.fill_model.is_trained,
+                deployable=self.fill_model.is_deployable,
+                samples=self.fill_model._n_samples,
+                buffered=len(self.fill_store.features),
+                auc=metrics.get("auc") if metrics else None,
+                corr=metrics.get("corr") if metrics else None,
+            )
+        except Exception:
+            # A corrupt artifact must not prevent startup; the cold-start gate
+            # remains active and the operator gets a clear warning.
+            log.warning("fill_model_load_failed", path=str(self._fill_model_path), exc_info=True)
+
     def _retrain_fill_model(self) -> None:
-        """Periodically retrain the fill model from accumulated live fill data."""
+        """Periodically retrain the fill model from accumulated live fill data.
+
+        Deployment is gated on holdout validation of the ONLINE slice: the
+        model must win on live samples, not on the offline training tape.
+        Only a deployable model is persisted (so a bad retrain never
+        overwrites a good artifact).
+        """
         now = time.time()
         if now - self._last_model_retrain_ts < 300.0:  # every 5 min
             return
@@ -3253,9 +3340,32 @@ class Engine:
         X, yf, ym = arrs
         try:
             self.fill_model.train(X, yf, ym)
+            metrics: dict[str, float | bool | int | str] | None = None
+            if self.fill_model.is_trained:
+                online = self.fill_store.online_arrays()
+                if online is not None and len(online[0]) >= self.cfg.model.min_live_validation_samples:
+                    metrics = self.fill_model.validate(
+                        *online,
+                        min_auc=self.cfg.model.min_auc,
+                        min_corr=self.cfg.model.min_markout_corr,
+                    )
+                    if self.fill_model.is_deployable:
+                        self.fill_model.save(self._fill_model_path, self.fill_store)
+                else:
+                    # Not enough live samples yet — stay in shadow, keep any
+                    # previously validated artifact as-is.
+                    metrics = self.fill_model.holdout_metrics(
+                        *arrs,
+                        min_auc=self.cfg.model.min_auc,
+                        min_corr=self.cfg.model.min_markout_corr,
+                    )
             self._last_model_retrain_ts = now
             log.info("fill_model_retrained", n_samples=len(yf),
-                     fill_rate=round(float(yf.mean()), 3))
+                     fill_rate=round(float(yf.mean()), 3),
+                     deployable=self.fill_model.is_deployable,
+                     auc=metrics.get("auc") if metrics else None,
+                     corr=metrics.get("corr") if metrics else None,
+                     path=str(self._fill_model_path))
         except Exception:
             log.warning("fill_model_retrain_failed", exc_info=True)
 
@@ -3374,6 +3484,141 @@ def _hours_to_end(end_date_iso: str | None, now: float) -> float | None:
         return hrs if hrs > 0.0 else None
     except (ValueError, TypeError):
         return None
+
+
+def _quality_filter_from_book(
+    q: Quote,
+    book: object | None,
+    mid: float,
+    tick: float,
+) -> float:
+    """Run the empirical at-touch quality tree on the quote's own token book.
+
+    Returns 1.0 (trade) or 0.0 (skip). Guards cold-start quoting (no trained
+    fill model yet). Uses level-1/2 sizes + band depth from the OrderBook;
+    skips quotes whose book shape had <50% historical win rate.
+    """
+    if book is None:
+        return 1.0
+    asks = getattr(book, "asks", None)
+    bids = getattr(book, "bids", None)
+    if not asks or not bids:
+        return 1.0
+    try:
+        ad1 = asks.peekitem(0)[1]
+        ad2 = asks.peekitem(1)[1] if len(asks) > 1 else 0.0
+        bd1 = bids.peekitem(-1)[1]
+        bd2 = bids.peekitem(-2)[1] if len(bids) > 1 else 0.0
+        bd_total = sum(bids.values())
+        bba = bids.peekitem(-1)[0]
+        baa = asks.peekitem(0)[0]
+    except (KeyError, IndexError):
+        return 1.0
+    imbalance = (bd_total - sum(asks.values())) / (bd_total + sum(asks.values()) + 1e-9)
+    spread_ticks = (baa - bba) / max(tick, 1e-9)
+    dist_ticks = abs(q.price - mid) / max(tick, 1e-9)
+    return quality_filter_score(
+        imbalance=imbalance,
+        spread_ticks=spread_ticks,
+        mid=mid,
+        bd_total=bd_total,
+        ad1=ad1,
+        ad2=ad2,
+        dist_ticks=dist_ticks,
+        bd1=bd1,
+        bd2=bd2,
+    )
+
+
+def _filter_quotes_by_fill_model(
+    quotes: Sequence[Quote],
+    *,
+    cid: str,
+    meta: MarketMeta,
+    tick: float,
+    mid: float,
+    yes_view: BookView,
+    yes_book: object | None,
+    no_book: object | None,
+    yes_token: str,
+    est: MarketEstimators,
+    fv: float,
+    now: float,
+    hours_to_end: float | None,
+    regime: Regime,
+    model: FillModel,
+    store: FillTrainingStore,
+    sample_ts: dict[tuple[str, str, float], float],
+    risk_cap_usdc: float,
+    held: dict[str, float],
+) -> list[Quote]:
+    """Filter/size target quotes with the fill model (pure, testable).
+
+    Modes:
+      - Deployable (``model.is_deployable``): ML gate + dynamic sizing.
+      - Shadow (trained, not yet validated on live data): the empirical
+        book-shape tree stays the gate; the ML decision is logged only.
+      - Cold (untrained): tree gate only.
+
+    Exit quotes (SELL of a held token, incl. REDUCE_ONLY) are never removed
+    by either gate — risk reduction must not be blocked by a model — but may
+    still be sized when the model is active. Non-fill samples for kept quotes
+    are recorded (throttled per token/side/price) for online validation.
+    """
+    out: list[Quote] = []
+    active = model.is_deployable
+    for q in quotes:
+        feats = extract_features(
+            quote=q, meta=meta, mid=mid,
+            best_bid=yes_view.best_bid, best_ask=yes_view.best_ask,
+            bid_depth=yes_view.bid_depth, ask_depth=yes_view.ask_depth,
+            vol_ratio=est.vol.ratio, flow_z=est.flow.z,
+            toxicity=float(getattr(est.markout, "toxicity", 0.0) or 0.0),
+            regime=regime, hours_to_resolve=hours_to_end, now=now,
+        )
+        is_exit = q.side is Side.SELL and held.get(q.token_id, 0.0) > 0.0
+        keep = True
+        if active:
+            pred = model.predict(feats)
+            if not pred.should_quote and not is_exit:
+                keep = False
+                log.debug("fill_model_skip", cid=cid[:8], token=q.token_id[:8],
+                          side=q.side.value, prob_fill=round(pred.prob_fill, 3),
+                          markout=round(pred.expected_markout, 6))
+            elif abs(pred.suggested_size_mult - 1.0) > 0.01:
+                # Dynamic sizing clamped to the per-market notional cap
+                # and the exchange minimum order size.
+                _sz = q.size * pred.suggested_size_mult
+                _cap_shares = risk_cap_usdc / max(q.price, tick)
+                _sz = min(_sz, _cap_shares)
+                if q.size >= meta.min_order_size and _sz < meta.min_order_size:
+                    _sz = meta.min_order_size
+                q = dataclasses.replace(q, size=_sz)
+        else:
+            # Cold start: empirical book-shape pre-filter (687 real
+            # fills). Until the ML model is validated on live data it
+            # supersedes nothing; absolute depth thresholds are
+            # market-specific.
+            _qbook = yes_book if q.token_id == yes_token else no_book
+            _qf = _quality_filter_from_book(q, _qbook, mid, tick)
+            if _qf == 0.0 and not is_exit:
+                keep = False
+                log.debug("fill_model_quality_skip", cid=cid[:8],
+                          token=q.token_id[:8], side=q.side.value)
+            elif model.is_trained:
+                pred = model.predict(feats)
+                if not pred.should_quote:
+                    log.debug("fill_model_shadow_reject", cid=cid[:8],
+                              token=q.token_id[:8], side=q.side.value,
+                              prob_fill=round(pred.prob_fill, 3),
+                              markout=round(pred.expected_markout, 6))
+        if keep:
+            out.append(q)
+            _key = (q.token_id, q.side.value, round(q.price, 6))
+            if now - sample_ts.get(_key, 0.0) >= 60.0:
+                sample_ts[_key] = now
+                store.add(feats, filled=False, markout=0.0)
+    return out
 
 
 def _min_viable_market_capital(
@@ -3497,4 +3742,3 @@ class _GovernedJsonFacade:
             else:
                 parsed = {"narrative": parsed.get("narrative", ""), "actions": []}
         return parsed, resp
-

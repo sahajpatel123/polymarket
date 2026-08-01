@@ -126,3 +126,37 @@ profiles live in `config/strategy.toml`. Per-market TOML extras on a
 Shipped profiles today: `newsom-mm`, `political-longdated`, `political-hot`,
 `romania-pm` (under `config/`), and `live-tiny` (under `livecfg/`). The CLI
 default (`--profile political-longdated`) resolves to the in-repo profile.
+
+## Fill model deployment gate
+
+**Files:** `strategy/fill_model.py`, `engine.py` → `_filter_quotes_by_fill_model`
+
+The fill model (P(fill) + E[markout] gradient-boosted trees) only filters or
+sizes live quotes when `FillModel.is_deployable` — i.e. it passed a holdout
+validation (`validate()`, honest 70/30 re-fit) on the **live** slice of the
+training buffer with `auc ≥ model.min_auc` and `corr ≥ model.min_markout_corr`.
+Until then it runs in **shadow**: decisions are logged
+(`fill_model_shadow_reject`) but the empirical book-shape tree
+(`quality_filter_score`, `_quality_filter_from_book`) remains the quote gate.
+
+- Artifacts load in `Engine._load_persisted_fill_model` (before quoting).
+  Load itself never deploys: only `min_live_validation_samples` live-acquired
+  samples can unlock deployment, so a cold artifact cannot take over quoting.
+- `_retrain_fill_model` (5 min cadence) re-trains on the merged offline+online
+  buffer, re-validates the online slice, and persists **only** if deployable.
+- Training provenance is tracked per sample (`offline` from the trainer,
+  `online` from engine fills/kept quotes); the `source` list is persisted with
+  the artifact (format v2) so deployment state survives restarts.
+- **Exits are never removed**: SELL quotes on held inventory (incl.
+  REDUCE_ONLY) may be sized by a deployable model but cannot be dropped by
+  either gate.
+
+Offline training: `scripts/train_fill_model.py` reconstructs fill/non-fill
+labels and 30 s markouts from a raw `book`/`last_trade_price` journal, with
+tape-derived features (vol_ratio, flow_z, toxicity, hours_to_resolve, regime)
+so the model sees realistic variance. Reproduction:
+
+```
+uv run python scripts/train_fill_model.py \
+    --journal backtest_24h/journal.jsonl --output models/fill_model.pkl
+```

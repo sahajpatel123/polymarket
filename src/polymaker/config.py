@@ -77,6 +77,22 @@ class EngineConfig(BaseModel):
     dashboard_open_browser: bool = True
 
 
+class ModelConfig(BaseModel):
+    """Fill-model deployment gate.
+
+    The ML fill model only filters/sizes live quotes after it passes a
+    holdout validation on REAL (live-acquired) samples. Until then it runs
+    in shadow mode and the empirical book-shape tree remains the quote gate.
+    """
+
+    # Minimum holdout ROC AUC for the P(fill) classifier (0.5 = coin flip).
+    min_auc: float = 0.55
+    # Minimum holdout Pearson correlation for the markout regressor.
+    min_markout_corr: float = 0.05
+    # Online (live) samples required before the model may be deployed.
+    min_live_validation_samples: int = 200
+
+
 class RiskConfig(BaseModel):
     """Risk limits. Prefer setting `bankroll_usdc` once — all USDC caps scale.
 
@@ -199,6 +215,7 @@ class PathsConfig(BaseModel):
     db: str = "state.db"
     journal_dir: str = "journal"
     log_dir: str = "logs"
+    model_dir: str = "models"
 
 
 class StrategyProfile(BaseModel):
@@ -391,6 +408,7 @@ class Config(BaseModel):
     wallet: WalletConfig = WalletConfig()
     engine: EngineConfig = EngineConfig()
     risk: RiskConfig = RiskConfig()
+    model: ModelConfig = ModelConfig()
     execution: ExecutionConfig = ExecutionConfig()
     paths: PathsConfig = PathsConfig()
     profiles: dict[str, StrategyProfile] = {}
@@ -440,6 +458,7 @@ class Config(BaseModel):
             wallet=WalletConfig(**wallet_dict),
             engine=EngineConfig(**main.get("engine", {})),
             risk=risk,
+            model=ModelConfig(**main.get("model", {})),
             execution=ExecutionConfig(**main.get("execution", {})),
             paths=PathsConfig(**main.get("paths", {})),
             profiles=profiles,

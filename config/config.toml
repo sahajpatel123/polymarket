@@ -96,3 +96,14 @@ max_orders_per_batch = 15       # exchange batch cap
 db = "state.db"
 journal_dir = "journal"
 log_dir = "logs"
+
+# ── fill-model deployment gate ─────────────────────────────────────────────
+# The ML fill model (models/fill_model.pkl) only filters/sizes live quotes
+# after it passes holdout validation on LIVE-acquired samples (min_auc +
+# min_markout_corr). Until then it runs in shadow mode and the empirical
+# book-shape tree remains the quote gate. Exits (SELL of held inventory) are
+# never removed by either gate.
+[model]
+min_auc = 0.55                 # P(fill) ROC AUC floor (0.5 = coin flip)
+min_markout_corr = 0.05        # markout regressor correlation floor
+min_live_validation_samples = 200   # online samples required before deploy
