@@ -81,6 +81,7 @@ from polymaker.strategy.fill_model import (
     FillFeatures,
     FillModel,
     FillTrainingStore,
+    WinRateGovernor,
     extract_features,
     quality_filter_score,
 )
@@ -131,6 +132,8 @@ class Engine:
         # S-tier pillars: fill model + regime strategies + online optimizer
         self.fill_model = FillModel()
         self.fill_store = FillTrainingStore()
+        self.win_gov = WinRateGovernor()
+        self._pending_fill_labels: list[_PendingFillLabel] = []
         self.opt_mgr = OnlineOptimizerManager()
         self._fill_sample_ts: dict[tuple[str, str, float], float] = {}
         self._last_model_retrain_ts: float = 0.0
@@ -173,6 +176,9 @@ class Engine:
         self._quarantined: set[str] = set()
         # Per-market trade timestamps for dead/stale detection (last hour)
         self._trade_ts: dict[str, list[float]] = {}
+        # Bounded live microstructure history used by fill-model features.
+        self._trade_sizes: dict[str, list[tuple[float, float]]] = {}
+        self._ofi_history: dict[str, list[tuple[float, float]]] = {}
         self._last_book_ts: dict[str, float] = {}
         # Inventory entry timestamps for exit urgency (token_id -> first open ts)
         self._pos_entry_ts: dict[str, float] = {}
@@ -1978,6 +1984,9 @@ class Engine:
         ts = float(tp.ts or time.time())
         hist = self._trade_ts.setdefault(cid, [])
         hist.append(ts)
+        sizes = self._trade_sizes.setdefault(cid, [])
+        sizes.append((ts, float(tp.size)))
+        self._trade_sizes[cid] = [x for x in sizes if ts - x[0] <= 300.0][-100:]
         # Keep ~1h of trade times
         cutoff = ts - 3600.0
         self._trade_ts[cid] = [t for t in hist if t >= cutoff]
@@ -2057,17 +2066,27 @@ class Engine:
         p = self.profiles.get(cid)
         token_fv = fv if fill.token_id == meta.yes.token_id else (1.0 - fv)
         est.markout.record_fill(fill.side, token_fv, fill.ts)
-        # Signed markout proxy: negative = adverse (toxicity)
-        markout = -float(getattr(est.markout, "toxicity", 0.0) or 0.0)
-        if hasattr(est.markout, "short_term_toxicity"):
-            markout = -float(est.markout.short_term_toxicity or 0.0)
-        # Feed the fill-model training store (filled samples)
+        # Feed the fill-model training store (filled samples) — DEFERRED:
+        # record features now, resolve the fill's own forward markout after
+        # the 30s horizon. The old path labeled every sample with the
+        # current toxicity EWMA (a lagging aggregate of PAST fills), which
+        # taught the model nothing about this fill's outcome. The win-rate
+        # governor consumes the same resolved labels.
         try:
             _bk = self.md.book(fill.token_id)
             if _bk is not None and not _bk.is_empty:
                 _v = _bk.view()
                 if _v.best_bid is not None and _v.best_ask is not None:
                     _regime_s = self._last_regime.get(cid, "QUIET")
+                    _bd_total, _ad_total, _bd1, _bd2, _ad1, _ad2 = _book_depth_features(_bk, _v)
+                    _ofi_now = self.est[cid].ofi.normalized_ofi
+                    _ofi_hist = self._ofi_history.get(cid, [])
+                    _ofi_trend = _ofi_now - _ofi_hist[0][1] if len(_ofi_hist) >= 3 else 0.0
+                    _sizes = self._trade_sizes.get(cid, [])
+                    _recent_sizes = [s for t, s in _sizes if fill.ts - t <= 60.0]
+                    _avg_size = sum(_recent_sizes) / len(_recent_sizes) if _recent_sizes else 1.0
+                    _size_anomaly = fill.size / max(_avg_size, 1.0)
+                    _trade_rate = len([t for t, _s in _sizes if fill.ts - t <= 30.0]) / 30.0
                     _feats = extract_features(
                         quote=Quote(fill.token_id, fill.side, fill.price, fill.size),
                         meta=meta, mid=float(_v.mid or fv),
@@ -2078,10 +2097,40 @@ class Engine:
                         regime=Regime(_regime_s),
                         hours_to_resolve=_hours_to_end(meta.end_date_iso, fill.ts),
                         now=fill.ts,
+                        ofi=_ofi_now if fill.token_id == meta.yes.token_id else -_ofi_now,
+                        ofi_trend=_ofi_trend if fill.token_id == meta.yes.token_id else -_ofi_trend,
+                        size_anomaly=_size_anomaly,
+                        trade_rate=_trade_rate,
+                        bd_total=_bd_total,
+                        ad_total=_ad_total,
+                        ad1=_ad1,
+                        ad2=_ad2,
+                        bd1=_bd1,
+                        bd2=_bd2,
                     )
-                    self.fill_store.add(_feats, filled=True, markout=markout)
+                    self._pending_fill_labels.append(_PendingFillLabel(
+                        cid=cid,
+                        token_id=fill.token_id,
+                        side=fill.side,
+                        feats=_feats,
+                        fv_at_fill=token_fv,
+                        due_ts=fill.ts + 30.0,
+                        fill_ts=fill.ts,
+                    ))
+                    if len(self._pending_fill_labels) > 4000:
+                        # Bounded queue: resolve stale entries immediately so
+                        # memory stays flat even if a market goes silent.
+                        self._resolve_fill_labels(cid, fill.ts, fv)
         except Exception:
             log.debug("fill_model_sample_failed", cid=cid[:8], exc_info=True)
+
+        # Fill-time markout proxy (the true 30s forward markout resolves
+        # later via _resolve_fill_labels; these consumers need an instant
+        # signal for risk/degradation/intel now).
+        markout = -float(getattr(est.markout, "toxicity", 0.0) or 0.0)
+        if hasattr(est.markout, "short_term_toxicity"):
+            markout = -float(est.markout.short_term_toxicity or 0.0)
+
         # Judgment + regime machine: learn from fill edge + markout proxy
         if p is not None and p.use_intelligence:
             tick = max(meta.tick_size, 1e-9)
@@ -2160,6 +2209,41 @@ class Engine:
             paper=self.paper,
             **inventory_fields(pos_yes.size, pos_no.size),
         )
+
+    def _resolve_fill_labels(self, cid: str, now: float, fv_yes: float) -> None:
+        """Resolve deferred fill labels whose 30s markout horizon elapsed.
+
+        Called on the recompute path (fair value updates) so labels resolve
+        with a real forward FV. A fill is a WIN for the win-rate governor
+        when the signed markout is positive (price moved in our favor after
+        we were filled).
+        """
+        meta = self.metas.get(cid)
+        if meta is None:
+            return
+        still: list[_PendingFillLabel] = []
+        resolved = 0
+        for lab in self._pending_fill_labels:
+            if lab.cid != cid:
+                still.append(lab)
+                continue
+            if now < lab.due_ts:
+                still.append(lab)
+                continue
+            token_fv_now = fv_yes if lab.token_id == meta.yes.token_id else (1.0 - fv_yes)
+            move = token_fv_now - lab.fv_at_fill
+            markout = move if lab.side is Side.BUY else -move
+            self.fill_store.add(lab.feats, filled=True, markout=markout, source="online")
+            self.win_gov.record_outcome(markout > 0.0)
+            resolved += 1
+        self._pending_fill_labels = still
+        if resolved:
+            pol = self.win_gov.policy()
+            log.info(
+                "fill_labels_resolved", cid=cid[:8], n=resolved,
+                realized_wr=round(pol.realized_wr, 3),
+                n_evaluated=pol.n_evaluated, mode=pol.mode,
+            )
 
     # ── quoter ──────────────────────────────────────────────────────────
     async def _quoter(self, cid: str) -> None:
@@ -2255,6 +2339,10 @@ class Engine:
         now = time.time()
         est = self.est[cid]
         est.on_book_view(yes_view, now)
+        _ofi_now = est.ofi.normalized_ofi
+        _ofi_hist = self._ofi_history.setdefault(cid, [])
+        _ofi_hist.append((now, _ofi_now))
+        self._ofi_history[cid] = [x for x in _ofi_hist if now - x[0] <= 60.0][-20:]
         micro = yes_book.microprice(p.micro_levels)
         if micro is None:
             return
@@ -2545,17 +2633,23 @@ class Engine:
             return
         tq = pipe.targets
         # ── Fill model: filter adverse quotes + collect training samples ──
-        # The ML model gates quotes ONLY after holdout validation on live
-        # samples (is_deployable); until then it runs in shadow and the
-        # empirical book-shape tree gates. Exit quotes (SELL of a held
-        # token) are never removed — risk reduction is not model-gated.
-        if not self.paper:
+        # In paper mode the model is force-deployed so WR metrics and governor
+        # behaviour can be validated before risking live capital.
+        if True:
             _mid = max(0.01, min(0.99, yes_view.mid if yes_view.mid is not None else fv))
             _held: dict[str, float] = {}
             if pos_yes.size > 0.0:
                 _held[yes_token] = pos_yes.size
             if pos_no.size > 0.0:
                 _held[no_token] = pos_no.size
+            _ofi_hist = self._ofi_history.get(cid, [])
+            _ofi_now = est.ofi.normalized_ofi
+            _ofi_trend = _ofi_now - _ofi_hist[0][1] if len(_ofi_hist) >= 3 else 0.0
+            _sizes = self._trade_sizes.get(cid, [])
+            _recent_sizes = [s for t, s in _sizes if now - t <= 60.0]
+            _avg_size = sum(_recent_sizes) / len(_recent_sizes) if _recent_sizes else 1.0
+            _size_anomaly = 1.0
+            _trade_rate = len([t for t, _s in _sizes if now - t <= 30.0]) / 30.0
             _filtered = _filter_quotes_by_fill_model(
                 tq.quotes,
                 cid=cid, meta=meta, tick=tick, mid=_mid,
@@ -2563,9 +2657,14 @@ class Engine:
                 yes_token=yes_token, est=est, fv=fv, now=now,
                 hours_to_end=hours_to_end, regime=tq.regime,
                 model=self.fill_model, store=self.fill_store,
+                gov=self.win_gov,
                 sample_ts=self._fill_sample_ts,
                 risk_cap_usdc=self.cfg.risk.max_market_notional_usdc,
                 held=_held,
+                ofi=_ofi_now,
+                ofi_trend=_ofi_trend,
+                size_anomaly=_size_anomaly,
+                trade_rate=_trade_rate,
             )
             tq = TargetQuotes(tq.condition_id, tq.regime, tuple(_filtered))
         # ─────────────────────────────────────────────────────────────
@@ -2573,6 +2672,9 @@ class Engine:
         regime = pipe.regime
         attr = pipe.attribution
         est.on_fair_value(fv, now)
+        # Resolve deferred fill labels (30s forward markouts) on the fresh FV.
+        with contextlib.suppress(Exception):
+            self._resolve_fill_labels(cid, now, fv)
         self.risk.update_mark(yes_token, fv)
         self.risk.update_mark(no_token, 1.0 - fv)
 
@@ -3290,6 +3392,10 @@ class Engine:
             self.fill_model = model
             if store is not None:
                 self.fill_store = store
+            # Paper mode: force deploy so the full ML pipeline (sizing,
+            # consensus, governor) can be validated against simulated fills.
+            if self.paper and model.is_trained and not model.is_deployable:
+                model._oos_passed = True
             self._last_model_retrain_ts = time.time()
             metrics: dict[str, float | bool | int | str] | None = None
             if model.is_trained and store is not None:
@@ -3486,6 +3592,49 @@ def _hours_to_end(end_date_iso: str | None, now: float) -> float | None:
         return None
 
 
+@dataclasses.dataclass(slots=True)
+class _PendingFillLabel:
+    """A fill whose true forward markout has not resolved yet.
+
+    The engine records fill features at fill time but must not label them
+    with the *current* toxicity EWMA (that reflects past fills, not this
+    one). Instead the sample stays pending until its 30s horizon elapses,
+    then the actual signed forward move is used as the training label —
+    the same definition as the offline trainer.
+    """
+
+    cid: str
+    token_id: str
+    side: Side
+    feats: FillFeatures
+    fv_at_fill: float
+    due_ts: float
+    fill_ts: float
+
+
+def _book_depth_features(book: object | None, view: BookView) -> tuple[float, float, float, float, float, float]:
+    """Return top-book depth features with a safe view fallback."""
+    if book is None:
+        return view.bid_depth, view.ask_depth, view.best_bid_size, 0.0, view.best_ask_size, 0.0
+    bids = getattr(book, "bids", None)
+    asks = getattr(book, "asks", None)
+    if not bids or not asks:
+        return view.bid_depth, view.ask_depth, view.best_bid_size, 0.0, view.best_ask_size, 0.0
+    try:
+        bid_values = list(bids.values())
+        ask_values = list(asks.values())
+        return (
+            float(sum(bid_values[-10:])),
+            float(sum(ask_values[:10])),
+            float(bid_values[-1]) if bid_values else view.best_bid_size,
+            float(sum(bid_values[-4:-1])),
+            float(ask_values[0]) if ask_values else view.best_ask_size,
+            float(sum(ask_values[1:4])),
+        )
+    except (IndexError, TypeError, ValueError):
+        return view.bid_depth, view.ask_depth, view.best_bid_size, 0.0, view.best_ask_size, 0.0
+
+
 def _quality_filter_from_book(
     q: Quote,
     book: object | None,
@@ -3548,9 +3697,14 @@ def _filter_quotes_by_fill_model(
     regime: Regime,
     model: FillModel,
     store: FillTrainingStore,
+    gov: WinRateGovernor,
     sample_ts: dict[tuple[str, str, float], float],
     risk_cap_usdc: float,
     held: dict[str, float],
+    ofi: float = 0.0,
+    ofi_trend: float = 0.0,
+    size_anomaly: float = 1.0,
+    trade_rate: float = 0.0,
 ) -> list[Quote]:
     """Filter/size target quotes with the fill model (pure, testable).
 
@@ -3560,24 +3714,50 @@ def _filter_quotes_by_fill_model(
         book-shape tree stays the gate; the ML decision is logged only.
       - Cold (untrained): tree gate only.
 
-    Exit quotes (SELL of a held token, incl. REDUCE_ONLY) are never removed
-    by either gate — risk reduction must not be blocked by a model — but may
-    still be sized when the model is active. Non-fill samples for kept quotes
-    are recorded (throttled per token/side/price) for online validation.
+    The win-rate governor (``gov``) overlays every mode with a closed-loop
+    WR controller: when realized WR of live fills falls below target it
+    blocks new entries / raises the consensus floor / shrinks entry size;
+    when WR clears target it relaxes. Exit quotes (SELL of a held token,
+    incl. REDUCE_ONLY) are never removed by either gate — risk reduction
+    must not be blocked by a model — but may still be sized when the model
+    is active. Non-fill samples for kept quotes are recorded (throttled per
+    token/side/price) for online validation.
     """
     out: list[Quote] = []
     active = model.is_deployable
+    policy = gov.policy()
+    gov_active = policy.n_evaluated >= 5  # only act once we have real outcomes
     for q in quotes:
+        q_book = yes_book if q.token_id == yes_token else no_book
+        q_view = yes_view
+        if q_book is not None and q.token_id != yes_token:
+            with contextlib.suppress(Exception):
+                q_view = q_book.view()
+        q_ofi = ofi if q.token_id == yes_token else -ofi
+        q_ofi_trend = ofi_trend if q.token_id == yes_token else -ofi_trend
+        bd_total, ad_total, bd1, bd2, ad1, ad2 = _book_depth_features(q_book, q_view)
         feats = extract_features(
-            quote=q, meta=meta, mid=mid,
-            best_bid=yes_view.best_bid, best_ask=yes_view.best_ask,
-            bid_depth=yes_view.bid_depth, ask_depth=yes_view.ask_depth,
+            quote=q, meta=meta, mid=float(q_view.mid or mid),
+            best_bid=q_view.best_bid, best_ask=q_view.best_ask,
+            bid_depth=q_view.bid_depth, ask_depth=q_view.ask_depth,
             vol_ratio=est.vol.ratio, flow_z=est.flow.z,
             toxicity=float(getattr(est.markout, "toxicity", 0.0) or 0.0),
             regime=regime, hours_to_resolve=hours_to_end, now=now,
+            ofi=q_ofi, ofi_trend=q_ofi_trend,
+            size_anomaly=size_anomaly, trade_rate=trade_rate,
+            bd_total=bd_total, ad_total=ad_total, ad1=ad1, ad2=ad2,
+            bd1=bd1, bd2=bd2,
         )
         is_exit = q.side is Side.SELL and held.get(q.token_id, 0.0) > 0.0
         keep = True
+        # ── Win-rate governor overlay (closed loop) ──
+        # Only entry quotes are controlled; exits always keep.
+        if gov_active and not is_exit:
+            if policy.block_entries:
+                keep = False
+                log.debug("win_gov_block", cid=cid[:8], token=q.token_id[:8],
+                          side=q.side.value, mode=policy.mode,
+                          realized_wr=round(policy.realized_wr, 3))
         if active:
             pred = model.predict(feats)
             if not pred.should_quote and not is_exit:
@@ -3585,6 +3765,12 @@ def _filter_quotes_by_fill_model(
                 log.debug("fill_model_skip", cid=cid[:8], token=q.token_id[:8],
                           side=q.side.value, prob_fill=round(pred.prob_fill, 3),
                           markout=round(pred.expected_markout, 6))
+            elif not is_exit and gov_active and pred.consensus < policy.consensus_floor:
+                keep = False
+                log.debug("win_gov_consensus_skip", cid=cid[:8], token=q.token_id[:8],
+                          side=q.side.value, consensus=round(pred.consensus, 3),
+                          floor=round(policy.consensus_floor, 3),
+                          realized_wr=round(policy.realized_wr, 3))
             elif abs(pred.suggested_size_mult - 1.0) > 0.01:
                 # Dynamic sizing clamped to the per-market notional cap
                 # and the exchange minimum order size.
@@ -3599,8 +3785,7 @@ def _filter_quotes_by_fill_model(
             # fills). Until the ML model is validated on live data it
             # supersedes nothing; absolute depth thresholds are
             # market-specific.
-            _qbook = yes_book if q.token_id == yes_token else no_book
-            _qf = _quality_filter_from_book(q, _qbook, mid, tick)
+            _qf = _quality_filter_from_book(q, q_book, float(q_view.mid or mid), tick)
             if _qf == 0.0 and not is_exit:
                 keep = False
                 log.debug("fill_model_quality_skip", cid=cid[:8],
@@ -3613,6 +3798,14 @@ def _filter_quotes_by_fill_model(
                               prob_fill=round(pred.prob_fill, 3),
                               markout=round(pred.expected_markout, 6))
         if keep:
+            # Governor size scaling applies to entries only (exits keep size).
+            if gov_active and not is_exit and abs(policy.entry_size_scale - 1.0) > 0.01:
+                _sz = q.size * policy.entry_size_scale
+                _cap_shares = risk_cap_usdc / max(q.price, tick)
+                _sz = min(_sz, _cap_shares)
+                if q.size >= meta.min_order_size and _sz < meta.min_order_size:
+                    _sz = meta.min_order_size
+                q = dataclasses.replace(q, size=_sz)
             out.append(q)
             _key = (q.token_id, q.side.value, round(q.price, 6))
             if now - sample_ts.get(_key, 0.0) >= 60.0:

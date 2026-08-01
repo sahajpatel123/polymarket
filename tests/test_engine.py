@@ -89,7 +89,8 @@ def _stub_est():
     )
 
 
-def _stub_model(deployable: bool, trained: bool = True, should_quote: bool = False):
+def _stub_model(deployable: bool, trained: bool = True, should_quote: bool = False,
+                size_mult: float = 2.0, consensus: float = 0.5):
     from polymaker.strategy.fill_model import FillPrediction
 
     class _Stub:
@@ -98,12 +99,21 @@ def _stub_model(deployable: bool, trained: bool = True, should_quote: bool = Fal
 
         def predict(self, feats):
             return FillPrediction(prob_fill=0.95, expected_markout=-0.01,
-                                  should_quote=should_quote, suggested_size_mult=2.0)
+                                  should_quote=should_quote,
+                                  suggested_size_mult=size_mult,
+                                  consensus=consensus)
 
     return _Stub()
 
+def _stub_gov():
+    """Neutral win-rate governor: no outcomes yet -> learning mode, no effect."""
+    from polymaker.strategy.fill_model import WinRateGovernor
 
-def _filter(meta, quotes, model, *, held=None, now=100.0, risk_cap=800.0):
+    return WinRateGovernor()
+
+
+def _filter(meta, quotes, model, *, held=None, now=100.0, risk_cap=800.0,
+            gov_policy=None):
     from polymaker.engine import _filter_quotes_by_fill_model
     from polymaker.marketdata.orderbook import OrderBook
     from polymaker.strategy.fill_model import FillTrainingStore
@@ -121,7 +131,8 @@ def _filter(meta, quotes, model, *, held=None, now=100.0, risk_cap=800.0):
         mid=0.495, yes_view=yb.view(), yes_book=yb, no_book=nb,
         yes_token=meta.yes.token_id, est=_stub_est(), fv=0.5,
         now=now, hours_to_end=100.0, regime=Regime.QUIET,
-        model=model, store=store, sample_ts={},
+        model=model, store=store, gov=_gov_policy(gov_policy) if gov_policy else _stub_gov(),
+        sample_ts={},
         risk_cap_usdc=risk_cap, held=held or {},
     )
     return out, store
@@ -195,8 +206,138 @@ def test_fill_model_filter_shadow_logs_but_keeps_good_book(meta):
         mid=0.495, yes_view=yb.view(), yes_book=yb, no_book=nb,
         yes_token=yt, est=_stub_est(), fv=0.5, now=100.0, hours_to_end=100.0,
         regime=Regime.QUIET, model=_stub_model(deployable=False, trained=True),
-        store=FillTrainingStore(), sample_ts={}, risk_cap_usdc=800.0, held={},
+        store=FillTrainingStore(), gov=_stub_gov(), sample_ts={},
+        risk_cap_usdc=800.0, held={},
     )
     # imbalance -0.82 <= -0.2 -> tree says trade; shadow model may disagree
     # but must NOT remove the quote.
     assert len(out) == 1
+
+
+# ── win-rate governor overlay (closed loop) ───────────────────────────────
+
+
+def _gov_policy(policy):
+    from polymaker.strategy.fill_model import WinRateGovernor
+
+    class _Gov:
+        def policy(self):
+            return policy
+
+    return _Gov()
+
+
+def test_fill_model_filter_gov_blocks_entries_keeps_exits(meta):
+    """Governor in blocked mode removes entries but never exits."""
+    from polymaker.domain import Quote
+    from polymaker.strategy.fill_model import GovernorPolicy
+
+    yt = meta.yes.token_id
+    quotes = [
+        Quote(yt, Side.BUY, 0.49, 10.0),     # entry
+        Quote(yt, Side.SELL, 0.50, 10.0),    # exit (held)
+    ]
+    pol = GovernorPolicy(block_entries=True, consensus_floor=0.0,
+                         n_evaluated=30, realized_wr=0.40, mode="blocked")
+    out, _ = _filter(meta, quotes, _stub_model(deployable=False),
+                     held={yt: 10.0}, gov_policy=pol)
+    assert len(out) == 1
+    assert out[0].side is Side.SELL
+
+
+def test_fill_model_filter_gov_consensus_floor_drops_low_consensus(meta):
+    """Deployable model + governor consensus floor: low-consensus entries drop."""
+    from polymaker.domain import Quote
+    from polymaker.strategy.fill_model import FillPrediction, GovernorPolicy
+
+    class _Low:
+        is_deployable = True
+        is_trained = True
+
+        def predict(self, feats):
+            return FillPrediction(prob_fill=0.4, expected_markout=0.001,
+                                  should_quote=True, consensus=0.2)
+
+    yt = meta.yes.token_id
+    quotes = [Quote(yt, Side.BUY, 0.49, 10.0)]
+    pol = GovernorPolicy(block_entries=False, consensus_floor=0.4,
+                         n_evaluated=30, realized_wr=0.55, mode="tight")
+    out, _ = _filter(meta, quotes, _Low(), held={}, gov_policy=pol)
+    assert out == []
+
+
+def test_fill_model_filter_gov_size_scale_entries_only(meta):
+    """Governor size scaling multiplies entries; exits keep their size."""
+    from polymaker.domain import Quote
+    from polymaker.strategy.fill_model import GovernorPolicy
+
+    yt = meta.yes.token_id
+    quotes = [
+        Quote(yt, Side.BUY, 0.49, 10.0),    # entry
+        Quote(yt, Side.SELL, 0.50, 10.0),   # exit
+    ]
+    pol = GovernorPolicy(block_entries=False, consensus_floor=0.0,
+                         entry_size_scale=0.5, n_evaluated=30,
+                         realized_wr=0.60, mode="tight")
+    out, _ = _filter(meta, quotes,
+                     _stub_model(deployable=True, should_quote=True, size_mult=1.0),
+                     held={yt: 10.0}, gov_policy=pol)
+    by_side = {q.side: q for q in out}
+    assert abs(by_side[Side.BUY].size - 5.0) < 0.01     # entry halved
+    assert abs(by_side[Side.SELL].size - 10.0) < 0.01   # exit untouched
+
+
+# ── deferred fill labels (true forward markout) ───────────────────────────
+
+
+async def test_pending_fill_labels_resolve_with_forward_markout(tmp_path, meta):
+    """A fill's label is resolved from the FV 30s later, not a toxicity EWMA."""
+    from polymaker.domain import Fill
+    from polymaker.strategy.fill_model import FillTrainingStore
+
+    eng = _engine_with_market(tmp_path, meta)
+    _feed_book(eng, meta)
+    # Set last_fv directly (estimator default path).
+    yt = meta.yes.token_id
+    eng.est[meta.condition_id].last_fv = 0.50
+    eng.est[meta.condition_id].last_fv_ts = 100.0
+    eng.win_gov._min_samples = 1  # single fill is enough for this test
+
+    eng._on_fill(Fill(
+        order_id="ord1", token_id=yt, side=Side.BUY,
+        price=0.50, size=10.0, ts=100.0, trade_id="t1",
+    ))
+    # 30s horizon not elapsed at t=105 -> still pending.
+    eng._resolve_fill_labels(meta.condition_id, 105.0, 0.50)
+    assert not eng.fill_store.features
+
+    # At t=131 the markout resolves against fv_yes=0.52 (we bought -> win).
+    eng._resolve_fill_labels(meta.condition_id, 131.0, 0.52)
+    assert len(eng.fill_store.features) == 1
+    assert eng.fill_store.y_markout[0] > 0.0  # positive markout
+    assert eng.win_gov.n_evaluated == 1
+    assert eng.win_gov.realized_wr == 1.0
+
+    # A SELL fill that resolves lower (token price fell) is also a win.
+    no_tok = meta.no.token_id
+    eng._on_fill(Fill(
+        order_id="ord2", token_id=no_tok, side=Side.SELL,
+        price=0.50, size=10.0, ts=200.0, trade_id="t2",
+    ))
+    eng._resolve_fill_labels(meta.condition_id, 231.0, 0.55)  # fv_yes rose -> NO fell
+    assert len(eng.fill_store.features) == 2
+    assert eng.fill_store.y_markout[1] > 0.0
+    assert eng.win_gov.realized_wr == 1.0
+
+    # A BUY fill that resolves against us (price fell) is a loss.
+    eng._on_fill(Fill(
+        order_id="ord3", token_id=yt, side=Side.BUY,
+        price=0.50, size=10.0, ts=300.0, trade_id="t3",
+    ))
+    eng._resolve_fill_labels(meta.condition_id, 331.0, 0.45)  # fv_yes fell
+    assert len(eng.fill_store.features) == 3
+    assert eng.fill_store.y_markout[2] < 0.0
+    assert eng.win_gov.realized_wr == 2 / 3
+
+    eng.state.close()
+    eng.catalog.close()

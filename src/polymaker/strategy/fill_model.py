@@ -28,8 +28,10 @@ from pathlib import Path
 import numpy as np
 
 from polymaker.domain import MarketMeta, Quote, Regime, Side
+from polymaker.logging import get_logger
 
 _EPS = 1e-9
+log = get_logger("fill_model")
 
 
 # ── feature vector ────────────────────────────────────────────────────────
@@ -59,6 +61,13 @@ class FillFeatures:
     ofi_trend: float = 0.0  # OFI change over last 5 snapshots
     size_anomaly: float = 1.0  # trade size / avg recent size (>1 = unusually large)
     trade_rate: float = 0.0  # trades/sec in last 30s
+    # Book depth features (enables tree-teacher quality distillation)
+    bd_total: float = 0.0  # total bid depth (top 10 levels)
+    ad_total: float = 0.0  # total ask depth
+    ad1: float = 0.0  # ask depth at level 1
+    ad2: float = 0.0  # ask depth at levels 2-4
+    bd1: float = 0.0  # bid depth at level 1
+    bd2: float = 0.0  # bid depth at levels 2-4
 
     def to_array(self) -> np.ndarray:
         return np.array(
@@ -82,6 +91,12 @@ class FillFeatures:
                 self.ofi_trend,
                 self.size_anomaly,
                 self.trade_rate,
+                self.bd_total,
+                self.ad_total,
+                self.ad1,
+                self.ad2,
+                self.bd1,
+                self.bd2,
             ],
             dtype=np.float32,
         )
@@ -106,6 +121,12 @@ def extract_features(
     ofi_trend: float = 0.0,
     size_anomaly: float = 1.0,
     trade_rate: float = 0.0,
+    bd_total: float = 0.0,
+    ad_total: float = 0.0,
+    ad1: float = 0.0,
+    ad2: float = 0.0,
+    bd1: float = 0.0,
+    bd2: float = 0.0,
 ) -> FillFeatures:
     """Extract a feature vector for one candidate quote before placement."""
     tick = meta.tick_size
@@ -148,7 +169,121 @@ def extract_features(
         ofi_trend=_clip(ofi_trend, -1.0, 1.0),
         size_anomaly=_clip(size_anomaly, 0.1, 20.0),
         trade_rate=_clip(trade_rate, 0.0, 10.0),
+        bd_total=max(0.0, float(bd_total)),
+        ad_total=max(0.0, float(ad_total)),
+        ad1=max(0.0, float(ad1)),
+        ad2=max(0.0, float(ad2)),
+        bd1=max(0.0, float(bd1)),
+        bd2=max(0.0, float(bd2)),
     )
+
+
+# ── live win-rate governor (closed-loop WR control) ────────────────────────
+
+
+@dataclass(frozen=True, slots=True)
+class GovernorPolicy:
+    """Entry policy produced by the live win-rate governor.
+
+    ``entry_size_scale`` multiplies entry (non-exit) quote sizes.
+    ``consensus_floor`` is the minimum model consensus a quote must reach
+    (0.0 = no constraint); applied only on the active path.
+    ``block_entries`` forces reduce-only when realized WR collapses.
+    """
+
+    entry_size_scale: float = 1.0
+    consensus_floor: float = 0.0
+    block_entries: bool = False
+    realized_wr: float = 0.0
+    n_evaluated: int = 0
+    mode: str = "neutral"  # learning | relaxed | neutral | tight | blocked
+
+
+class WinRateGovernor:
+    """Adaptive live win-rate controller (target ≈ 0.70).
+
+    Offline trees quote "74% WR on 36% of fills" on a historical tape; in a
+    changing market that number is not guaranteed to survive contact. This
+    governor closes the loop on *realized* outcomes: every resolved live
+    fill (markout sign at the configured horizon) is recorded, and the
+    entry policy tightens when realized WR falls below target and relaxes
+    when it clears it. Proportional control with clamps and hysteresis —
+    pure dataclass logic, no I/O.
+    """
+
+    __slots__ = ("_target_wr", "_window", "_min_samples", "_wins", "_outcomes",
+                 "_hard_floor", "_hard_samples")
+
+    def __init__(
+        self,
+        target_wr: float = 0.70,
+        window: int = 60,
+        min_samples: int = 20,
+        hard_floor: float = 0.50,
+        hard_samples: int = 15,
+    ) -> None:
+        self._target_wr = target_wr
+        self._window = window
+        self._min_samples = min_samples
+        self._hard_floor = hard_floor
+        self._hard_samples = hard_samples
+        self._wins: list[bool] = []
+
+    def record_outcome(self, win: bool) -> None:
+        self._wins.append(bool(win))
+        if len(self._wins) > self._window:
+            del self._wins[: len(self._wins) - self._window]
+
+    @property
+    def realized_wr(self) -> float:
+        if len(self._wins) < self._min_samples:
+            return 0.0
+        return sum(self._wins) / len(self._wins)
+
+    @property
+    def n_evaluated(self) -> int:
+        return len(self._wins)
+
+    def _delta(self) -> float:
+        """Signed gap from target: positive = above target (relax), negative = tight."""
+        n = len(self._wins)
+        if n < self._min_samples:
+            return 0.0
+        wr = sum(self._wins) / n
+        return wr - self._target_wr
+
+    def policy(self) -> GovernorPolicy:
+        n = len(self._wins)
+        if n < self._min_samples:
+            return GovernorPolicy(mode="learning", n_evaluated=n, realized_wr=self.realized_wr)
+        wr = sum(self._wins) / n
+        delta = wr - self._target_wr
+
+        # Catastrophic: realized WR collapsed under a hard floor → reduce-only.
+        if wr < self._hard_floor and n >= self._hard_samples:
+            return GovernorPolicy(
+                entry_size_scale=0.4, consensus_floor=0.55,
+                block_entries=True, realized_wr=wr, n_evaluated=n, mode="blocked",
+            )
+
+        # Proportional tightening below target: floor rises, size shrinks.
+        if delta < -0.03:
+            tightness = min(1.0, (-delta) / 0.25)  # full tight at 25pp below
+            return GovernorPolicy(
+                entry_size_scale=round(1.0 - 0.5 * tightness, 3),
+                consensus_floor=round(0.25 * tightness, 3),
+                realized_wr=wr, n_evaluated=n, mode="tight",
+            )
+
+        # Relaxation above target: size up modestly, keep a light floor.
+        if delta > 0.08:
+            relax = min(0.25, (delta - 0.08) / 0.3)
+            return GovernorPolicy(
+                entry_size_scale=round(1.0 + relax, 3),
+                consensus_floor=0.05, realized_wr=wr, n_evaluated=n, mode="relaxed",
+            )
+
+        return GovernorPolicy(realized_wr=wr, n_evaluated=n, mode="neutral")
 
 
 def _clip(x: float, lo: float, hi: float) -> float:
@@ -165,6 +300,8 @@ class FillPrediction:
     should_quote: bool
     confidence: float = 0.5  # 0-1 model confidence in this prediction
     suggested_size_mult: float = 1.0  # 0.5-2.5x base_size multiplier
+    quality_score: float = 0.5  # 0-1 tree-teacher quality (post-distillation)
+    consensus: float = 0.5  # 0-1 multi-signal consensus (governor floor)
 
 
 class FillModel:
@@ -178,20 +315,34 @@ class FillModel:
         "_fill_clf",
         "_markout_reg",
         "_good_fill_clf",
+        "_quality_clf",
         "_n_samples",
         "_min_samples",
         "_feature_dim",
         "_oos_passed",
+        "_fallback_count",
     )
 
     def __init__(self, min_samples: int = 100) -> None:
         self._fill_clf: object | None = None
         self._markout_reg: object | None = None
         self._good_fill_clf: object | None = None
+        self._quality_clf: object | None = None
         self._n_samples = 0
         self._min_samples = min_samples
-        self._feature_dim = 19
+        self._feature_dim = 25
         self._oos_passed: bool | None = None
+        self._fallback_count = 0
+
+    @property
+    def fallback_count(self) -> int:
+        """Number of predict() calls that silently degraded to the heuristic.
+
+        Non-zero means the artifact is stale/broken and the engine should
+        treat the ML decision as unavailable (shadow mode even if the flag
+        says deployable). Exposed so the engine can hard-gate on it.
+        """
+        return int(getattr(self, "_fallback_count", 0))
 
     @property
     def is_trained(self) -> bool:
@@ -205,13 +356,20 @@ class FillModel:
 
     @property
     def is_deployable(self) -> bool:
-        """is_trained AND the last holdout validation passed.
+        """is_trained AND the last holdout validation passed AND the model
+        is actually producing ML decisions (no silent heuristic fallbacks).
 
-        The engine only lets the model filter/size live quotes when this is
-        True. Until then the model runs in shadow mode and the empirical
-        book-shape tree (quality_filter_score) remains the quote gate.
+        A model whose predict() degraded to the heuristic (stale feature
+        dims, broken artifact) must NOT gate quotes — it would claim ML
+        filtering while running the cold-start prior. fallback_count grows
+        on every degraded prediction, so any non-zero count (post-migration
+        retrain) forces shadow mode.
         """
-        return self.is_trained and self._oos_passed is True
+        return (
+            self.is_trained
+            and self._oos_passed is True
+            and self._fallback_count == 0
+        )
 
     def holdout_metrics(
         self,
@@ -347,12 +505,62 @@ class FillModel:
         model = payload.get("model")
         if not isinstance(model, cls):
             raise TypeError("artifact does not contain a FillModel")
+        if not hasattr(model, "_fallback_count"):
+            # Artifact pickled before the fallback counter existed.
+            object.__setattr__(model, "_fallback_count", 0)
         arrays = payload.get("training")
-        if arrays is None:
-            return model, None
-        store = FillTrainingStore.from_arrays(
-            *arrays, online_mask=payload.get("training_online")
+        store = None
+        if arrays is not None:
+            store = FillTrainingStore.from_arrays(
+                *arrays, online_mask=payload.get("training_online")
+            )
+        # ── dimension migration ──────────────────────────────────────────────
+        # The feature vector evolved (15 → 19 → 25 dims) by APPENDING
+        # columns (microstructure, then book depth). A stale artifact whose
+        # sklearn models expect fewer features would silently throw on every
+        # predict() call and fall back to the heuristic — the model would
+        # never actually run. Repair at load: pad the persisted buffer to
+        # the current dimension (missing trailing features = 0.0, the
+        # neutral value) and retrain. The buffer is the ground truth; the
+        # fitted trees are disposable. Deployment stays gated on re-validation.
+        current = cls()._feature_dim
+        fitted_dim = getattr(getattr(model, "_markout_reg", None), "n_features_in_", None)
+        stale = (
+            model._feature_dim != current
+            or (fitted_dim is not None and fitted_dim != current)
         )
+        if stale:
+            arrays_now = store.raw_arrays() if store is not None else None
+            if arrays_now is not None and arrays_now[0].shape[1] <= current:
+                X, yf, ym = arrays_now
+                if X.shape[1] < current:
+                    pad = np.zeros((len(X), current - X.shape[1]), dtype=np.float32)
+                    X = np.concatenate([X, pad], axis=1)
+                repaired = cls(min_samples=model._min_samples)
+                repaired.train(X, yf, ym)
+                if repaired.is_trained:
+                    log.warning(
+                        "fill_model_dim_migrated",
+                        had_feature_dim=fitted_dim or model._feature_dim,
+                        feature_dim=current,
+                        samples=len(store.features),
+                        n_fill=int(float(yf.sum())),
+                    )
+                    model = repaired
+                else:
+                    log.warning(
+                        "fill_model_dim_migration_failed",
+                        had_feature_dim=fitted_dim or model._feature_dim,
+                        feature_dim=current,
+                        samples=len(store.features),
+                    )
+            else:
+                log.warning(
+                    "fill_model_dim_unrepairable",
+                    had_feature_dim=fitted_dim or model._feature_dim,
+                    feature_dim=current,
+                    buffered_dims=arrays_now[0].shape[1] if arrays_now is not None else None,
+                )
         return model, store
 
     @classmethod
@@ -374,46 +582,98 @@ class FillModel:
             return _heuristic_predict(features)
 
         X = features.to_array().reshape(1, -1)
+        if X.shape[1] != self._feature_dim:
+            # Stale artifact with a mismatched feature vector — the sklearn
+            # models would raise and we'd silently degrade. Count it and
+            # degrade loudly (the engine gates on fallback_count).
+            self._fallback_count += 1
+            log.warning("fill_model_dim_mismatch_at_predict",
+                        feature_dim=self._feature_dim, got=X.shape[1],
+                        fallback_count=self._fallback_count)
+            return _heuristic_predict(features)
         try:
             prob_fill = 1.0
             if self._fill_clf is not None:
                 prob_fill = float(self._fill_clf.predict_proba(X)[0, 1])  # type: ignore[union-attr]
             markout = float(self._markout_reg.predict(X)[0])  # type: ignore[union-attr]
         except Exception:
+            self._fallback_count += 1
+            if self._fallback_count <= 5:
+                log.warning("fill_model_predict_fallback", count=self._fallback_count, exc_info=True)
             return _heuristic_predict(features)
 
         prob_fill = _clip(prob_fill, 0.0, 1.0)
 
-        # Binary classifier: P(good fill) → confidence + dynamic sizing
-        if self._good_fill_clf is not None:
+        # ── Multi-signal consensus score ──
+        # Combines independent predictors for a more robust quality estimate.
+        # When multiple signals agree → high confidence → size up.
+        # When signals conflict → low confidence → size down.
+        
+        # Signal 1: Quality classifier prediction (tree-distilled, 0-1)
+        if self._quality_clf is not None:
             try:
-                p_good = float(self._good_fill_clf.predict_proba(X)[0, 1])  # type: ignore[union-attr]
+                p_quality_raw = float(self._quality_clf.predict_proba(X)[0, 1])  # type: ignore[union-attr]
             except Exception:
-                p_good = 0.5
+                p_quality_raw = 0.5
+        elif self._good_fill_clf is not None:
+            try:
+                p_quality_raw = float(self._good_fill_clf.predict_proba(X)[0, 1])  # type: ignore[union-attr]
+            except Exception:
+                p_quality_raw = 0.5
         else:
-            # Fallback: use markout sign as proxy
-            p_good = 0.55 if markout > 0 else 0.45
-
-        # Confidence magnitude (direction-blind, for reporting only)
-        confidence = _clip(2.0 * abs(p_good - 0.5), 0.1, 0.9)
-
-        # Dynamic size — SIGNED on P(good):
-        #   confidently good → size up (to 2.5x), confidently bad → size down
-        #   (to 0.5x), unsure (p_good ≈ 0.5) → 1.0x base size.
-        size_mult = 1.0 + 3.0 * (p_good - 0.5)
+            p_quality_raw = 0.55 if markout > 0 else 0.45
+        
+        # Signal 2: Markout sign (1 if positive, 0 otherwise)
+        markout_signal = 1.0 if markout > 0 else 0.0
+        
+        # Signal 3: OFI signal (requesting flow, tanh-scaled)
+        _ofi = getattr(features, 'ofi', 0.0) or 0.0
+        ofi_signal = 0.5 + 0.5 * np.tanh(_ofi * 10.0)  # 0-1, 0.5 = neutral
+        
+        # Signal 4: Spread quality (tighter = better)
+        _spread = getattr(features, 'spread_ticks', 3.0) or 3.0
+        spread_signal = max(0.0, 1.0 - _spread / 10.0)
+        
+        # Signal 5: Book balance (ask-heavy = good for BUY, mean reversion)
+        _imb = getattr(features, 'book_imbalance', 0.0) or 0.0
+        balance_signal = 1.0 - abs(_imb)  # 0 = extreme, 1 = balanced
+        # Bonus for slight ask-heavy (mean reversion effect)
+        if _imb < -0.1:
+            balance_signal += 0.15
+        balance_signal = _clip(balance_signal, 0.0, 1.0)
+        
+        # Weighted consensus
+        consensus = (
+            0.30 * p_quality_raw +
+            0.20 * markout_signal +
+            0.15 * ofi_signal +
+            0.15 * spread_signal +
+            0.20 * balance_signal
+        )
+        consensus = _clip(consensus, 0.05, 0.95)
+        
+        # Confidence: how far from 0.5 the consensus is
+        confidence = _clip(2.0 * abs(consensus - 0.5), 0.1, 0.9)
+        
+        # Dynamic size from consensus
+        size_mult = 0.5 + 3.5 * (consensus - 0.3)  # shifted so consensus=0.3 → 0.5x, 0.7 → 1.9x, 0.95 → 2.8x
         size_mult = _clip(round(size_mult, 2), 0.5, 2.5)
-
+        
+        # Quality score for reporting (alias of p_quality_raw)
+        quality_score = p_quality_raw
+        
         should = True
         if prob_fill > 0.8:
             should = False
-        elif prob_fill > 0.5 and markout < 0.0:
+        elif prob_fill > 0.5 and consensus < 0.3:
             should = False
-        elif prob_fill > 0.3 and markout < -0.005 and p_good < 0.5:
+        elif prob_fill > 0.3 and consensus < 0.2:
             should = False
 
         return FillPrediction(
             prob_fill=prob_fill, expected_markout=markout, should_quote=should,
             confidence=confidence, suggested_size_mult=size_mult,
+            quality_score=quality_score, consensus=consensus,
         )
 
     def train(
@@ -480,12 +740,46 @@ class FillModel:
 
         self._n_samples = n
 
+        # ── Production tree → ensemble-student quality distillation ──
+        # Use the exact production quality_filter_score() as the teacher on
+        # fills only, then train the quality classifier on the complete feature
+        # vector. This keeps offline labels identical to the cold-start gate.
+        # Quality distillation needs both the filled and quoted-but-unfilled
+        # populations in the buffer. A fills-only unit/replay buffer cannot
+        # validate the teacher's entry gate, so keep the direct good-fill model
+        # as the sizing fallback there.
+        if n_fill >= 50 and n_fill < n:
+            try:
+                y_quality = np.array(
+                    [quality_filter_score(
+                        imbalance=float(row[0]), spread_ticks=float(row[1]),
+                        mid=float(row[6]), bd_total=float(row[19]),
+                        ad1=float(row[21]), ad2=float(row[22]),
+                        dist_ticks=float(row[9]), bd1=float(row[23]),
+                        bd2=float(row[24]),
+                    ) for row in X_fill], dtype=np.float32
+                )
+                n_good = int(y_quality.sum())
+                if n_good >= 20 and np.unique(y_quality).size >= 2:
+                    self._quality_clf = HistGradientBoostingClassifier(
+                        max_iter=100, max_depth=4, min_samples_leaf=10,
+                        early_stopping=False, random_state=42,
+                    )
+                    self._quality_clf.fit(X_fill, y_quality)
+                else:
+                    self._quality_clf = None
+            except Exception:
+                self._quality_clf = None
+        else:
+            self._quality_clf = None
+
     def clear(self) -> None:
         self._fill_clf = None
         self._markout_reg = None
         self._good_fill_clf = None
         self._n_samples = 0
         self._oos_passed = None
+        self._fallback_count = 0
 
 
 def _heuristic_predict(f: FillFeatures) -> FillPrediction:
@@ -512,7 +806,7 @@ def _heuristic_predict(f: FillFeatures) -> FillPrediction:
 
     return FillPrediction(
         prob_fill=prob, expected_markout=markout, should_quote=should,
-        confidence=0.5, suggested_size_mult=1.0,
+        confidence=0.5, suggested_size_mult=1.0, consensus=0.5,
     )
 
 

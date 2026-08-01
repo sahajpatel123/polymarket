@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
 """Train and persist the fill model from raw Polymaker journal files.
 
-The raw journal contains ``book`` snapshots and ``last_trade_price`` events,
-not strategy fills. This trainer reconstructs the scalp-hot experiment:
+The raw journal contains ``book`` snapshots, ``price_change`` touch updates
+and ``last_trade_price`` events, not strategy fills. This trainer
+reconstructs the scalp-hot experiment:
 
 * place synthetic BUY/SELL candidates at each observed touch;
-* label a candidate filled when the next trade crosses that touch;
+* label a candidate filled when the next touch/trade crosses that price;
 * label non-crossed candidates as non-fills;
 * compute a 30-second signed markout from subsequent book mids;
 * train and persist the model plus the complete bounded training buffer.
+
+``price_change`` events (Polymarket's dense book-delta feed) carry per-asset
+``best_bid``/``best_ask``; they are the primary fill source on wide-spread
+journals where trade prints never cross the touch.
 
 Unlike a fixed-feature trainer, the book/market features are recomputed from
 the tape with real variance — vol_ratio, flow_z and toxicity are rolling
@@ -22,9 +27,10 @@ Reproduction (the shipped artifact came from the 24h backtest journal):
     uv run python scripts/train_fill_model.py \\
         --journal backtest_24h/journal.jsonl --output models/fill_model.pkl
 
-Note: ``journal/paper.jsonl`` (wide-spread, at-resolution books whose trade
-prints do not cross the touch) reconstructs zero fills and exits non-zero —
-use a journal where books and trades align.
+Real live journal (dense price_change feed):
+
+    uv run python scripts/train_fill_model.py \\
+        --journal journal/paper.jsonl --output models/fill_model.pkl
 
 This is deliberately an offline trainer. The engine loads the resulting local
 artifact before it can quote, and continues adding live samples afterwards.
@@ -85,6 +91,7 @@ class _Tape:
     def __init__(self) -> None:
         self.mids: list[tuple[float, float]] = []  # (ts, mid)
         self.signed: list[float] = []  # per-trade signed size
+        self.trade_ts: list[float] = []
         self.interval_tox: list[float] = []  # toxicity per book interval
         self._pending_flow = 0.0
 
@@ -103,11 +110,13 @@ class _Tape:
         if len(self.mids) > 50:
             self.mids = self.mids[-50:]
 
-    def on_trade(self, signed_size: float) -> None:
+    def on_trade(self, signed_size: float, ts: float) -> None:
         self._pending_flow += signed_size
         self.signed.append(signed_size)
+        self.trade_ts.append(ts)
         if len(self.signed) > 200:
             self.signed = self.signed[-200:]
+            self.trade_ts = self.trade_ts[-200:]
 
     def vol_ratio(self) -> float:
         if len(self.mids) < 13:
@@ -194,6 +203,10 @@ def _features(
     flow_z: float,
     toxicity: float,
     regime: str,
+    ofi: float,
+    ofi_trend: float,
+    size_anomaly: float,
+    trade_rate: float,
 ) -> FillFeatures:
     price = book.best_bid if side is Side.BUY else book.best_ask
     depth = book.bid_depth if side is Side.BUY else book.ask_depth
@@ -215,6 +228,16 @@ def _features(
         regime_event=1.0 if regime == "EVENT" else 0.0,
         regime_reduce_only=0.0,
         regime_halted=0.0,
+        ofi=ofi,
+        ofi_trend=ofi_trend,
+        size_anomaly=size_anomaly,
+        trade_rate=trade_rate,
+        bd_total=book.bid_depth,
+        ad_total=book.ask_depth,
+        ad1=book.ask_level1,
+        ad2=book.ask_level2,
+        bd1=book.bid_level1,
+        bd2=book.bid_level2,
     )
 
 
@@ -228,7 +251,15 @@ def build_training_store(
     journals: list[Path], *, tick: float = 0.001, base_size_usdc: float = 4.0,
     max_events: int = 5_000_000,
 ) -> tuple[FillTrainingStore, dict[str, int]]:
-    """Convert raw journal events into aligned fill/non-fill samples."""
+    """Convert raw journal events into aligned fill/non-fill samples.
+
+    Consumes ``book`` (full L2), ``price_change`` (dense touch deltas with
+    best_bid/best_ask) and ``last_trade_price`` (prints). Candidates are
+    placed at each touch-state change; a candidate fills when a trade print
+    crosses its price OR the touch crosses it (best_ask <= resting BUY price
+    / best_bid >= resting SELL price), so journals with a dense price_change
+    feed but sparse prints still reconstruct fills.
+    """
     events: list[tuple[float, int, dict[str, Any]]] = []
     sequence = 0
     for path in journals:
@@ -241,7 +272,7 @@ def build_training_store(
                 except json.JSONDecodeError:
                     continue
                 kind = event.get("kind") or event.get("event")
-                if kind not in ("book", "last_trade_price"):
+                if kind not in ("book", "last_trade_price", "price_change"):
                     continue
                 events.append((float(event.get("ts", 0.0)), sequence, event))
                 sequence += 1
@@ -251,12 +282,25 @@ def build_training_store(
     asset_end: dict[str, float] = {}
     for ts, _seq, event in events:
         data = event.get("data") or {}
+        kind = event.get("kind") or event.get("event")
+        if kind == "price_change":
+            for pc in data.get("price_changes") or []:
+                asset = str(pc.get("asset_id") or "")
+                if asset:
+                    asset_end[asset] = max(asset_end.get(asset, 0.0), ts)
+            continue
         asset = str(data.get("asset_id") or data.get("token_id") or "")
         if asset:
             asset_end[asset] = max(asset_end.get(asset, 0.0), ts)
 
     books_by_asset: dict[str, list[tuple[float, float]]] = {}
+    # depth_cache: last full L2 snapshot per asset; price_change events keep
+    # the depth levels and only refresh the touch from best_bid/best_ask.
+    depth_cache: dict[str, BookState] = {}
     current: dict[str, BookState] = {}
+    previous: dict[str, BookState] = {}
+    last_touch: dict[str, tuple[float, float]] = {}
+    ofi_history: dict[str, list[float]] = {}
     pending: dict[str, dict[Side, Candidate]] = {}
     tapes: dict[str, _Tape] = {}
     filled: list[tuple[Candidate, float]] = []
@@ -267,43 +311,130 @@ def build_training_store(
         if old:
             nonfills.extend(candidate.features for candidate in old.values())
 
+    def place_candidates(asset: str, state: BookState, ts: float) -> None:
+        """Refresh a side's resting candidate at the new touch."""
+        finalize(asset)
+        tape = tapes.setdefault(asset, _Tape())
+        fz = tape.flow_z()
+        tox = tape.toxicity()
+        vr = tape.vol_ratio()
+        regime = _derive_regime(fz, tox, vr)
+        hours = max(0.0, (asset_end.get(asset, ts) - ts) / 3600.0)
+        recent_sizes = [abs(x) for x in tape.signed[-20:]]
+        avg_size = sum(recent_sizes) / len(recent_sizes) if recent_sizes else 1.0
+        size_anomaly = recent_sizes[-1] / max(avg_size, 1.0) if recent_sizes else 1.0
+        trade_rate = len([x for x in tape.trade_ts if ts - x <= 30.0]) / 30.0
+        ofi_hist = ofi_history.setdefault(asset, [])
+        normalized_ofi = ofi_hist[-1] if ofi_hist else 0.0
+        ofi_trend = normalized_ofi - ofi_hist[0] if len(ofi_hist) >= 3 else 0.0
+        feats_buy = _features(
+            state, Side.BUY, base_size_usdc=base_size_usdc, tick=tick,
+            hours=hours, vol_ratio=vr, flow_z=fz, toxicity=tox, regime=regime,
+            ofi=normalized_ofi, ofi_trend=ofi_trend,
+            size_anomaly=size_anomaly, trade_rate=trade_rate,
+        )
+        feats_sell = _features(
+            state, Side.SELL, base_size_usdc=base_size_usdc, tick=tick,
+            hours=hours, vol_ratio=vr, flow_z=fz, toxicity=tox, regime=regime,
+            ofi=-normalized_ofi, ofi_trend=-ofi_trend,
+            size_anomaly=size_anomaly, trade_rate=trade_rate,
+        )
+        pending[asset] = {
+            Side.BUY: Candidate(feats_buy, asset, Side.BUY, ts, state.mid, state.best_bid),
+            Side.SELL: Candidate(feats_sell, asset, Side.SELL, ts, state.mid, state.best_ask),
+        }
+
+    def on_touch_move(asset: str, bb: float, ba: float, ts: float) -> None:
+        """Touch moved: build a state (depth cached) and refresh candidates."""
+        base = depth_cache.get(asset) or current.get(asset)
+        if base is None:
+            return
+        state = BookState(
+            asset_id=asset, ts=ts, best_bid=bb, best_ask=ba,
+            bid_depth=base.bid_depth, ask_depth=base.ask_depth,
+            bid_level1=base.bid_level1, ask_level1=base.ask_level1,
+            ask_level2=base.ask_level2, bid_level2=base.bid_level2,
+            mid=(bb + ba) / 2.0,
+            imbalance=(base.bid_depth - base.ask_depth) / max(base.bid_depth + base.ask_depth, 1e-9),
+            spread_ticks=(ba - bb) / max(tick, 1e-9),
+        )
+        current[asset] = state
+        previous[asset] = state
+        books_by_asset.setdefault(asset, []).append((ts, state.mid))
+        tapes.setdefault(asset, _Tape()).on_book(ts, state.mid)
+        place_candidates(asset, state, ts)
+
+    def check_touch_fill(asset: str, bb: float, ba: float, ts: float) -> None:
+        """Touch crossed through a resting candidate (strict: only a real
+        trade-through, i.e. the book inverted at our level, counts)."""
+        candidates = pending.get(asset, {})
+        buy = candidates.get(Side.BUY)
+        if buy is not None and ba <= buy.price:
+            filled.append((buy, ts))
+            candidates.pop(Side.BUY, None)
+        sell = candidates.get(Side.SELL)
+        if sell is not None and bb >= sell.price:
+            filled.append((sell, ts))
+            candidates.pop(Side.SELL, None)
+
+    def check_print_fill(asset: str, price: float, aggressor: str, ts: float) -> None:
+        """A trade print crossed a resting candidate: label it filled."""
+        candidates = pending.get(asset, {})
+        for side, candidate in list(candidates.items()):
+            if _matches(candidate, price, aggressor, tick):
+                filled.append((candidate, ts))
+                candidates.pop(side, None)
+
     for ts, _seq, event in events:
         data = event.get("data") or {}
         kind = event.get("kind") or event.get("event")
+
+        if kind == "price_change":
+            for pc in data.get("price_changes") or []:
+                asset = str(pc.get("asset_id") or "")
+                if not asset or asset not in depth_cache:
+                    continue
+                try:
+                    bb = float(pc["best_bid"])
+                    ba = float(pc["best_ask"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                touch = last_touch.get(asset)
+                if touch is not None and abs(touch[0] - bb) < 1e-12 and abs(touch[1] - ba) < 1e-12:
+                    continue  # level sizes changed, touch unchanged -> no new candidate
+                last_touch[asset] = (bb, ba)
+                check_touch_fill(asset, bb, ba, ts)
+                on_touch_move(asset, bb, ba, ts)
+            continue
+
         asset = str(data.get("asset_id") or data.get("token_id") or "")
         if not asset:
             continue
 
         if kind == "book":
-            finalize(asset)
             state = _book_state(asset, ts, data, tick)
             if state is None:
                 continue
+            depth_cache[asset] = state
             current[asset] = state
+            previous[asset] = state
             books_by_asset.setdefault(asset, []).append((ts, state.mid))
             tape = tapes.setdefault(asset, _Tape())
+            prev = previous.get(asset)
+            raw_ofi = 0.0
+            if prev is not None:
+                raw_ofi = (state.bid_level1 - prev.bid_level1) - (
+                    state.ask_level1 - prev.ask_level1
+                )
+            normalized_ofi = raw_ofi / max(state.bid_level1 + state.ask_level1, 1.0)
+            ofi_hist = ofi_history.setdefault(asset, [])
+            ofi_hist.append(normalized_ofi)
+            if len(ofi_hist) > 20:
+                del ofi_hist[:-20]
             tape.on_book(ts, state.mid)
-            fz = tape.flow_z()
-            tox = tape.toxicity()
-            vr = tape.vol_ratio()
-            regime = _derive_regime(fz, tox, vr)
-            hours = max(0.0, (asset_end.get(asset, ts) - ts) / 3600.0)
-            feats_buy = _features(
-                state, Side.BUY, base_size_usdc=base_size_usdc, tick=tick,
-                hours=hours, vol_ratio=vr, flow_z=fz, toxicity=tox, regime=regime,
-            )
-            feats_sell = _features(
-                state, Side.SELL, base_size_usdc=base_size_usdc, tick=tick,
-                hours=hours, vol_ratio=vr, flow_z=fz, toxicity=tox, regime=regime,
-            )
-            pending[asset] = {
-                Side.BUY: Candidate(
-                    feats_buy, asset, Side.BUY, ts, state.mid, state.best_bid,
-                ),
-                Side.SELL: Candidate(
-                    feats_sell, asset, Side.SELL, ts, state.mid, state.best_ask,
-                ),
-            }
+            last_touch[asset] = (state.best_bid, state.best_ask)
+            check_touch_fill(asset, state.best_bid, state.best_ask, ts)
+            place_candidates(asset, state, ts)
             continue
 
         state = current.get(asset)
@@ -316,14 +447,10 @@ def build_training_store(
             continue
         aggressor = str(data.get("side", "")).upper()
         if aggressor == "BUY":
-            tapes.setdefault(asset, _Tape()).on_trade(size)
+            tapes.setdefault(asset, _Tape()).on_trade(size, ts)
         elif aggressor == "SELL":
-            tapes.setdefault(asset, _Tape()).on_trade(-size)
-        candidates = pending.get(asset, {})
-        for side, candidate in list(candidates.items()):
-            if _matches(candidate, price, aggressor, tick):
-                filled.append((candidate, ts))
-                candidates.pop(side, None)
+            tapes.setdefault(asset, _Tape()).on_trade(-size, ts)
+        check_print_fill(asset, price, aggressor, ts)
 
     for asset in list(pending):
         finalize(asset)
