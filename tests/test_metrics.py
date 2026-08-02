@@ -226,11 +226,12 @@ async def test_engine_paper_recompute_emits_metrics(tmp_path: Path, meta) -> Non
     eng.md.set_markets([(cid, [meta.yes.token_id, meta.no.token_id])])
     eng._running = True
     now = time.time()
+    # Ask-heavy book (passes the cold-start quality tree).
     eng.md.book(meta.yes.token_id).apply_snapshot(
-        bids=[(0.48, 500), (0.49, 500)], asks=[(0.51, 500), (0.52, 500)], ts=now
+        bids=[(0.48, 300), (0.49, 300)], asks=[(0.50, 5000), (0.51, 5000)], ts=now
     )
     eng.md.book(meta.no.token_id).apply_snapshot(
-        bids=[(0.48, 500), (0.49, 500)], asks=[(0.51, 500), (0.52, 500)], ts=now
+        bids=[(0.48, 300), (0.49, 300)], asks=[(0.50, 5000), (0.51, 5000)], ts=now
     )
 
     await eng._recompute(cid)

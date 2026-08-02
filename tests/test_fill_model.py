@@ -330,6 +330,30 @@ def test_fill_training_store_online_source():
     assert s3.online_arrays() is None
 
 
+def test_fill_training_store_eviction_preserves_offline():
+    """Over-capacity eviction drops oldest ONLINE rows, never offline."""
+    def feat():
+        return FillFeatures(
+            0.0, 2.0, 1.0, 1.0, 0.0, 0.0, 0.5, 0.1,
+            168.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0,
+        )
+
+    store = FillTrainingStore(max_samples=10)
+    # 6 offline rows (the training backbone)
+    for i in range(6):
+        store.add(feat(), filled=bool(i % 2), markout=0.01, source="offline")
+    # 8 online rows -> total 14 > cap 10
+    for i in range(8):
+        store.add(feat(), filled=True, markout=0.01)  # online default
+    assert len(store.features) == 10
+    # All 6 offline rows survive; oldest 4 online rows were evicted.
+    assert store.source.count("offline") == 6
+    assert store.source.count("online") == 4
+    assert store.source[0] == "offline"
+    # fill rate must not collapse from eviction
+    assert sum(store.y_fill) >= 6
+
+
 def test_offline_trainer_reconstructs_fills_from_tape(tmp_path):
     """The trainer labels touch-crossing fills, 30s markouts, tape features."""
     import json
@@ -435,7 +459,7 @@ def test_win_governor_relaxes_when_wr_high():
     p = gov.policy()
     assert p.mode == "relaxed"
     assert p.entry_size_scale > 1.0
-    assert p.consensus_floor == 0.05
+    assert p.consensus_floor == 0.40  # relaxed keeps a light selectivity floor
 
 
 def test_win_governor_converges_to_target_band():

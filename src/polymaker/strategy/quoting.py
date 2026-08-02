@@ -382,7 +382,13 @@ def _place_bid(
     if p <= 0 or p >= 1:
         return None
     if band_lo is not None and p + 1e-12 < band_lo:
-        return None
+        # The floor-rounded price fell below the reward-band floor (FV sits
+        # just past a tick boundary). Round UP to the band floor instead of
+        # dropping the side entirely — band_lo is itself tick-aligned, so a
+        # valid in-band price always exists at or above it.
+        p = round_to_tick(band_lo, tick, dec, up=True)
+        if p < band_lo - 1e-12:
+            return None
     return p
 
 

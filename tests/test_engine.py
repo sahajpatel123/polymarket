@@ -34,10 +34,13 @@ def _engine_with_market(tmp_path, meta) -> Engine:
 
 def _feed_book(eng, meta):
     now = time.time()  # fresh ts so the ws_stale guard doesn't HALT the market
+    # Realistic 2-tick spread, ask-heavy book: the cold-start quality tree
+    # (from real at-touch fills) blocks balanced books at the touch (<50% WR),
+    # so the synthetic book must look like a tradable one.
     yb = eng.md.book(meta.yes.token_id)
-    yb.apply_snapshot(bids=[(0.48, 500), (0.49, 500)], asks=[(0.51, 500), (0.52, 500)], ts=now)
+    yb.apply_snapshot(bids=[(0.48, 300), (0.49, 300)], asks=[(0.50, 5000), (0.51, 5000)], ts=now)
     nb = eng.md.book(meta.no.token_id)
-    nb.apply_snapshot(bids=[(0.48, 500), (0.49, 500)], asks=[(0.51, 500), (0.52, 500)], ts=now)
+    nb.apply_snapshot(bids=[(0.48, 300), (0.49, 300)], asks=[(0.50, 5000), (0.51, 5000)], ts=now)
 
 
 async def test_recompute_places_two_sided_paper_quotes(tmp_path, meta):
@@ -120,11 +123,11 @@ def _filter(meta, quotes, model, *, held=None, now=100.0, risk_cap=800.0,
     from polymaker.strategy.regime import Regime
 
     yb = OrderBook(meta.tick_size)
-    yb.apply_snapshot(bids=[(0.48, 500), (0.49, 500)],
-                      asks=[(0.50, 500), (0.51, 500)], ts=1.0)
+    yb.apply_snapshot(bids=[(0.48, 300), (0.49, 300)],
+                      asks=[(0.50, 5000), (0.51, 5000)], ts=1.0)
     nb = OrderBook(meta.tick_size)
-    nb.apply_snapshot(bids=[(0.48, 500), (0.49, 500)],
-                      asks=[(0.50, 500), (0.51, 500)], ts=1.0)
+    nb.apply_snapshot(bids=[(0.48, 300), (0.49, 300)],
+                      asks=[(0.50, 5000), (0.51, 5000)], ts=1.0)
     store = FillTrainingStore()
     out = _filter_quotes_by_fill_model(
         quotes, cid=meta.condition_id, meta=meta, tick=meta.tick_size,
@@ -174,15 +177,35 @@ def test_fill_model_filter_active_sizing_clamped(meta):
 def test_fill_model_filter_shadow_uses_tree_gate(meta):
     """Trained-but-not-validated model: tree gate still governs, no removal."""
     from polymaker.domain import Quote
+    from polymaker.engine import _filter_quotes_by_fill_model
+    from polymaker.marketdata.orderbook import OrderBook
+    from polymaker.strategy.fill_model import FillTrainingStore
+    from polymaker.strategy.regime import Regime
+
     yt = meta.yes.token_id
     quotes = [Quote(yt, Side.BUY, 0.49, 10.0)]
-    # Balanced book at 0.495 mid: tree returns 0.0 (mid<=0.6, shallow bid) ->
-    # the quote is skipped even though the model is trained (shadow).
-    out, _ = _filter(meta, quotes, _stub_model(deployable=False, trained=True))
-    assert out == []
+    # Bid-heavy book (imbalance +0.82): tree returns 0.0 -> the quote is
+    # skipped even though the model is trained (shadow).
+    yb = OrderBook(meta.tick_size)
+    yb.apply_snapshot(bids=[(0.48, 5000), (0.49, 5000)],
+                      asks=[(0.50, 300), (0.51, 300)], ts=1.0)
+    nb = OrderBook(meta.tick_size)
+    nb.apply_snapshot(bids=[(0.48, 5000), (0.49, 5000)],
+                      asks=[(0.50, 300), (0.51, 300)], ts=1.0)
+
+    def _run(model):
+        return _filter_quotes_by_fill_model(
+            quotes, cid=meta.condition_id, meta=meta, tick=meta.tick_size,
+            mid=0.49, yes_view=yb.view(), yes_book=yb, no_book=nb,
+            yes_token=yt, est=_stub_est(), fv=0.5, now=100.0, hours_to_end=100.0,
+            regime=Regime.QUIET, model=model, store=FillTrainingStore(),
+            gov=_stub_gov(), sample_ts={}, risk_cap_usdc=800.0, held={},
+        )
+
+    # Trained-but-shadow: tree rejects the book shape -> quote skipped.
+    assert _run(_stub_model(deployable=False, trained=True)) == []
     # A cold (untrained) model behaves identically.
-    out2, _ = _filter(meta, quotes, _stub_model(deployable=False, trained=False))
-    assert out2 == []
+    assert _run(_stub_model(deployable=False, trained=False)) == []
 
 
 def test_fill_model_filter_shadow_logs_but_keeps_good_book(meta):

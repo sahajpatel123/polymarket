@@ -1,10 +1,27 @@
 # Trade list (scalp-hot paper backtest).
+# Newsom removed 2026-08-02: toxicity 0.53 (oversight quarantined, "do not re-enter")
+
 [[markets]]
-slug    = "will-gavin-newsom-win-the-2028-democratic-presidential-nomination-568"
+slug    = "will-alexandru-nazare-be-the-next-prime-minister-of-romania"
 profile = "scalp-hot"
 enabled = true
 
 [[markets]]
-slug    = "will-alexandru-nazare-be-the-next-prime-minister-of-romania"
+slug    = "israel-closes-its-airspace-by-august-31-389"
+profile = "scalp-hot"
+enabled = true
+
+[[markets]]
+slug    = "will-emiliano-martinez-stay-at-aston-villa-20260612234358346"
+profile = "scalp-hot"
+enabled = true
+
+[[markets]]
+slug    = "will-wti-reach-95-in-august-2026"
+profile = "scalp-hot"
+enabled = true
+
+[[markets]]
+slug    = "will-anthony-fauci-be-arrested-before-2027-464"
 profile = "scalp-hot"
 enabled = true

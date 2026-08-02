@@ -2634,7 +2634,10 @@ class Engine:
         tq = pipe.targets
         # ── Fill model: filter adverse quotes + collect training samples ──
         # In paper mode the model is force-deployed so WR metrics and governor
-        # behaviour can be validated before risking live capital.
+        # behaviour can be validated before risking live capital. The gate is
+        # ALWAYS on (paper AND live): it is the only source of non-fill
+        # training samples (store.add(filled=False)) and the governor overlay,
+        # so disabling it in paper would collapse the online validation loop.
         if True:
             _mid = max(0.01, min(0.99, yes_view.mid if yes_view.mid is not None else fv))
             _held: dict[str, float] = {}
