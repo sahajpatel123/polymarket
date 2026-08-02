@@ -8,6 +8,7 @@ engine so PnL is always current.
 
 from __future__ import annotations
 
+import datetime as dt
 from dataclasses import dataclass
 
 from polymaker.config import RiskConfig
@@ -35,6 +36,13 @@ class RiskManager:
         self._net_cash = 0.0  # cumulative signed cash from fills (+sell, -buy)
         self._day_start_equity = 0.0
         self._killed = False
+        # Latched daily-loss breach. The daily cap is a STOP for the day, not a
+        # throttle: once breached it must stay engaged even if mark-to-market
+        # bounces back above the threshold. Without the latch the halt released
+        # on every favourable tick and the engine resumed adding exposure, so a
+        # $10 cap walked a $100 book down past -$600 in one session.
+        # Cleared only by reset_day().
+        self._daily_loss_latched = False
         self._order_attempts = 0
         self._order_errors = 0
         self._cumulative_gas_cost = 0.0  # cumulative on-chain gas cost (USDC)
@@ -88,7 +96,39 @@ class RiskManager:
         return self._day_start_equity
 
     def reset_day(self) -> None:
+        """Rebase the daily loss budget to current equity (explicit new day)."""
         self._day_start_equity = self.equity
+        # A new day releases the daily-loss stop.
+        self._daily_loss_latched = False
+        self._persist_day_anchor()
+
+    def begin_day(self) -> None:
+        """Startup path: resume today's budget if one already exists.
+
+        ``reset_day()`` on every process start let a restart launder the day's
+        loss — an engine already down $64 came back with a fresh $10 allowance,
+        so the daily cap never actually stopped anything across restarts. This
+        restores the persisted anchor (and latch) when it is still the same UTC
+        day, and only rebases on a genuinely new day.
+        """
+        day = self._today()
+        existing = self._store.get_day_anchor(day)
+        if existing is None:
+            self.reset_day()
+            return
+        self._day_start_equity, self._daily_loss_latched = existing
+
+    @staticmethod
+    def _today() -> str:
+        return dt.datetime.now(dt.UTC).strftime("%Y-%m-%d")
+
+    def _persist_day_anchor(self) -> None:
+        try:
+            self._store.set_day_anchor(
+                self._today(), self._day_start_equity, self._daily_loss_latched
+            )
+        except Exception:  # pragma: no cover - persistence must never block risk
+            log.warning("day_anchor_persist_failed", exc_info=True)
 
     # ── error-rate breaker ──────────────────────────────────────────────
     def note_order_result(self, ok: bool, reason: str = "") -> None:
@@ -111,7 +151,16 @@ class RiskManager:
     def global_halt(self) -> tuple[bool, str]:
         if self._killed:
             return True, "manual_kill"
-        if self._cfg.daily_loss_kill_usdc > 0 and self.daily_pnl <= -self._cfg.daily_loss_kill_usdc:
+        if (
+            self._cfg.daily_loss_kill_usdc > 0
+            and self.daily_pnl <= -self._cfg.daily_loss_kill_usdc
+            and not self._daily_loss_latched
+        ):
+            # Latch once, on the transition — persisting every cycle would
+            # hammer SQLite (the halt is evaluated on every quote cycle).
+            self._daily_loss_latched = True
+            self._persist_day_anchor()
+        if self._daily_loss_latched:
             return True, f"daily_loss {self.daily_pnl:.0f}"
         if self.error_rate >= self._cfg.max_order_error_rate:
             return True, f"error_rate {self.error_rate:.2f}"

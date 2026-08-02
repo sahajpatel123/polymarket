@@ -17,7 +17,9 @@ score rewards, and a filled pair merges back to USDC at locked edge 1 - p - q.
 
 from __future__ import annotations
 
+import dataclasses
 import math
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from polymaker.config import StrategyProfile
@@ -321,9 +323,11 @@ def construct_quotes(inp: QuoteInputs) -> TargetQuotes:
 
     # ── exits: SELL held inventory (maker, never cross) ─────────────────
     _maybe_exit(quotes, m.yes.token_id, inp.pos_yes, inp.fv, delta, inp.yes_view, tick, dec,
-                inp.yes_exit_urgency, m, inp.regime)
+                inp.yes_exit_urgency, m, inp.regime,
+                stop_loss_pct=float(getattr(p, "stop_loss_pct", 0.0) or 0.0))
     _maybe_exit(quotes, m.no.token_id, inp.pos_no, 1.0 - inp.fv, delta, inp.no_view, tick, dec,
-                inp.no_exit_urgency, m, inp.regime)
+                inp.no_exit_urgency, m, inp.regime,
+                stop_loss_pct=float(getattr(p, "stop_loss_pct", 0.0) or 0.0))
 
     return TargetQuotes(cid, inp.regime, tuple(quotes))
 
@@ -530,15 +534,64 @@ def _add_layers(
 def _maybe_exit(
     quotes: list[Quote], token_id: str, pos: Position, token_fv: float, delta: float,
     view: BookView, tick: float, dec: int, urgency: float, m: MarketMeta, regime: Regime,
+    *, stop_loss_pct: float = 0.0, min_profit_ticks: int = 1,
 ) -> None:
+    """Quote a maker exit for held inventory.
+
+    Two properties this must have, both of which were missing:
+
+    **Reachable.** The passive target was ``token_fv + delta`` with no cap, so
+    with a realistic half-spread the ask rested 9-49 ticks above the book and
+    could never be hit. Inventory was therefore never sold — every fill in the
+    observed sessions was a BUY. The passive leg is now capped at the touch.
+
+    **P&L-aware.** The old target never referenced ``pos.avg_price``, so the
+    exit had no notion of being in profit or in loss: it would walk down to
+    ``best_bid + tick`` on a timer regardless of cost. Now the exit will not be
+    offered below cost while there is still time, and a breach of the stop takes
+    priority over patience.
+    """
     if pos.size < m.min_order_size:
         return
-    # target starts at fv + delta and walks toward best_bid + tick as urgency -> 1
+    cost = float(pos.avg_price or 0.0)
+
+    # ── stop: fair value has fallen through the stop, leave now ──
+    # A post-only maker cannot cross, so the most aggressive legal exit is
+    # best_bid + 1 tick. (A resting sell *below* the market never fills, which
+    # is why a limit-only "stop" is not a stop at all.)
+    #
+    # The distance is floored at 2 ticks. A percentage stop is meaningless when
+    # it is finer than the grid: 1.5% of a $0.19 asset is 0.003, well under one
+    # $0.01 tick, so every single downtick tripped the stop and the position was
+    # dumped for a 1-tick (-5.3%) loss on noise.
+    stopped = False
+    if cost > 0.0 and stop_loss_pct > 0.0:
+        stop_dist = max(cost * stop_loss_pct, 2.0 * tick)
+        stopped = token_fv <= cost - stop_dist
+    if stopped:
+        urgency = 1.0
+
     passive = token_fv + delta
+    # Reachability: never park the exit above the current ask.
+    if view.best_ask is not None:
+        passive = min(passive, view.best_ask)
     floor = (view.best_bid + tick) if view.best_bid is not None else passive
     if regime == Regime.REDUCE_ONLY:
         urgency = max(urgency, 0.5)
     target = passive * (1.0 - urgency) + floor * urgency
+
+    # ── profit protection ──
+    # While not stopped and not yet out of time, do not offer below cost: that
+    # realises a loss for no reason. Loss-taking is driven by the stop above and
+    # by urgency reaching 1.0 (the time stop).
+    if (
+        cost > 0.0
+        and not stopped
+        and urgency < 1.0
+        and regime != Regime.REDUCE_ONLY
+    ):
+        target = max(target, cost + min_profit_ticks * tick)
+
     # never cross down through the bid; never sell below best_bid
     if view.best_bid is not None:
         target = max(target, view.best_bid + tick)
@@ -552,6 +605,46 @@ def _maybe_exit(
 
 
 # ── Risk-managed TP/SL exit targets ─────────────────────────────────────
+
+
+def clamp_sell_exposure(
+    quotes: Sequence[Quote], held: Mapping[str, float], *, min_order_size: float
+) -> list[Quote]:
+    """Cap total SELL size per token at the inventory actually held.
+
+    Exit quotes come from three independent places — the inventory unwind in
+    ``_maybe_exit`` (which offers the whole position), the take-profit, and the
+    stop-loss — and each was capped only against the position *individually*.
+    Together they could offer up to 3x the holding. The exchange has no OCO, so
+    in live trading the surplus is rejected and in paper every leg can fill,
+    turning a long into a short.
+
+    Allocation is by ascending price: the most aggressive (most likely to fill)
+    exit is honoured first, so risk reduction wins over the optimistic
+    take-profit when inventory is scarce. BUY quotes pass through untouched.
+    """
+    sells: list[tuple[int, Quote]] = []
+    out: list[Quote | None] = list(quotes)
+    for i, q in enumerate(quotes):
+        if q.side is Side.SELL:
+            sells.append((i, q))
+    if not sells:
+        return list(quotes)
+
+    remaining = {tok: max(0.0, float(sz)) for tok, sz in held.items()}
+    # cheapest first == closest to the bid == most likely to be hit
+    for i, q in sorted(sells, key=lambda pair: pair[1].price):
+        avail = remaining.get(q.token_id)
+        if avail is None:
+            # selling a token we do not hold is not an exit; leave it alone
+            continue
+        if avail < min_order_size:
+            out[i] = None
+            continue
+        take = min(q.size, avail)
+        remaining[q.token_id] = avail - take
+        out[i] = q if take == q.size else dataclasses.replace(q, size=take)
+    return [q for q in out if q is not None]
 
 
 def compute_tp_sl(

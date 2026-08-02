@@ -7,11 +7,6 @@ profile = "scalp-hot"
 enabled = true
 
 [[markets]]
-slug    = "israel-closes-its-airspace-by-august-31-389"
-profile = "scalp-hot"
-enabled = true
-
-[[markets]]
 slug    = "will-emiliano-martinez-stay-at-aston-villa-20260612234358346"
 profile = "scalp-hot"
 enabled = true
@@ -24,4 +19,29 @@ enabled = true
 [[markets]]
 slug    = "will-anthony-fauci-be-arrested-before-2027-464"
 profile = "scalp-hot"
+enabled = true
+
+[[markets]]
+slug    = "will-haley-stevens-win-oakland-county-in-the-michigan-senate-democratic-primary-20260721153909100"
+profile = "balanced-mm"
+enabled = true
+
+[[markets]]
+slug    = "will-callie-barr-be-the-mi-01-democratic-nominee-20260702201409537"
+profile = "balanced-mm"
+enabled = true
+
+[[markets]]
+slug    = "will-abdul-el-sayed-win-genesee-county-in-the-michigan-senate-democratic-primary-20260728150251692"
+profile = "balanced-mm"
+enabled = true
+
+[[markets]]
+slug    = "will-ralph-norman-place-second-in-first-round-of-the-south-carolina-republican-senate-special-primary-20260730172129188"
+profile = "balanced-mm"
+enabled = true
+
+[[markets]]
+slug    = "will-nigel-farage-win-the-2026-clacton-by-election-by-between-40-and-60-20260709153837822"
+profile = "balanced-mm"
 enabled = true

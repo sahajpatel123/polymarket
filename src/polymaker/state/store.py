@@ -42,6 +42,11 @@ CREATE TABLE IF NOT EXISTS pnl_snapshots (
     ts        REAL PRIMARY KEY,
     equity    REAL, net_cash REAL, inventory_value REAL, daily_pnl REAL
 );
+CREATE TABLE IF NOT EXISTS day_anchor (
+    day          TEXT PRIMARY KEY,
+    start_equity REAL NOT NULL,
+    loss_latched INTEGER NOT NULL DEFAULT 0
+);
 """
 
 
@@ -66,6 +71,57 @@ class StateStore:
 
     def close(self) -> None:
         self._conn.close()
+
+    # ── daily-loss day anchor ───────────────────────────────────────────
+    def get_day_anchor(self, day: str) -> tuple[float, bool] | None:
+        """Return (start_equity, loss_latched) for ``day``, or None.
+
+        Persisted so a process restart cannot hand the engine a fresh
+        daily-loss budget mid-day.
+        """
+        row = self._conn.execute(
+            "SELECT start_equity, loss_latched FROM day_anchor WHERE day=?", (day,)
+        ).fetchone()
+        if row is None:
+            return None
+        return float(row[0]), bool(row[1])
+
+    def set_day_anchor(self, day: str, start_equity: float, loss_latched: bool) -> None:
+        self._conn.execute(
+            "INSERT INTO day_anchor(day, start_equity, loss_latched) VALUES(?,?,?) "
+            "ON CONFLICT(day) DO UPDATE SET start_equity=excluded.start_equity, "
+            "loss_latched=excluded.loss_latched",
+            (day, float(start_equity), 1 if loss_latched else 0),
+        )
+        self._conn.commit()
+
+    # ── position age (exit urgency) ─────────────────────────────────────
+    def position_entry_ts(self, token_id: str) -> float | None:
+        """Timestamp the CURRENT open position in ``token_id`` was opened.
+
+        Replays this token's fills in order and returns the timestamp of the
+        fill that took the running size from flat to long. Exit urgency is a
+        function of hold time, and it used to live only in engine memory — so
+        every process restart reset every position's age to zero and the exit
+        never reached its time stop. Reconstructing from fills makes hold time
+        survive restarts.
+
+        Returns None when the token is currently flat.
+        """
+        size = 0.0
+        entry: float | None = None
+        for side, qty, ts in self._conn.execute(
+            "SELECT side, size, ts FROM fills WHERE token_id=? ORDER BY ts, rowid",
+            (token_id,),
+        ):
+            signed = float(qty) if str(side) == Side.BUY.value else -float(qty)
+            if size <= 1e-9 and signed > 0:
+                entry = float(ts)
+            size += signed
+            if size <= 1e-9:
+                entry = None
+                size = 0.0
+        return entry
 
     # ── positions ───────────────────────────────────────────────────────
     def position(self, token_id: str) -> Position:

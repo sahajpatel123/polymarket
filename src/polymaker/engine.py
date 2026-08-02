@@ -94,7 +94,7 @@ from polymaker.strategy.estimators import (
     MultiHorizonMarkout,
     VolEstimator,
 )
-from polymaker.strategy.quoting import compute_fair_value
+from polymaker.strategy.quoting import clamp_sell_exposure, compute_fair_value
 from polymaker.strategy.regime import RegimeMachine
 from polymaker.userstream.client import UserStream
 
@@ -142,6 +142,9 @@ class Engine:
         self._tp_sl_targets: dict[str, dict[str, tuple[Quote | None, Quote | None]]] = {}
         self._dirty: dict[str, asyncio.Event] = {}
         self._sweep: dict[str, bool] = {}
+        # One-shot: cancel every resting order the first time the daily-loss
+        # stop engages. Halting new quotes alone left resting BUYs filling.
+        self._daily_stop_flattened = False
         self._merging: set[str] = set()
         self._token_cid: dict[str, str] = {}
         self._locks: dict[str, asyncio.Lock] = {}  # per-market: serialize recompute vs reconcile
@@ -419,7 +422,13 @@ class Engine:
         self._spawn("rebalancer", self._capital_rebalance_loop)
 
         self._spawn("supervisor", self._supervise)
-        self.risk.reset_day()
+        # Resume today's daily-loss budget if this is a restart, so a restart
+        # cannot hand the engine a fresh allowance mid-day.
+        self.risk.begin_day()
+        # Restore how long each open position has been held. Exit urgency is
+        # driven by hold time; when this lived only in memory every restart
+        # reset it to zero and exits never reached their time stop.
+        self._restore_position_ages()
         # ── Auto-compounding: track starting equity for growth scaling ──
         self._day_start_equity = self.risk.equity
         if self._day_start_equity > 0 and self._base_capital > 0:
@@ -547,6 +556,16 @@ class Engine:
                     self._token_cid[tok] = meta.condition_id
                 self._kalman[meta.condition_id] = KalmanMidPrice()
                 self._hmm[meta.condition_id] = VolatilityRegimeHMM()
+                prof = self.profiles[meta.condition_id]
+                self.opt_mgr.seed_from_profile(
+                    meta.condition_id,
+                    delta_min_ticks=float(prof.delta_min_ticks),
+                    layer_step_ticks=float(prof.layer_step_ticks),
+                    flow_fv_weight=float(prof.flow_fv_weight),
+                    gamma=float(prof.gamma),
+                    c_vol=float(prof.c_vol),
+                    c_tox=float(prof.c_tox),
+                )
 
                 sc = score_market(meta)
                 self.metrics.emit(
@@ -618,6 +637,18 @@ class Engine:
         self._kalman[cid] = KalmanMidPrice()
         self._hmm[cid] = VolatilityRegimeHMM()
         # ─────────────────────────────────────────────────────
+        # Seed the online optimizer from the profile: an unlearned optimizer
+        # would otherwise apply its own aggressive defaults (c_tox=15) and
+        # widen the half-spread past the touch from the very first quote.
+        self.opt_mgr.seed_from_profile(
+            cid,
+            delta_min_ticks=float(profile.delta_min_ticks),
+            layer_step_ticks=float(profile.layer_step_ticks),
+            flow_fv_weight=float(profile.flow_fv_weight),
+            gamma=float(profile.gamma),
+            c_vol=float(profile.c_vol),
+            c_tox=float(profile.c_tox),
+        )
 
         # Subscribe the market data service to the new market's tokens
         self.md.add_market(cid, [meta.yes.token_id, meta.no.token_id])
@@ -2183,8 +2214,12 @@ class Engine:
                 tick=meta.tick_size, dec=meta.price_decimals,
             )
             if tp is not None or sl is not None:
-                tp = tp.model_copy(update={"token_id": fill.token_id}) if tp else None
-                sl = sl.model_copy(update={"token_id": fill.token_id}) if sl else None
+                # Quote is a frozen dataclass, not a pydantic model — calling
+                # .model_copy() raised AttributeError on EVERY buy fill, so no
+                # take-profit or stop-loss was ever registered and the engine
+                # had no notion of exiting at a profit or cutting a loss.
+                tp = dataclasses.replace(tp, token_id=fill.token_id) if tp else None
+                sl = dataclasses.replace(sl, token_id=fill.token_id) if sl else None
                 self._tp_sl_targets.setdefault(cid, {})[fill.token_id] = (tp, sl)
                 log.info("tp_sl_placed", cid=cid[:8], token=fill.token_id[:8],
                          fill_price=round(fill.price, 4),
@@ -2415,6 +2450,7 @@ class Engine:
         if rd.halt and rd.reason not in ("ws_stale",):
             if "daily_loss" in rd.reason:
                 self.alerter.alert(DAILY_LOSS, f"daily loss kill: {rd.reason}", critical=True)
+                await self._flatten_on_daily_stop()
             if "kill" in rd.reason:
                 self.alerter.alert(KILL_SWITCH, f"kill switch: {rd.reason}", critical=True)
             self.alerter.alert(
@@ -2734,12 +2770,35 @@ class Engine:
             if _tp is not None:
                 _tp_sl_quotes.append(Quote(_tid, Side.SELL, _tp.price,
                                             min(_tp.size, _pos.size)))
-            if _sl is not None:
-                _sl_size = min(_sl.size, _pos.size) if _sl.size > 0 else _pos.size
-                _tp_sl_quotes.append(Quote(_tid, Side.SELL, _sl.price, _sl_size))
+            # The stop-loss is deliberately NOT rested as an order. A limit sell
+            # below the market is not a stop:
+            #   * live, post_only rejects it outright (it would cross);
+            #   * in paper it fills on the next uptick, so it *guarantees* the
+            #     loss it was meant to cap.
+            # It is also mispriced on coarse ticks — a 1.5% stop on a $0.19
+            # asset is 0.003, under one $0.01 tick, so rounding turned it into
+            # -5.3%. Observed: bought 202 @ 0.19, the resting stop at 0.18 was
+            # hit 104s later for -$2.02.
+            # The stop is enforced instead as a TRIGGER in _maybe_exit: once
+            # fair value falls through cost*(1 - stop_loss_pct) the exit walks to
+            # best_bid + 1 tick, the most aggressive price a post-only maker can
+            # legally offer.
         if _tp_sl_quotes:
             tq = TargetQuotes(tq.condition_id, tq.regime,
                               tq.quotes + tuple(_tp_sl_quotes))
+        # Never offer more shares than we hold. The inventory unwind, the
+        # take-profit and the stop-loss are each capped against the position on
+        # their own, so together they could offer up to 3x it — and there is no
+        # OCO, so in paper every leg fills and the long becomes a short.
+        _held_now = {
+            meta.yes.token_id: self.state.position(meta.yes.token_id).size,
+            meta.no.token_id: self.state.position(meta.no.token_id).size,
+        }
+        tq = TargetQuotes(
+            tq.condition_id, tq.regime,
+            tuple(clamp_sell_exposure(tq.quotes, _held_now,
+                                      min_order_size=meta.min_order_size)),
+        )
 
         live = self.state.orders_for(meta.yes.token_id) + self.state.orders_for(meta.no.token_id)
         plan = reconcile(tq, live, tick=meta.tick_size,
@@ -2955,27 +3014,38 @@ class Engine:
                     self.alerter.alert("inflight_expired",
                                        f"{len(expired)} stuck in-flight guards cleared")
 
-                positions = self._only_traded(await self.gateway.positions())
-                if positions:
-                    self.state.reconcile_positions(positions)
-                live = await self.gateway.open_orders()
-                by_token: dict[str, list[Any]] = {}
-                for o in live:
-                    by_token.setdefault(o.token_id, []).append(o)
-                # iterate ALL our tokens, not just those in the REST response — a
-                # token whose orders vanished server-side must be cleaned up too.
-                # Hold the market lock so we don't race the quoter mid-flight.
-                for _cid, meta in self.metas.items():
-                    lock = self._locks.get(_cid)
-                    if lock is None:
-                        continue
-                    async with lock:
-                        for tok in (meta.yes.token_id, meta.no.token_id):
-                            if self.state.inflight(tok) == 0:
-                                self.state.replace_open_orders(tok, by_token.get(tok, []))
+                # PAPER: local state is the only truth. gateway.open_orders()
+                # returns [] and gateway.positions() returns the REAL wallet, so
+                # reconciling against them deletes simulated orders from
+                # state.orders while the fill simulator still holds them. The
+                # reconciler then re-places them (duplicate exposure — one run
+                # bought $421 against a $100 bankroll) and the originals can
+                # never be cancelled again, so they keep filling long after a
+                # cancel or a risk halt.
+                if not self.paper:
+                    positions = self._only_traded(await self.gateway.positions())
+                    if positions:
+                        self.state.reconcile_positions(positions)
+                    live = await self.gateway.open_orders()
+                    by_token: dict[str, list[Any]] = {}
+                    for o in live:
+                        by_token.setdefault(o.token_id, []).append(o)
+                    # iterate ALL our tokens, not just those in the REST response
+                    # — a token whose orders vanished server-side must be cleaned
+                    # up too. Hold the market lock so we don't race the quoter.
+                    for _cid, meta in self.metas.items():
+                        lock = self._locks.get(_cid)
+                        if lock is None:
+                            continue
+                        async with lock:
+                            for tok in (meta.yes.token_id, meta.no.token_id):
+                                if self.state.inflight(tok) == 0:
+                                    self.state.replace_open_orders(
+                                        tok, by_token.get(tok, []))
                 if forced:
-                    log.info("forced_reconcile_done", positions=len(positions),
-                             open_orders=len(live))
+                    log.info("forced_reconcile_done",
+                             positions=0 if self.paper else len(positions),
+                             open_orders=len(self.state.orders))
                     self._wake_all()
             except Exception as exc:  # noqa: BLE001
                 log.warning("reconcile_error", err=str(exc))
@@ -2995,7 +3065,18 @@ class Engine:
         Catches subtle fill-attribution bugs before they compound. On-chain is
         authoritative (it's what the exchange settles), so we correct to it —
         but only for tokens with no in-flight trades (optimistic state is newer).
+
+        PAPER MODE IS EXEMPT. Simulated fills never touch the chain, so every
+        paper position looks like a divergence against an empty wallet and gets
+        force-zeroed. The damage compounds: inventory value drops to 0 while the
+        cash spent remains, so equity collapses to -(cash spent) and the
+        daily-loss kill fires on a loss that does not exist; exits stop being
+        quoted because the engine believes it holds nothing; and it keeps buying
+        for the same reason. One observed session bought $421 against a $100
+        bankroll and reported -$375 equity while realized PnL was -$0.59.
         """
+        if self.paper:
+            return
         tokens = [t for t in self._token_cid if self.state.inflight(t) == 0]
         onchain = await self.gateway.token_balances(tokens)
         if not onchain:
@@ -3549,6 +3630,52 @@ class Engine:
 
     def _cid_of_token(self, token_id: str) -> str | None:
         return self._token_cid.get(token_id)
+
+    def _restore_position_ages(self) -> None:
+        """Seed ``_pos_entry_ts`` from persisted fills for every open position."""
+        restored = 0
+        for token_id, pos in list(self.state.positions.items()):
+            if pos.size <= 0:
+                continue
+            try:
+                ts = self.state.position_entry_ts(token_id)
+            except Exception:
+                log.warning("position_age_restore_failed", token=token_id[:8],
+                            exc_info=True)
+                continue
+            if ts is not None:
+                self._pos_entry_ts[token_id] = ts
+                restored += 1
+        if restored:
+            log.info("position_ages_restored", n=restored)
+
+    async def _flatten_on_daily_stop(self) -> None:
+        """Cancel every resting order once, when the daily-loss stop engages.
+
+        Emptying target quotes is not sufficient. A market that goes blind
+        (WS drop) or is paused by oversight stops being requoted, so its cancel
+        path never runs and its resting BUY orders stay fillable. Observed on a
+        $100 book with a $10 cap: the stop engaged at -$64 and four further BUY
+        fills worth $67 landed over the next 40 minutes.
+
+        ``gateway.cancel_all()`` is a no-op in paper mode, so paper orders are
+        withdrawn from the fill simulator explicitly.
+        """
+        if self._daily_stop_flattened:
+            return
+        self._daily_stop_flattened = True
+        order_ids = list(self.state.orders.keys())
+        try:
+            if self.paper:
+                for oid in order_ids:
+                    self._fill_sim.cancel(oid)
+            else:
+                await self.gateway.cancel_all()
+        except Exception:
+            log.warning("daily_stop_flatten_cancel_failed", exc_info=True)
+        for oid in order_ids:
+            self.state.remove_order(oid)
+        log.critical("daily_loss_stop_flattened", cancelled=len(order_ids))
 
     def engage_kill_switch(self, reason: str = "manual_kill") -> None:
         """Operator/manual kill — alerts then sets RiskManager killed flag.

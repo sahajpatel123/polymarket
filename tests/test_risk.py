@@ -33,6 +33,144 @@ def test_daily_loss_kill_switch(tmp_path, meta):
     store.close()
 
 
+def test_daily_loss_kill_latches_and_does_not_release_on_mark_recovery(tmp_path, meta):
+    """A breached daily cap must STAY engaged when marks bounce back.
+
+    Regression: global_halt() recomputed the condition from the live mark every
+    cycle, so a favourable tick released the halt and the engine resumed adding
+    exposure. Observed effect was a $10 cap letting a $100 book walk past -$600
+    in a single session, re-firing the alert at -46, -64, -123 ... -685.
+    """
+    rm, store = _rm(tmp_path)
+    store.apply_fill(Fill(meta.yes.token_id, Side.BUY, 0.50, 1000, "t1"))
+    rm.note_fill(Fill(meta.yes.token_id, Side.BUY, 0.50, 1000, "t1"))
+    rm.update_mark(meta.yes.token_id, 0.50)
+    rm.reset_day()
+    assert rm.global_halt()[0] is False
+
+    # breach: -300 unrealized vs the -250 cap
+    rm.update_mark(meta.yes.token_id, 0.20)
+    halted, why = rm.global_halt()
+    assert halted and "daily_loss" in why
+
+    # marks fully recover — the stop must NOT release
+    rm.update_mark(meta.yes.token_id, 0.50)
+    still_halted, why2 = rm.global_halt()
+    assert still_halted, "daily-loss stop released after mark recovery"
+    assert "daily_loss" in why2
+
+    # even a profitable mark keeps the day stopped
+    rm.update_mark(meta.yes.token_id, 0.90)
+    assert rm.global_halt()[0] is True
+    store.close()
+
+
+def test_reset_day_releases_the_daily_loss_latch(tmp_path, meta):
+    """A new day clears the stop — otherwise the bot never trades again."""
+    # cap of 100 so a mark move from 0.20 -> 0.05 (-150) actually breaches it
+    rm, store = _rm(tmp_path, daily_loss_kill_usdc=100)
+    store.apply_fill(Fill(meta.yes.token_id, Side.BUY, 0.50, 1000, "t1"))
+    rm.note_fill(Fill(meta.yes.token_id, Side.BUY, 0.50, 1000, "t1"))
+    rm.update_mark(meta.yes.token_id, 0.20)
+    rm.reset_day()          # day starts at the depressed mark (equity -300)
+    assert rm.global_halt()[0] is False
+    rm.update_mark(meta.yes.token_id, 0.05)   # daily_pnl -150 <= -100
+    assert rm.global_halt()[0] is True
+
+    rm.update_mark(meta.yes.token_id, 0.50)
+    assert rm.global_halt()[0] is True, "latch should still hold before reset"
+    rm.reset_day()          # new day, rebased equity
+    assert rm.global_halt()[0] is False, "reset_day must clear the latch"
+    store.close()
+
+
+def test_daily_loss_latch_survives_repeated_halt_checks(tmp_path, meta):
+    """The latch must be stable, not flap between calls."""
+    rm, store = _rm(tmp_path)
+    store.apply_fill(Fill(meta.yes.token_id, Side.BUY, 0.50, 1000, "t1"))
+    rm.note_fill(Fill(meta.yes.token_id, Side.BUY, 0.50, 1000, "t1"))
+    rm.update_mark(meta.yes.token_id, 0.50)
+    rm.reset_day()
+    rm.update_mark(meta.yes.token_id, 0.10)
+    assert rm.global_halt()[0] is True
+    rm.update_mark(meta.yes.token_id, 0.50)
+    for _ in range(50):
+        assert rm.global_halt()[0] is True
+    store.close()
+
+
+def test_restart_does_not_hand_back_a_fresh_daily_loss_budget(tmp_path, meta):
+    """A mid-day restart must resume the same day's loss budget.
+
+    Regression: the engine called reset_day() on every start, rebasing
+    day_start_equity to the (already depressed) current equity. A session down
+    $64 restarted with daily_pnl=0 and a fresh $10 allowance. With 11 restarts
+    in one day the daily cap never stopped anything — the book walked past
+    -$600 against a $10 cap.
+    """
+    db = tmp_path / "s.db"
+    cfg = RiskConfig(**{
+        "max_total_exposure_usdc": 5000, "max_market_notional_usdc": 800,
+        "max_event_group_loss_usdc": 1000, "daily_loss_kill_usdc": 100,
+    })
+    # ── session 1: start flat, then lose 300 ──
+    store = StateStore(db)
+    rm = RiskManager(cfg, store)
+    rm.begin_day()                                   # fresh day, anchor at 0
+    store.apply_fill(Fill(meta.yes.token_id, Side.BUY, 0.50, 1000, "t1"))
+    rm.note_fill(Fill(meta.yes.token_id, Side.BUY, 0.50, 1000, "t1"))
+    rm.update_mark(meta.yes.token_id, 0.20)          # equity -300
+    assert rm.global_halt()[0] is True
+    store.close()
+
+    # ── session 2: process restart, same day, same depressed book ──
+    store2 = StateStore(db)
+    rm2 = RiskManager(cfg, store2)
+    rm2.update_mark(meta.yes.token_id, 0.20)
+    rm2.begin_day()                                  # must RESUME, not rebase
+    halted, why = rm2.global_halt()
+    assert halted, (
+        "restart handed back a fresh daily-loss budget — the daily cap is "
+        "defeated by simply restarting the process"
+    )
+    assert "daily_loss" in why or "manual" in why
+    store2.close()
+
+
+def test_restart_preserves_the_latch_even_if_marks_recovered(tmp_path, meta):
+    """The stop must persist across a restart, not just the raw PnL check."""
+    db = tmp_path / "s.db"
+    cfg = RiskConfig(**{
+        "max_total_exposure_usdc": 5000, "max_market_notional_usdc": 800,
+        "max_event_group_loss_usdc": 1000, "daily_loss_kill_usdc": 100,
+    })
+    store = StateStore(db)
+    rm = RiskManager(cfg, store)
+    rm.begin_day()
+    store.apply_fill(Fill(meta.yes.token_id, Side.BUY, 0.50, 1000, "t1"))
+    rm.note_fill(Fill(meta.yes.token_id, Side.BUY, 0.50, 1000, "t1"))
+    rm.update_mark(meta.yes.token_id, 0.20)
+    assert rm.global_halt()[0] is True                # latch trips + persists
+    store.close()
+
+    store2 = StateStore(db)
+    rm2 = RiskManager(cfg, store2)
+    rm2.update_mark(meta.yes.token_id, 0.50)          # marks fully recovered
+    rm2.begin_day()
+    assert rm2.global_halt()[0] is True, (
+        "latched daily stop did not survive the restart"
+    )
+    store2.close()
+
+
+def test_begin_day_on_a_fresh_store_allows_trading(tmp_path, meta):
+    """No anchor yet -> normal start, not a spurious halt."""
+    rm, store = _rm(tmp_path)
+    rm.begin_day()
+    assert rm.global_halt()[0] is False
+    store.close()
+
+
 def test_market_cap_triggers_reduce_only(tmp_path, meta):
     rm, store = _rm(tmp_path, max_market_notional_usdc=100)
     store.apply_fill(Fill(meta.yes.token_id, Side.BUY, 0.50, 300, "t1"))  # 150 notional > 100

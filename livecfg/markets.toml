@@ -1,15 +1,30 @@
-# Fixed pair for 12h paper validation of live_scaled
+# $50 session v2 — CONFIRMED LIVE markets (1-10t spreads verified in feed)
 [[markets]]
 slug    = "will-gavin-newsom-win-the-2028-democratic-presidential-nomination-568"
-profile = "live_scaled"
+profile = "balanced-mm"
 enabled = true
 
 [[markets]]
 slug    = "will-jd-vance-win-the-2028-republican-presidential-nomination"
-profile = "live_scaled"
+profile = "balanced-mm"
+enabled = true
+
+[[markets]]
+slug    = "will-alexandru-nazare-be-the-next-prime-minister-of-romania"
+profile = "balanced-mm"
+enabled = true
+
+[[markets]]
+slug    = "will-anthony-fauci-be-arrested-before-2027-464"
+profile = "balanced-mm"
 enabled = true
 
 [[markets]]
 slug    = "will-3-sanders-endorsees-win-august-4-primaries-20260727155934643"
-profile = "live_scaled"
+profile = "balanced-mm"
+enabled = true
+
+[[markets]]
+slug    = "will-the-next-diplomatic-us-iran-meeting-be-in-switzerland-by-september-30-2026-20260622185050779"
+profile = "balanced-mm"
 enabled = true

@@ -261,7 +261,7 @@ def build_training_store(
     journals: list[Path], *, tick: float = 0.001, base_size_usdc: float = 4.0,
     max_events: int = 5_000_000, offsets_ticks: tuple[int, ...] = (0, 1, 2),
     max_samples: int = 500_000,
-) -> tuple[FillTrainingStore, dict[str, int]]:
+) -> tuple[FillTrainingStore, dict[str, Any]]:
     """Convert raw journal events into aligned fill/non-fill samples.
 
     Consumes ``book`` (full L2), ``price_change`` (dense level deltas with
@@ -307,7 +307,7 @@ def build_training_store(
         if asset:
             asset_end[asset] = max(asset_end.get(asset, 0.0), ts)
 
-    books_by_asset: dict[str, list[tuple[float, float]]] = {}
+    books_by_asset: dict[str, list[tuple[float, float, float]]] = {}
     # synthetic L2 books, maintained live from price_change level deltas so
     # depth features are never stale (full `book` snapshots are rare).
     synth: dict[str, tuple[dict[float, float], dict[float, float]]] = {}
@@ -318,7 +318,9 @@ def build_training_store(
     pending: dict[str, dict[Side, list[Candidate]]] = {}
     tapes: dict[str, _Tape] = {}
     filled: list[tuple[Candidate, float]] = []
-    nonfills: list[FillFeatures] = []
+    # (features, asset_id, ts) — asset identity is REQUIRED for grouped
+    # (leave-assets-out) validation; dropping it makes honest CV impossible.
+    nonfills: list[tuple[FillFeatures, str, float]] = []
 
     def book_state(asset: str, ts: float, bb: float, ba: float,
                    bids: dict[float, float], asks: dict[float, float]) -> BookState | None:
@@ -355,7 +357,7 @@ def build_training_store(
         old = pending.pop(asset, None)
         if old:
             for candidates in old.values():
-                nonfills.extend(c.features for c in candidates)
+                nonfills.extend((c.features, c.asset_id, c.ts) for c in candidates)
 
     def place_candidates(asset: str, state: BookState, ts: float) -> None:
         """Refresh resting candidates at the new touch (one per offset)."""
@@ -522,6 +524,10 @@ def build_training_store(
 
     training = FillTrainingStore(max_samples=max_samples)
     fill_meta: list[dict[str, str]] = []
+    # Parallel provenance arrays, index-aligned with ``training.features``.
+    # These are what make leave-assets-out / purged-time validation possible.
+    groups: list[str] = []
+    sample_ts: list[float] = []
     markout_count = 0
     for candidate, fill_ts in filled:
         series = books_by_asset.get(candidate.asset_id, [])
@@ -534,6 +540,8 @@ def build_training_store(
         markout = move if candidate.side is Side.BUY else -move
         training.add(candidate.features, filled=True, markout=markout,
                      source="offline")
+        groups.append(candidate.asset_id)
+        sample_ts.append(candidate.ts)
         fill_meta.append({"asset": candidate.asset_id,
                           "side": candidate.side.value,
                           "offset_ticks": str(int(round((candidate.mid - candidate.price) / tick)))
@@ -541,18 +549,31 @@ def build_training_store(
                           else str(int(round((candidate.price - candidate.mid) / tick)))})
         markout_count += 1
 
-    for features in nonfills:
+    for features, asset_id, cand_ts in nonfills:
         training.add(features, filled=False, markout=0.0, source="offline")
+        groups.append(asset_id)
+        sample_ts.append(cand_ts)
 
-    stats = {
+    # Eviction (max_samples) drops the OLDEST rows; keep provenance aligned to
+    # whatever survived so groups[i] always describes training.features[i].
+    n_kept = len(training.features)
+    if len(groups) > n_kept:
+        groups = groups[len(groups) - n_kept:]
+        sample_ts = sample_ts[len(sample_ts) - n_kept:]
+
+    stats: dict[str, Any] = {
         "events": len(events),
         "filled_candidates": len(filled),
         "filled_with_markout": markout_count,
         "nonfill_candidates": len(nonfills),
-        "samples": len(training.features),
+        "samples": n_kept,
+        "assets": len(set(groups)),
+        "fill_assets": len({m["asset"] for m in fill_meta}),
     }
     if fill_meta:
         stats["fill_meta"] = fill_meta
+    stats["groups"] = groups
+    stats["sample_ts"] = sample_ts
     return training, stats
 
 

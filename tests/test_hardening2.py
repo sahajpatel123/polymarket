@@ -120,6 +120,7 @@ async def test_recompute_holds_market_lock(tmp_path, meta):
 # ── T1: on-chain divergence correction ───────────────────────────────────
 async def test_divergence_corrects_to_onchain(tmp_path, meta):
     eng = _engine_with_market(tmp_path, meta)
+    eng.paper = False  # divergence correction is a LIVE-mode reconciliation
     tok = meta.yes.token_id
     eng.state.apply_fill(Fill(tok, Side.BUY, 0.5, 100, "phantom"))  # internal says 100
     assert eng.state.position(tok).size == 100
@@ -130,6 +131,38 @@ async def test_divergence_corrects_to_onchain(tmp_path, meta):
     eng.gateway.token_balances = fake_balances  # type: ignore[method-assign]
     await eng._check_position_divergence()
     assert eng.state.position(tok).size == 5.0  # corrected to on-chain truth
+    eng.state.close()
+    eng.catalog.close()
+
+
+async def test_paper_positions_are_not_forced_to_onchain(tmp_path, meta):
+    """Paper fills never touch the chain, so the wallet is legitimately empty.
+
+    Correcting to it zeroed every simulated position: inventory value went to 0
+    while the cash spent remained, so equity collapsed to -(cash spent) and the
+    daily-loss kill fired on a loss that did not exist. Exits also stopped being
+    quoted (the engine believed it held nothing) and it kept buying for the same
+    reason — one session reported -$375 equity on a realized PnL of -$0.59.
+    """
+    eng = _engine_with_market(tmp_path, meta)
+    assert eng.paper is True
+    tok = meta.yes.token_id
+    eng.state.apply_fill(Fill(tok, Side.BUY, 0.5, 100, "paper-fill-1"))
+    assert eng.state.position(tok).size == 100
+
+    called = False
+
+    async def fake_balances(tokens):
+        nonlocal called
+        called = True
+        return {t: 0.0 for t in tokens}  # real wallet is empty
+
+    eng.gateway.token_balances = fake_balances  # type: ignore[method-assign]
+    await eng._check_position_divergence()
+    assert called is False, "paper mode must not query on-chain balances"
+    assert eng.state.position(tok).size == 100, (
+        "paper position was force-zeroed against an empty on-chain wallet"
+    )
     eng.state.close()
     eng.catalog.close()
 

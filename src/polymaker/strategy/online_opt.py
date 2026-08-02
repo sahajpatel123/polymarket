@@ -339,6 +339,29 @@ class OnlineOptimizerManager:
     def get_params(self, condition_id: str) -> OptimizerParams:
         return self.get(condition_id).get_params()
 
+    def seed_from_profile(
+        self, condition_id: str, *, delta_min_ticks: float, layer_step_ticks: float,
+        flow_fv_weight: float, gamma: float, c_vol: float, c_tox: float,
+    ) -> None:
+        """Seed a market's optimizer from its profile BEFORE any fills exist.
+
+        Without this, the optimizer's constructor defaults (c_tox=15.0 etc.)
+        override the profile's sane values from the very first quote — the
+        engine applies get_params() overrides on every recompute, so an
+        unlearned optimizer silently widens the half-spread far past the
+        touch and the bot stops getting fills. Seeding makes cold-start
+        behaviour equal the profile until fills teach the optimizer better.
+        """
+        opt = self.get(condition_id)
+        opt.last_params = OptimizerParams(
+            delta_min_ticks=delta_min_ticks,
+            layer_step_ticks=layer_step_ticks,
+            flow_fv_weight=flow_fv_weight,
+            gamma=gamma,
+            c_vol=c_vol,
+            c_tox=c_tox,
+        )
+
     def get_profile_overrides(self, condition_id: str) -> dict[str, float]:
         return self.get(condition_id).get_params().to_profile_overrides()
 

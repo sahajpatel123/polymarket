@@ -62,7 +62,7 @@ dashboard_open_browser = true
 [risk]
 # ── SET THIS TO YOUR REAL BALANCE ──
 # Caps DERIVED from bankroll × fractions when bankroll > 0.
-bankroll_usdc = 1000.0         # paper verification loop (kill = 10% = $100)
+bankroll_usdc = 100.0         # 5h paper session — $100 capital, kill = 10% = $10
 total_exposure_frac = 1.0
 # Concentrate: max ~40% per market so 2–3 dense books can compound rewards
 market_notional_frac = 0.40
