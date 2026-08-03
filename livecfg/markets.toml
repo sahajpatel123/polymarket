@@ -1,30 +1,50 @@
-# $50 session v2 — CONFIRMED LIVE markets (1-10t spreads verified in feed)
-[[markets]]
-slug    = "will-gavin-newsom-win-the-2028-democratic-presidential-nomination-568"
-profile = "balanced-mm"
-enabled = true
-
-[[markets]]
-slug    = "will-jd-vance-win-the-2028-republican-presidential-nomination"
-profile = "balanced-mm"
-enabled = true
-
-[[markets]]
-slug    = "will-alexandru-nazare-be-the-next-prime-minister-of-romania"
-profile = "balanced-mm"
-enabled = true
+# 10h paper session v3 — HIGH VOLUME markets for actual fills
+# Selected from fresh scan (2026-08-03): high 24h volume + liquidity + rewards
 
 [[markets]]
 slug    = "will-anthony-fauci-be-arrested-before-2027-464"
-profile = "balanced-mm"
+profile = "live_scaled"
 enabled = true
+# 24h vol: 16,670 | liq: 43,883 | rewards: $150/day | spread: 0.001 (1 tick)
 
 [[markets]]
-slug    = "will-3-sanders-endorsees-win-august-4-primaries-20260727155934643"
-profile = "balanced-mm"
+slug    = "will-wti-dip-to-65-in-august-2026"
+profile = "live_scaled"
 enabled = true
+# 24h vol: 24,141 | liq: 20,772 | rewards: $50/day | spread: 0.01
 
 [[markets]]
-slug    = "will-the-next-diplomatic-us-iran-meeting-be-in-switzerland-by-september-30-2026-20260622185050779"
-profile = "balanced-mm"
+slug    = "will-cori-bush-be-the-democratic-nominee-for-mo-01"
+profile = "live_scaled"
 enabled = true
+# 24h vol: 15,560 | liq: 55,780 | rewards: $100/day | spread: 0.01
+
+[[markets]]
+slug    = "israel-closes-its-airspace-by-august-31-389"
+profile = "live_scaled"
+enabled = true
+# 24h vol: 60,250 | liq: 40,094 | rewards: $200/day | spread: 0.02
+
+[[markets]]
+slug    = "foreign-intervention-in-gaza-by-august-31"
+profile = "live_scaled"
+enabled = true
+# 24h vol: 9,603 | liq: 50,573 | rewards: $150/day | spread: 0.001 (1 tick)
+
+[[markets]]
+slug    = "will-hartzell-gray-be-the-mo-04-democratic-nominee-20260708140335390"
+profile = "live_scaled"
+enabled = true
+# 24h vol: 16,988 | liq: 18,909 | rewards: $124/day | spread: 0.02
+
+[[markets]]
+slug    = "will-francesca-hong-win-the-wisconsin-democratic-governor-primary-by-at-least-30-20260728183722022"
+profile = "live_scaled"
+enabled = true
+# 24h vol: 30,040 | liq: 40,666 | rewards: $25/day | spread: 0.01
+
+[[markets]]
+slug    = "will-wesley-bell-be-the-democratic-nominee-for-mo-01"
+profile = "live_scaled"
+enabled = true
+# 24h vol: 16,308 | liq: 40,219 | rewards: $100/day | spread: 0.01

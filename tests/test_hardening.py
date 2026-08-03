@@ -54,7 +54,10 @@ def test_duplicate_fill_side_effects_skipped(tmp_path):
     """A duplicate MATCHED must not fire on_fill/on_change callbacks."""
     s = StateStore(tmp_path / "s.db")
     fills, changes = [], []
-    p = UserEventProcessor(s, on_change=changes.append, on_fill=fills.append)
+    # on_fill now receives a cost_basis kwarg (captured pre-apply so a full
+    # round-trip close still has a basis), so a bare list.append cannot be used.
+    p = UserEventProcessor(s, on_change=changes.append,
+                           on_fill=lambda f, **_kw: fills.append(f))
     ev = TradeEvent("tok", Side.BUY, 0.5, 50, "t1", TradeState.MATCHED, 1.0)
     p.on_trade(ev, "cid")
     p.on_trade(TradeEvent("tok", Side.BUY, 0.5, 50, "t1", TradeState.CONFIRMED, 2.0), "cid")

@@ -122,6 +122,45 @@ class Merger:
             log.error("merge_failed", condition=condition_id[:12], err=str(exc))
             return None
 
+    def gas_cost_for(self, tx_hash: str | None) -> float:
+        """USD gas cost of a merge tx (0 for gasless deposit-wallet merges).
+
+        EOA/Safe merges are paid by us (owner pays gas); deposit-wallet merges
+        go through the relayer (gasless). Returns 0.0 when the receipt cannot
+        be fetched so the risk manager's gas circuit breaker stays conservative.
+        """
+        if not tx_hash:
+            return 0.0
+        try:
+            if self._cfg.wallet.signature_type == 3:
+                return 0.0
+            w3 = self._w3
+            if w3 is None:
+                self._ensure_web3()
+                w3 = self._w3
+            if w3 is None:
+                return 0.0
+            rcpt = w3.eth.get_transaction_receipt(tx_hash)
+            if rcpt is None:
+                return 0.0
+            gas_used = rcpt.get("gasUsed") or 0
+            price = rcpt.get("effectiveGasPrice") or 0
+            gas_wei = int(gas_used) * int(price)
+            usdc = gas_wei / 1e18 * self._usdc_per_eth()
+            return float(usdc)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("gas_cost_lookup_failed", tx=tx_hash[:10], err=str(exc))
+            return 0.0
+
+    def _usdc_per_eth(self) -> float:
+        """Approximate ETH/USDC for gas accounting (fallback 2500).
+
+        The gas circuit breaker only needs order-of-magnitude accuracy
+        (max_gas_cost_pct defaults to 10% of equity); a rough conversion is
+        sufficient and avoids an extra oracle dependency.
+        """
+        return 2500.0
+
     def _merge_eoa(self, condition_id: str, amount_raw: int, neg_risk: bool) -> str:
         self._ensure_web3()
         w3 = self._w3

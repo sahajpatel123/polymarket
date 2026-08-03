@@ -14,18 +14,16 @@ reconcile_interval_s = 15
 catalog_refresh_s = 300
 heartbeat = true
 heartbeat_interval_s = 5
-# Journal OFF: this session's markets are already collected by the main
-# collector (config engine → journal/paper.jsonl). Keeping a second journal
-# duplicates the same tape and risks two writers on the same markets.
-journal = false
+# Journal ON: collect live market data for model training
+journal = true
 loop = "uvloop"
 # Auto-discovery: find + quote the best markets automatically.
 # Set POLYMAKER_CAPITAL_USDC in .env to enable. Markets are selected by
 # score (reward rate, liquidity, spread) and filtered by capital feasibility.
 # When auto-discovery is on, markets.toml is the FIXED baseline; discovery
 # ADDS complementary markets on top.
-auto_discovery_enabled = false
-auto_discovery_hot_reload = false
+auto_discovery_enabled = true
+auto_discovery_hot_reload = true
 # Live dashboard on run (loopback). CLI: --no-dashboard / --no-open. URL → logs/dashboard.url
 dashboard_enabled = true
 dashboard_host = "127.0.0.1"

@@ -1,0 +1,50 @@
+[
+  {
+    "file": "src/polymaker/engine.py",
+    "line": 87,
+    "summary": "Removed import of StrategyContext and dispatch_strategy from regime_strategies module — the entire regime-conditional strategy dispatch system (4 distinct quoting modes: ToxicStrategy, ExitOnlyStrategy, BenignStrategy, ConvexityStrategy, QueueWarStrategy) was deleted and replaced with a single decision_pipeline.build_targets call.",
+    "failure_scenario": "The bot no longer changes behavior fundamentally per regime (e.g., toxic vs quiet vs near-resolve). It only tweaks knobs on one quoting function. If decision_pipeline doesn't correctly encode all regime-specific logic, the bot quotes inappropriately for the regime (e.g., providing two-sided liquidity in TOXIC, not jumping queue in QUEUE_WAR)."
+  },
+  {
+    "file": "src/polymaker/engine.py",
+    "line": 2234,
+    "summary": "Removed `self.win_gov.record_outcome(markout > 0.0)` in `_resolve_fill_labels`. The win-rate governor was being driven by 30-second fair-value markout signs, which mislabels the maker's core trade (buying bid, selling ask) as a loss whenever fair value didn't move.",
+    "failure_scenario": "The governor now ONLY receives signal from realized round-trip PnL in `_on_fill` (line 2199). If the realized PnL path has a bug (e.g., cost_basis not passed correctly, or SELL fills that don't close inventory are misclassified), the governor receives ZERO outcomes and never throttles entry size — the deployment gate stays open indefinitely regardless of actual performance."
+  },
+  {
+    "file": "src/polymaker/engine.py",
+    "line": 2050,
+    "summary": "Changed `_on_fill` signature to require `cost_basis` captured BEFORE `apply_fill` (which zeroes avg_price on full round-trip close). The old code read cost basis from the position AFTER the fill was applied, so it always saw 0.0 for closed round trips.",
+    "failure_scenario": "If the caller (`_on_user_fills` or `UserEventProcessor`) fails to capture `pre_pos.avg_price` before `apply_fill`, or passes 0.0 for short positions, realized PnL is computed wrong. The governor then gets garbage win/loss labels. The diff shows both call sites updated, but any future fill path must also pass cost_basis."
+  },
+  {
+    "file": "src/polymaker/engine.py",
+    "line": 2177,
+    "summary": "Removed `tp.model_copy()` and `sl.model_copy()` calls on Quote objects (frozen dataclasses, not pydantic models). This raised AttributeError on EVERY buy fill, so NO take-profit or stop-loss was ever registered — the engine had no notion of exiting at a profit or cutting a loss.",
+    "failure_scenario": "Fixed to use `dataclasses.replace()`. If `dataclasses` is not imported (it is now at line 17 of quoting.py), or if a future edit reverts to `.model_copy()`, TP/SL silently stops working again. No test asserts TP/SL placement on buy fills."
+  },
+  {
+    "file": "src/polymaker/strategy/fill_model.py",
+    "line": 419,
+    "summary": "Removed train/test split for markout regression that silently failed: required >=100 fills in 70% train split, but fills are ~1% of rows so live buffer carried only ~88 fills → regressor skipped → corr defaulted to 0.0 (indistinguishable from 'no skill'). Replaced with KFold cross-validation over fill rows and added `corr_computed` flag.",
+    "failure_scenario": "The deployment gate now requires `corr_computed=True` AND `corr >= min_corr`. If `corr_computed=False` (fewer than 30 fills), the gate fails closed with reason 'markout correlation not computable'. If the caller doesn't check `corr_computed` and treats 0.0 as a valid score, a model with insufficient evidence could pass. The gate correctly fails closed, but the distinction must be preserved in all callers."
+  },
+  {
+    "file": "src/polymaker/risk/manager.py",
+    "line": 32,
+    "summary": "Removed in-memory `_net_cash = 0.0` initialization. Now seeds from `store.net_cash_from_fills()` at construction. A restart previously zeroed the cash side while positions reloaded in full, overstating equity by everything spent before restart and suppressing the daily-loss stop.",
+    "failure_scenario": "If `net_cash_from_fills()` query fails (schema change, migration issue, DB corruption), the except block logs a warning and defaults `_net_cash = 0.0`. Equity is then overstated by the full historical cash spent, and the daily-loss kill will not fire when it should. The warning is logged but the engine continues with bad equity."
+  },
+  {
+    "file": "src/polymaker/risk/manager.py",
+    "line": 111,
+    "summary": "Removed simple daily loss check without latch. Added `_daily_loss_latched` boolean that persists across restarts via `day_anchor` table. Old code re-evaluated `daily_pnl <= -cap` on every quote cycle, so a favourable mark recovery released the halt and the engine resumed adding exposure — observed: a $10 cap let a $100 book walk past -$600.",
+    "failure_scenario": "If `set_day_anchor` persistence fails (SQLite lock, disk full, schema issue), the except block swallows the error and the latch is not persisted. On the next `global_halt()` call, the in-memory latch is still True, but after a restart it would be lost. The daily-loss stop could be defeated by a restart if persistence silently fails."
+  },
+  {
+    "file": "src/polymaker/strategy/quoting.py",
+    "line": 530,
+    "summary": "Removed passive exit target at `token_fv + delta` with no reachability cap (rested 9-49 ticks above book, never hit — every observed fill was a BUY). Added stop-loss trigger (fair value breach → urgency=1.0), profit protection (won't offer below cost while time remains), and min_profit_ticks floor. Stop-loss is now a TRIGGER in `_maybe_exit`, not a resting limit order.",
+    "failure_scenario": "If `stop_loss_pct` is 0.0 (default in profile if not set), the stop trigger never activates. Exits then walk to `best_bid + tick` on urgency timer regardless of PnL, realizing losses on noise. The profile must set `stop_loss_pct > 0` for the stop to work. No validation enforces this."
+  }
+]

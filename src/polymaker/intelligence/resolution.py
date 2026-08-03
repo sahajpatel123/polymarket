@@ -198,7 +198,7 @@ async def estimate_resolution_probability(
     """
     prompt = build_resolution_prompt(question, market_price, reward_rate, volume)
     try:
-        parsed, resp = await agent.chat_json_tool(
+        result = await agent.chat_json_tool(
             messages=[{"role": "user", "content": prompt}],
             tool_name="probability_estimate",
             tool_schema={
@@ -213,6 +213,26 @@ async def estimate_resolution_probability(
             kind="resolution",
             description="Estimate true probability of an event resolving to YES",
         )
+        # Raw agents return (parsed, resp); the governed wrapper returns a
+        # single GovernedResponse whose agent_response holds the tool call.
+        if isinstance(result, tuple):
+            parsed, resp = result
+        else:
+            resp = getattr(result, "agent_response", None)
+            parsed = {}
+            for tc in getattr(resp, "tool_calls", []) or []:
+                if isinstance(getattr(tc, "arguments", None), dict):
+                    parsed = tc.arguments
+                    break
+            if not parsed:
+                import json as _json
+
+                try:
+                    obj = _json.loads(getattr(resp, "content", "") or "")
+                    if isinstance(obj, dict):
+                        parsed = obj
+                except (_json.JSONDecodeError, TypeError):
+                    pass
         raw_p = float(parsed.get("estimated_probability", market_price))
         conf = float(parsed.get("confidence", 0.3))
         reasoning = str(parsed.get("reasoning", ""))

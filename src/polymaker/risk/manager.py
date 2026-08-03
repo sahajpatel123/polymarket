@@ -33,8 +33,17 @@ class RiskManager:
         self._cfg = cfg.resolve_from_bankroll()
         self._store = store
         self._marks: dict[str, float] = {}  # token_id -> fair value
-        self._net_cash = 0.0  # cumulative signed cash from fills (+sell, -buy)
+        # Seed from persisted fills: this counter is in-memory, so a restart
+        # otherwise zeroed the cash side while positions reloaded in full,
+        # overstating equity by everything spent before the restart and
+        # suppressing the daily-loss stop.
+        try:
+            self._net_cash = float(store.net_cash_from_fills())
+        except Exception:
+            log.warning("net_cash_seed_failed", exc_info=True)
+            self._net_cash = 0.0
         self._day_start_equity = 0.0
+        self._day_anchor_day = ""
         self._killed = False
         # Latched daily-loss breach. The daily cap is a STOP for the day, not a
         # throttle: once breached it must stay engaged even if mark-to-market
@@ -54,15 +63,35 @@ class RiskManager:
         return self._cfg
 
     # ── PnL bookkeeping ─────────────────────────────────────────────────
-    def note_fill(self, fill: Fill) -> None:
+    def note_fill(self, fill: Fill, *, cost_basis: float | None = None) -> float | None:
+        """Book a fill. Returns realized PnL when this SELL closes inventory.
+
+        The return value is the only *money* outcome the engine can observe per
+        trade, so the win-rate governor is driven from it rather than from a
+        30-second fair-value markout (which mislabels spread capture: buying the
+        bid and selling the ask is profitable even when fair value never moved).
+
+        ``cost_basis`` is the pre-fill average price captured by the caller
+        BEFORE the state store applies the fill. ``apply_fill`` zeroes
+        ``avg_price`` when a SELL closes the position, so reading the position
+        inside this method would always see a 0 cost basis for full round trips
+        and the realized PnL (and the governor's win/loss) would never fire.
+        """
         self._net_cash += (fill.price * fill.size) * (1 if fill.side is Side.SELL else -1)
-        if fill.side is Side.SELL:
-            pos = self._store.position(fill.token_id)
-            cost_basis = pos.avg_price if pos.avg_price > 0 else fill.price
-            realized = (fill.price - cost_basis) * fill.size
-            self._per_token_realized_pnl[fill.token_id] = (
-                self._per_token_realized_pnl.get(fill.token_id, 0.0) + realized
-            )
+        if fill.side is not Side.SELL:
+            return None
+        pos = self._store.position(fill.token_id)
+        basis = cost_basis if cost_basis is not None and cost_basis > 0.0 else pos.avg_price
+        if basis <= 0.0:
+            # No cost basis: this is a short, not a closed round trip. Scoring it
+            # would feed the governor a 0-PnL "loss" and throttle entries on a
+            # trade that never had an outcome.
+            return None
+        realized = (fill.price - basis) * fill.size
+        self._per_token_realized_pnl[fill.token_id] = (
+            self._per_token_realized_pnl.get(fill.token_id, 0.0) + realized
+        )
+        return realized
 
     def update_mark(self, token_id: str, fv: float) -> None:
         self._marks[token_id] = fv
@@ -100,6 +129,7 @@ class RiskManager:
         self._day_start_equity = self.equity
         # A new day releases the daily-loss stop.
         self._daily_loss_latched = False
+        self._day_anchor_day = self._today()
         self._persist_day_anchor()
 
     def begin_day(self) -> None:
@@ -112,11 +142,25 @@ class RiskManager:
         day, and only rebases on a genuinely new day.
         """
         day = self._today()
+        self._day_anchor_day = day
         existing = self._store.get_day_anchor(day)
         if existing is None:
             self.reset_day()
             return
         self._day_start_equity, self._daily_loss_latched = existing
+
+    def rollover_if_new_day(self) -> None:
+        """Mid-run UTC rollover: rebase the daily-loss budget on a new day.
+
+        ``begin_day`` only runs at startup; a process that crosses UTC
+        midnight would otherwise keep yesterday's equity snapshot and an
+        already-latched loss until restart. This mirrors ``begin_day``'s
+        anchor semantics on every maintenance tick.
+        """
+        day = self._today()
+        if day != self._day_anchor_day:
+            self._day_anchor_day = day
+            self.reset_day()
 
     @staticmethod
     def _today() -> str:

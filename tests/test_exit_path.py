@@ -399,3 +399,92 @@ def test_coarse_tick_flat_market_offers_a_one_tick_maker_profit() -> None:
     assert q is not None
     assert q.price == pytest.approx(0.20)
     assert (q.price - 0.19) * q.size > 0
+
+
+# ── 7. reward floor must not breach the per-market notional cap ───────────
+
+
+def test_reward_floor_respects_the_notional_cap() -> None:
+    """Polymarket's reward minimum is an absolute share count.
+
+    On a $0.88 token a 200-share "scoring" order is $176. One observed run
+    placed 255.68 shares ($225) against a $75 cap; the over-size pushed the
+    market straight into REDUCE_ONLY, which disables the exit profit floor, so
+    the position unwound at cost and round trips closed flat.
+    """
+    from polymaker.strategy.quoting import _add_layers
+
+    quotes: list[Quote] = []
+    _add_layers(quotes, TOK, Side.BUY, 0.88, 0.01, 2, total_size=250.0,
+                layers=2, step_ticks=1, down=True, exchange_min=5.0,
+                reward_floor=200.0, max_orders=4, max_notional_usdc=60.0)
+    assert quotes, "expected orders to be placed"
+    for q in quotes:
+        assert q.price * q.size <= 60.0 + 1e-6, (
+            f"order notional ${q.price * q.size:.2f} breaches the $60 cap"
+        )
+
+
+def test_no_cap_means_reward_floor_applies_unchanged() -> None:
+    """Cap of 0 disables the ceiling (legacy/paper configs without a bankroll)."""
+    from polymaker.strategy.quoting import _add_layers
+
+    quotes: list[Quote] = []
+    _add_layers(quotes, TOK, Side.BUY, 0.88, 0.01, 2, total_size=250.0,
+                layers=2, step_ticks=1, down=True, exchange_min=5.0,
+                reward_floor=200.0, max_orders=4, max_notional_usdc=0.0)
+    assert any(q.size == pytest.approx(200.0) for q in quotes)
+
+
+def test_cap_drops_orders_that_shrink_below_exchange_minimum() -> None:
+    from polymaker.strategy.quoting import _add_layers
+
+    quotes: list[Quote] = []
+    _add_layers(quotes, TOK, Side.BUY, 0.90, 0.01, 2, total_size=250.0,
+                layers=1, step_ticks=1, down=True, exchange_min=5.0,
+                reward_floor=200.0, max_orders=2, max_notional_usdc=1.0)
+    assert quotes == [], "a $1 cap cannot fund a 5-share minimum at $0.90"
+
+
+# ── 8. post-only safety on degenerate books ──────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("label", "bid", "ask", "tick", "dec"),
+    [
+        ("normal 1-tick", 0.19, 0.20, 0.01, 2),
+        ("wide spread", 0.10, 0.90, 0.01, 2),
+        ("locked bid==ask", 0.50, 0.50, 0.01, 2),
+        ("no bid", None, 0.20, 0.01, 2),
+        ("no ask", 0.19, None, 0.01, 2),
+        ("fine tick", 0.190, 0.191, 0.001, 3),
+        ("near 1.0", 0.98, 0.99, 0.01, 2),
+        ("near 0.0", 0.01, 0.02, 0.01, 2),
+    ],
+)
+@pytest.mark.parametrize(("cost", "fv", "urgency"),
+                         [(0.30, 0.05, 1.0), (0.19, 0.19, 0.0)])
+def test_exit_never_crosses_the_bid_on_any_book(
+    label: str, bid: float | None, ask: float | None, tick: float, dec: int,
+    cost: float, fv: float, urgency: float,
+) -> None:
+    """post_only rejects a SELL at or below the bid.
+
+    A rejected exit is a silent failure: the engine believes it is unwinding
+    while the position stays open. This must hold on every book shape, including
+    locked, one-sided and extreme-price books.
+    """
+    m = dataclasses.replace(_meta(), tick_size=tick)
+    view = BookView(best_bid=bid, best_bid_size=500, best_ask=ask,
+                    best_ask_size=500, second_bid=None, second_ask=None,
+                    bid_depth=5000, ask_depth=5000)
+    quotes: list[Quote] = []
+    _maybe_exit(quotes, TOK, Position(TOK, 200.0, cost), fv, 0.05, view, tick,
+                dec, urgency, m, Regime.QUIET, stop_loss_pct=0.015)
+    for q in quotes:
+        assert 0.0 < q.price < 1.0, f"{label}: invalid price {q.price}"
+        if bid is not None:
+            assert q.price > bid, (
+                f"{label}: exit {q.price} <= bid {bid} would be rejected by "
+                "post_only, leaving the position silently open"
+            )

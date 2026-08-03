@@ -31,6 +31,11 @@ from polymaker.domain import MarketMeta, Quote, Regime, Side
 from polymaker.logging import get_logger
 
 _EPS = 1e-9
+
+# Minimum online FILL rows before the markout correlation is considered
+# measurable. Below this the metric is reported as not-computed rather than as a
+# 0.0 that reads like "no skill" and silently blocks deployment forever.
+_MIN_FILLS_FOR_MARKOUT_CV = 30
 log = get_logger("fill_model")
 
 
@@ -419,7 +424,9 @@ class FillModel:
         te = idx[n - n_test:]
         tr = idx[: n - n_test]
         X_tr, yf_tr = X[tr], y_fill[tr]
-        X_te, yf_te, ym_te = X[te], y_fill[te], y_markout[te]
+        # The markout leg no longer uses this split (it cross-validates over the
+        # fill rows instead), so only the AUC leg needs the test slice.
+        X_te, yf_te = X[te], y_fill[te]
 
         auc = 0.5
         if np.unique(yf_tr).size >= 2 and np.unique(yf_te).size >= 2:
@@ -436,30 +443,67 @@ class FillModel:
                 auc = 0.5
 
         corr = 0.0
+        corr_computed = False
+        n_fills_total = int((y_fill > 0).sum())
         try:
-            has_fill_tr = yf_tr > 0
-            if int(has_fill_tr.sum()) >= self._min_samples:
-                reg = HistGradientBoostingRegressor(
-                    max_iter=100, max_depth=4, min_samples_leaf=10,
-                    early_stopping=False, random_state=42,
-                )
-                reg.fit(X_tr[has_fill_tr], y_markout[tr][has_fill_tr])
-                te_fill = yf_te > 0
-                if int(te_fill.sum()) >= 10:
-                    pm = reg.predict(X_te[te_fill])
-                    corr = float(np.corrcoef(pm, ym_te[te_fill])[0, 1])
+            # Cross-validate over the FILL rows rather than fitting on the
+            # train split alone.
+            #
+            # The old path required >= min_samples (100) fills inside the 70/30
+            # TRAIN split. Fills are ~1% of rows, so a live buffer of 7,943 rows
+            # carried only 88 fills into train — under the threshold, so the
+            # regressor was silently skipped and corr defaulted to 0.0. That is
+            # indistinguishable from "no skill" and it fails the floor, so the
+            # deployment gate could never open no matter how long the engine ran.
+            # The same 119 fills score +0.43 under honest K-fold CV.
+            #
+            # A skipped computation must not masquerade as a failed one:
+            # corr_computed is reported so callers can tell them apart, and the
+            # gate still fails closed when it is False.
+            if n_fills_total >= _MIN_FILLS_FOR_MARKOUT_CV:
+                from sklearn.model_selection import KFold
+
+                fill_mask = y_fill > 0
+                X_f = X[fill_mask]
+                y_f = y_markout[fill_mask]
+                n_splits = max(2, min(5, n_fills_total // 10))
+                oof = np.zeros(len(X_f), dtype=np.float64)
+                for tr_i, te_i in KFold(n_splits=n_splits, shuffle=True,
+                                        random_state=seed).split(X_f):
+                    reg = HistGradientBoostingRegressor(
+                        max_iter=100, max_depth=4, min_samples_leaf=10,
+                        early_stopping=False, random_state=42,
+                    )
+                    reg.fit(X_f[tr_i], y_f[tr_i])
+                    oof[te_i] = reg.predict(X_f[te_i])
+                if float(np.std(oof)) > 0.0 and float(np.std(y_f)) > 0.0:
+                    corr = float(np.corrcoef(oof, y_f)[0, 1])
+                    corr_computed = True
         except Exception:
             corr = 0.0
+            corr_computed = False
         if not math.isfinite(corr):
             corr = 0.0
+            corr_computed = False
 
-        passed = auc >= min_auc and corr >= min_corr
+        passed = bool(auc >= min_auc and corr_computed and corr >= min_corr)
+        if passed:
+            reason = "ok"
+        elif not corr_computed:
+            reason = (
+                f"markout correlation not computable ({n_fills_total} fills, "
+                f"need {_MIN_FILLS_FOR_MARKOUT_CV})"
+            )
+        else:
+            reason = "below floors"
         return {
             "auc": round(auc, 4),
             "corr": round(corr, 4),
+            "corr_computed": corr_computed,
+            "n_fills": n_fills_total,
             "n_test": int(len(X_te)),
             "passed": passed,
-            "reason": "ok" if passed else "below floors",
+            "reason": reason,
         }
 
     def validate(
@@ -769,6 +813,12 @@ class FillModel:
             self._good_fill_clf = None
 
         self._n_samples = n
+
+        # A successful retrain produces fresh ML models — clear any prior
+        # degradation counter so a single transient predict() error (stale
+        # artifact migration, one bad feature row) can't shadow the model
+        # forever. Only an ongoing pattern of fallbacks re-degrades it.
+        self._fallback_count = 0
 
         # ── Production tree → ensemble-student quality distillation ──
         # Use the exact production quality_filter_score() as the teacher on

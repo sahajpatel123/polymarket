@@ -357,6 +357,18 @@ def moneydoctor(
     raise typer.Exit(0 if ok else 1)
 
 
+@app.command(name="doctor")
+def doctor(
+    config_dir: str = typer.Option("config", help="config directory"),
+) -> None:
+    """Preflight: config, secrets, CLOB/Gamma reachability, wallet auth, WS frames."""
+    from polymaker.doctor import run_doctor
+
+    cfg = Config.load(config_dir)
+    ok = asyncio.run(run_doctor(cfg, console))
+    raise typer.Exit(0 if ok else 1)
+
+
 @app.command(name="cancel-all")
 def cancel_all(config_dir: str = typer.Option("config", help="config directory")) -> None:
     """Cancel all open orders for the wallet (panic button)."""

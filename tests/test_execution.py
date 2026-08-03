@@ -60,11 +60,18 @@ async def test_paper_gateway_heartbeat_and_cancel_all_noop():
     await gw.cancel_all()  # no client, must not raise
 
 
-def test_gateway_requires_wallet_for_live_connect():
+def test_gateway_requires_wallet_for_live_connect(monkeypatch):
     from polymaker.config import Secrets
 
-    # explicitly-empty secrets (don't read a real .env that may exist on disk)
+    # `_env_file=None` is NOT enough isolation: Config.load() calls
+    # load_dotenv(), which copies .env into os.environ for the whole process, and
+    # pydantic-settings reads os.environ regardless of _env_file. On any machine
+    # with real credentials the guard then correctly does not fire and this test
+    # reported a false failure. Clear the vars so we test the guard, not the box.
+    for var in ("PK", "BROWSER_ADDRESS", "POLYMARKET_PK", "POLY_PK"):
+        monkeypatch.delenv(var, raising=False)
     cfg = Config(secrets=Secrets(_env_file=None))
+    assert not cfg.secrets.has_wallet, "test env still carries wallet secrets"
     gw = ExecutionGateway(cfg, paper=False)
     with pytest.raises(RuntimeError, match="no wallet"):
         asyncio.run(gw.connect())

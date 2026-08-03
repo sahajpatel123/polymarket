@@ -29,7 +29,17 @@ from polymaker.intelligence.self_eval import SelfEvaluation
 log = logging.getLogger("polymaker.intelligence.self_improve")
 
 REASONING_MODEL = "deepseek-reasoner"
-XAI_CHAT_URL = "https://api.x.ai/v1/chat/completions"
+# Direct-HTTPS fallback endpoint. This MUST match the provider that serves
+# REASONING_MODEL. It was pinned to xAI while the model name was a DeepSeek SKU,
+# so every daily review died with:
+#   xAI HTTP 400 {"code":"invalid-argument","error":"Model not found:
+#    deepseek-reasoner"}
+# and the self-improvement loop produced zero actions. Overridable for
+# self-hosted / proxied deployments.
+DEEPSEEK_BASE_URL = os.environ.get(
+    "DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"
+).rstrip("/")
+CHAT_COMPLETIONS_URL = f"{DEEPSEEK_BASE_URL}/chat/completions"
 
 SAFE_IMMEDIATE_KEYS: frozenset[str] = frozenset({
     "delta_min_ticks", "c_vol", "c_tox", "c_kyle", "gamma", "min_edge_ticks",
@@ -276,7 +286,7 @@ def call_grok_reasoning(
     try:
         import asyncio
 
-        from polymaker.intelligence.agent import DeepSeekAgent  # type: ignore
+        from polymaker.intelligence.agent import DeepSeekAgent
         agent = DeepSeekAgent(api_key=key, model=model)
         async def _ago() -> dict[str, Any]:
             resp = await agent.chat([
@@ -301,7 +311,7 @@ def call_grok_reasoning(
         "response_format": {"type": "json_object"},
     }
     req = urllib.request.Request(
-        XAI_CHAT_URL,
+        CHAT_COMPLETIONS_URL,
         data=json.dumps(payload).encode("utf-8"),
         headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"},
         method="POST",
@@ -314,7 +324,7 @@ def call_grok_reasoning(
             return parse_llm_json(body["choices"][0]["message"]["content"])
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
-            last_err = RuntimeError(f"xAI HTTP {exc.code}: {detail}")
+            last_err = RuntimeError(f"LLM HTTP {exc.code}: {detail}")
             if exc.code in {429, 500, 502, 503, 504} and attempt < 2:
                 time.sleep(0.5 * (2 ** attempt))
                 continue
@@ -392,7 +402,8 @@ class DraftStore:
         path = self.path_for(profile_name)
         if not path.exists():
             return None
-        return json.loads(path.read_text(encoding="utf-8"))
+        loaded: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+        return loaded
 
     def clear(self, profile_name: str) -> None:
         path = self.path_for(profile_name)

@@ -230,7 +230,29 @@ def test_rollback_after_promote(tmp_path: Path) -> None:
 
 
 def test_reasoning_model_constant() -> None:
-    assert REASONING_MODEL == "grok-4-1-fast-reasoning"
+    """The project migrated from xAI/Grok to DeepSeek; this pins the current SKU."""
+    assert REASONING_MODEL == "deepseek-reasoner"
+
+
+def test_llm_endpoint_matches_the_model_provider() -> None:
+    """Regression: a DeepSeek model name was posted to xAI's endpoint.
+
+    Every daily review died with
+      HTTP 400 {"code":"invalid-argument","error":"Model not found:
+       deepseek-reasoner"}
+    so the self-improvement loop produced zero actions for as long as it ran.
+    """
+    from polymaker.intelligence.self_improve import (
+        CHAT_COMPLETIONS_URL,
+        REASONING_MODEL,
+    )
+
+    assert "deepseek" in REASONING_MODEL
+    assert "deepseek" in CHAT_COMPLETIONS_URL, (
+        f"model {REASONING_MODEL!r} would be sent to {CHAT_COMPLETIONS_URL!r}"
+    )
+    assert CHAT_COMPLETIONS_URL.endswith("/chat/completions")
+    assert "x.ai" not in CHAT_COMPLETIONS_URL
 
 
 def test_no_trigger_when_healthy(tmp_path: Path) -> None:

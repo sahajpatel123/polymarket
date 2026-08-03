@@ -21,7 +21,6 @@ import json
 import logging
 import os
 import time
-from collections import deque
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -290,9 +289,19 @@ def function_tool(name: str, description: str, parameters: dict[str, Any]) -> di
 
 
 def resolve_model(env: dict[str, str] | None = None) -> str:
-    """Resolve model from environment, rejecting non-reasoning unless allowed."""
+    """Resolve model from environment, rejecting non-reasoning unless allowed.
+
+    Defaults to ``REASONING_MODEL``, not ``DEFAULT_MODEL``. This helper exists to
+    guard the judgement-critical paths (daily review, self-improvement), so its
+    default has to satisfy its own policy — it previously defaulted to
+    ``deepseek-chat`` and therefore raised ValueError on a clean environment.
+
+    ``DeepSeekAgent`` keeps ``deepseek-chat`` as its constructor default on
+    purpose: the oversight loop calls it every 30s and the reasoner costs ~4-8x
+    more per token.
+    """
     e = env or os.environ
-    model = e.get("DEEPSEEK_MODEL", DEFAULT_MODEL)
+    model = e.get("DEEPSEEK_MODEL", REASONING_MODEL)
     if is_reasoning_model(model):
         return model
     if e.get("DEEPSEEK_ALLOW_NON_REASONING", "") == "1":

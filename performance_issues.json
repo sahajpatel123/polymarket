@@ -1,0 +1,82 @@
+[
+  {
+    "id": "PERF-001",
+    "title": "Engine._sample_checkpoint_loop pickles entire online arrays every 60s",
+    "file": "src/polymaker/engine.py",
+    "lines": [3722, 3735],
+    "function": "_sample_checkpoint_loop",
+    "issue": "Runs every 60 seconds and calls _checkpoint_online_samples() which pickles the entire online sample arrays (features, y_fill, y_markout) via pickle.dump(). As online samples accumulate (thousands of rows with 25 features each), this becomes a large blocking I/O operation on the event loop.",
+    "impact": "Event loop stall during pickle serialization + disk write. Grows with sample count.",
+    "suggestion": "Write incrementally (append-only format like parquet/msgpack) or batch to background thread via asyncio.to_thread(). Consider checkpointing only delta since last save."
+  },
+  {
+    "id": "PERF-002",
+    "title": "Engine._retrain_fill_model runs 5-fold CV on every retrain (5 min)",
+    "file": "src/polymaker/strategy/fill_model.py",
+    "lines": [463, 481],
+    "function": "holdout_metrics",
+    "issue": "Called from _retrain_fill_model() every 5 minutes. Does KFold cross-validation (n_splits=5) over all fill rows, fitting a HistGradientBoostingRegressor 5 times per retrain. Each fit is O(n_samples * n_features * max_iter).",
+    "impact": "CPU-intensive blocking work on event loop every 5 min. Scales with fill sample count.",
+    "suggestion": "Move CV to background thread (asyncio.to_thread). Cache CV results and only recompute when online fills increase significantly. Consider reducing folds or using a single holdout split for periodic validation."
+  },
+  {
+    "id": "PERF-003",
+    "title": "Engine._restore_online_samples iterates and appends one-by-one O(n) on restart",
+    "file": "src/polymaker/engine.py",
+    "lines": [3712, 3717],
+    "function": "_restore_online_samples",
+    "issue": "Restores checkpointed online samples by iterating through arrays and calling list.append() for each row (lines 3712-3717). With thousands of samples, this is O(n) Python loop overhead on startup.",
+    "impact": "Startup latency proportional to checkpointed sample count. Blocks engine start.",
+    "suggestion": "Use list.extend() with sliced arrays or numpy concatenation. Or restore via FillTrainingStore.from_arrays() which already supports bulk loading from arrays."
+  },
+  {
+    "id": "PERF-004",
+    "title": "Merger.gas_cost_for makes synchronous RPC call in async context",
+    "file": "src/polymaker/merge.py",
+    "lines": [143],
+    "function": "gas_cost_for",
+    "issue": "Calls w3.eth.get_transaction_receipt(tx_hash) synchronously (line 143) which blocks the event loop waiting for Polygon RPC response. Called from _merge_task() via asyncio.to_thread() but the RPC call itself is not async.",
+    "impact": "Blocks thread pool worker during RPC round-trip (100-500ms). If called frequently, exhausts thread pool.",
+    "suggestion": "Use async web3 provider (web3.AsyncHTTPProvider) or batch receipt fetches. Consider caching recent receipts since gas_cost_for is called immediately after merge."
+  },
+  {
+    "id": "PERF-005",
+    "title": "RiskManager.begin_day / rollover_if_new_day both query SQLite for day anchor",
+    "file": "src/polymaker/risk/manager.py",
+    "lines": [146, 160],
+    "function": "begin_day, rollover_if_new_day",
+    "issue": "begin_day() calls self._store.get_day_anchor(day) (line 146). rollover_if_new_day() calls _today() and potentially reset_day() which calls _persist_day_anchor() (line 171). Both hit SQLite. Day anchor changes only once per UTC day.",
+    "impact": "Unnecessary SQLite round-trips on every maintenance loop (2 min) and startup.",
+    "suggestion": "Cache day anchor in memory. Only persist on actual day change or daily-loss latch. begin_day() already loads once at startup; rollover_if_new_day() should check cached anchor first."
+  },
+  {
+    "id": "PERF-006",
+    "title": "_filter_quotes_by_fill_model recomputes OFI trend, trade rate, size anomaly every quote cycle",
+    "file": "src/polymaker/engine.py",
+    "lines": [2735, 2757],
+    "function": "_recompute_locked -> _filter_quotes_by_fill_model",
+    "issue": "In _recompute_locked() (lines 2735-2757), OFI trend, trade rate, and size anomaly are computed from scratch every quote cycle. These are passed to _filter_quotes_by_fill_model() which recomputes extract_features() for each quote.",
+    "impact": "Redundant computation on hot path (every book update). OFI history and trade sizes are filtered/sliced repeatedly.",
+    "suggestion": "Maintain running estimates (EWMA) for trade_rate, size_anomaly, ofi_trend updated incrementally in _on_trade(). Pass precomputed values to _filter_quotes_by_fill_model()."
+  },
+  {
+    "id": "PERF-007",
+    "title": "FillModel.validate() runs cross-validation on every call",
+    "file": "src/polymaker/strategy/fill_model.py",
+    "lines": [509, 528],
+    "function": "validate",
+    "issue": "validate() calls holdout_metrics() which does 5-fold CV over fill rows (line 526). Called from _load_persisted_fill_model() on startup and _retrain_fill_model() every 5 min. CV is expensive and results don't change between calls unless new fills added.",
+    "impact": "Repeated expensive CV computation. Blocks event loop during validation.",
+    "suggestion": "Cache validation results keyed by (n_online_samples, n_online_fills). Only re-validate when online fills increase by a threshold (e.g., 10%). Move to background thread."
+  },
+  {
+    "id": "PERF-008",
+    "title": "DeepSeekAgent creates new httpx.AsyncClient per instance; no shared connection pool",
+    "file": "src/polymaker/intelligence/agent.py",
+    "lines": [130, 140],
+    "function": "_get_client",
+    "issue": "Each DeepSeekAgent instance lazily creates its own httpx.AsyncClient (line 132-139). Engine creates one agent, but GovernedDeepSeekAgent, OversightLoop, MarketDiscovery all wrap the same agent. However, if multiple agents are instantiated (e.g., in tests or future multi-agent setups), each gets separate connection pool.",
+    "impact": "Wasted TCP connections, no connection reuse across agents. DNS resolution and TLS handshake repeated per agent.",
+    "suggestion": "Use a shared httpx.AsyncClient at module level or pass a pre-configured client. Configure limits: httpx.Limits(max_connections=20, max_keepalive_connections=10)."
+  }
+]

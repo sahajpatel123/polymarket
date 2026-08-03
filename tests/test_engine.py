@@ -314,7 +314,14 @@ def test_fill_model_filter_gov_size_scale_entries_only(meta):
 
 
 async def test_pending_fill_labels_resolve_with_forward_markout(tmp_path, meta):
-    """A fill's label is resolved from the FV 30s later, not a toxicity EWMA."""
+    """A fill's label is resolved from the FV 30s later, not a toxicity EWMA.
+
+    The markout label is the fill MODEL's training target. It is deliberately
+    NOT the win-rate governor's control signal: markout measures 30s fair-value
+    drift, which scores the maker's core trade (buy the bid, sell the ask) as a
+    loss whenever fair value did not move. The governor is driven from realized
+    round-trip PnL instead — see test_governor_tracks_realized_round_trip_pnl.
+    """
     from polymaker.domain import Fill
     from polymaker.strategy.fill_model import FillTrainingStore
 
@@ -338,8 +345,6 @@ async def test_pending_fill_labels_resolve_with_forward_markout(tmp_path, meta):
     eng._resolve_fill_labels(meta.condition_id, 131.0, 0.52)
     assert len(eng.fill_store.features) == 1
     assert eng.fill_store.y_markout[0] > 0.0  # positive markout
-    assert eng.win_gov.n_evaluated == 1
-    assert eng.win_gov.realized_wr == 1.0
 
     # A SELL fill that resolves lower (token price fell) is also a win.
     no_tok = meta.no.token_id
@@ -350,7 +355,6 @@ async def test_pending_fill_labels_resolve_with_forward_markout(tmp_path, meta):
     eng._resolve_fill_labels(meta.condition_id, 231.0, 0.55)  # fv_yes rose -> NO fell
     assert len(eng.fill_store.features) == 2
     assert eng.fill_store.y_markout[1] > 0.0
-    assert eng.win_gov.realized_wr == 1.0
 
     # A BUY fill that resolves against us (price fell) is a loss.
     eng._on_fill(Fill(
@@ -360,7 +364,10 @@ async def test_pending_fill_labels_resolve_with_forward_markout(tmp_path, meta):
     eng._resolve_fill_labels(meta.condition_id, 331.0, 0.45)  # fv_yes fell
     assert len(eng.fill_store.features) == 3
     assert eng.fill_store.y_markout[2] < 0.0
-    assert eng.win_gov.realized_wr == 2 / 3
+    # markout labels must NOT move the governor
+    assert eng.win_gov.n_evaluated == 0, (
+        "governor was fed markout signs; it must only see realized round trips"
+    )
 
     eng.state.close()
     eng.catalog.close()

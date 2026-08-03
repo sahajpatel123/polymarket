@@ -95,6 +95,24 @@ class StateStore:
         )
         self._conn.commit()
 
+    # ── cash ledger ─────────────────────────────────────────────────────
+    def net_cash_from_fills(self) -> float:
+        """Cumulative signed cash across ALL persisted fills (+sell, -buy).
+
+        RiskManager accumulates net cash in memory, so a restart reset it to 0
+        while positions were reloaded in full from this table. Equity
+        (net_cash + inventory_value) was then overstated by everything spent
+        before the restart — one observed run reported +$665 equity when the
+        fills implied -$514 cash against $522 of inventory. An overstated equity
+        means the daily-loss stop does not fire when it should, so this has to be
+        reconstructed at startup.
+        """
+        row = self._conn.execute(
+            "SELECT COALESCE(SUM(CASE WHEN side='SELL' THEN price*size "
+            "ELSE -price*size END), 0.0) FROM fills"
+        ).fetchone()
+        return float(row[0] or 0.0)
+
     # ── position age (exit urgency) ─────────────────────────────────────
     def position_entry_ts(self, token_id: str) -> float | None:
         """Timestamp the CURRENT open position in ``token_id`` was opened.

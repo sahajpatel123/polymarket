@@ -51,11 +51,13 @@ class UserEventProcessor:
         self,
         store: StateStore,
         on_change: Callable[[str], None] | None = None,
-        on_fill: Callable[[Fill], None] | None = None,
+        on_fill: Callable[..., None] | None = None,
     ) -> None:
         self._store = store
         self._on_change = on_change or (lambda _cid: None)
-        self._on_fill = on_fill or (lambda _fill: None)
+        # Must tolerate the keyword arguments the processor passes (cost_basis),
+        # otherwise the no-op default raises TypeError on every fill.
+        self._on_fill = on_fill or (lambda _fill, **_kw: None)
         # trade_id -> applied Fill, so FAILED can reverse exactly what we applied
         self._applied: dict[str, Fill] = {}
 
@@ -64,13 +66,18 @@ class UserEventProcessor:
             if ev.trade_id in self._applied:
                 return  # idempotent: already counted this match (in-memory fast path)
             fill = Fill(ev.token_id, ev.our_side, ev.price, ev.size, ev.trade_id, ev.ts, is_maker=True)
+            # Capture the pre-fill cost basis BEFORE apply_fill (which zeroes
+            # avg_price on a full round-trip close) so the governor sees the
+            # realized PnL of the completed trade.
+            pre_pos = self._store.position(fill.token_id)
+            cost_basis = pre_pos.avg_price if pre_pos.size > 0 else 0.0
             if not self._store.apply_fill(fill):
                 # duplicate at the persistent layer (replay after CONFIRMED or
                 # across restarts) — apply NO side effects
                 return
             self._store.mark_inflight(ev.token_id)
             self._applied[ev.trade_id] = fill
-            self._on_fill(fill)
+            self._on_fill(fill, cost_basis=cost_basis)
             self._on_change(condition_id)
 
         elif ev.status in (TradeState.CONFIRMED, TradeState.MINED):

@@ -1,0 +1,74 @@
+[
+  {
+    "id": "engine-online-sample-checkpointing",
+    "title": "Engine: Over-engineered online sample checkpointing (5 methods + sidecar file)",
+    "location": "src/polymaker/engine.py",
+    "lines": "138-144, 3598-3735",
+    "issue": "Five methods (_bundle_online_n, _online_store_path, _checkpoint_online_samples, _restore_online_samples, _sample_checkpoint_loop) + a separate sidecar pickle file manage online fill samples. The 60s checkpoint loop (_sample_checkpoint_loop) duplicates the checkpoint call already in _retrain_fill_model. The bundle stores online rows; the sidecar stores them again; _restore_online_samples does complex index-based skipping to avoid double-counting. This is fragile and over-engineered for \"don't lose samples on restart\".",
+    "simpler_form": "Single source of truth: persist the FillTrainingStore directly with the model artifact (already done in save/load_bundle). Remove the sidecar file, _bundle_online_n, _online_store_path, _checkpoint_online_samples, _restore_online_samples, and the 60s _sample_checkpoint_loop. The model.save() already persists training + online_mask; load_bundle restores it with max_samples headroom. On restart, the buffer is intact — no separate checkpoint needed.",
+    "impact": "Removes ~150 lines of fragile checkpoint/restore logic, eliminates double-pickle risk, removes a background task"
+  },
+  {
+    "id": "fillmodel-validate-return-dict",
+    "title": "FillModel.validate: Return dict has 4 diagnostic fields — only 'passed' gates deployment",
+    "location": "src/polymaker/strategy/fill_model.py",
+    "lines": "489-507",
+    "issue": "validate() returns dict with auc, corr, corr_computed, n_fills, n_test, passed, reason. Only 'passed' is used by the engine (sets _oos_passed). The other 6 fields are diagnostic-only. corr_computed/n_fills/reason explain WHY it failed; n_test is constant (30% split). These could be logged internally instead of returned.",
+    "simpler_form": "Return a simple tuple (passed: bool, reason: str) or a tiny NamedTuple. Log the full diagnostic inside validate(). Callers only need pass/fail; logs carry the detail for debugging.",
+    "impact": "Reduces return-value surface, removes unused fields from call sites, keeps diagnostics in logs where they belong"
+  },
+  {
+    "id": "filter-quotes-by-fill-model-params",
+    "title": "_filter_quotes_by_fill_model: 16 parameters — use a dataclass",
+    "location": "src/polymaker/engine.py",
+    "lines": "3990-4124",
+    "issue": "Function signature has 16 positional/keyword parameters (cid, meta, tick, mid, yes_view, yes_book, no_book, yes_token, est, fv, now, hours_to_end, regime, model, store, gov, sample_ts, risk_cap_usdc, held, ofi, ofi_trend, size_anomaly, trade_rate). All are read-only context for the filter. This is a classic parameter-object candidate.",
+    "simpler_form": "Create a @dataclass(frozen=True, slots=True) FilterContext holding all 16 fields. Pass a single ctx object. The function becomes _filter_quotes_by_fill_model(quotes: Sequence[Quote], ctx: FilterContext) -> list[Quote]. Cleaner call sites, easier to add fields, self-documenting.",
+    "impact": "Reduces call-site noise, prevents parameter-order bugs, makes the context explicit and extensible"
+  },
+  {
+    "id": "engine-retrain-fill-model-dup-validation",
+    "title": "Engine._retrain_fill_model: Duplicates validation logic from _load_persisted_fill_model",
+    "location": "src/polymaker/engine.py",
+    "lines": "3530-3657",
+    "issue": "Both _load_persisted_fill_model (lines 3562-3582) and _retrain_fill_model (lines 3616-3639) contain nearly identical validation logic: check online_arrays, check min samples, call model.validate on online slice if enough fills, else call holdout_metrics on full buffer. This is copy-paste with slight variation.",
+    "simpler_form": "Extract a private method _validate_and_maybe_deploy(model, store, *, require_live: bool) -> metrics that encapsulates the validation decision tree. Both load and retrain call it. The 'require_live' flag distinguishes startup (can use holdout) from retrain (needs live).",
+    "impact": "Removes ~50 lines of duplicated validation logic, single source of truth for deployment gate"
+  },
+  {
+    "id": "intelligence-resolve-model-docstring",
+    "title": "intelligence/agent.py resolve_model: 19-line docstring for a 17-line function",
+    "location": "src/polymaker/intelligence/agent.py",
+    "lines": "291-309",
+    "issue": "The docstring for resolve_model() is 19 lines explaining defaults, pricing, and internal policy — longer than the function itself (17 lines). It documents \"why\" not \"what\", and duplicates info already in the module docstring and constant definitions.",
+    "simpler_form": "Shrink to a 3-line docstring: \"Resolve model from env. Defaults to REASONING_MODEL. Raises if non-reasoning unless DEEPSEEK_ALLOW_NON_REASONING=1.\" Move the rationale to a module-level comment or README if needed.",
+    "impact": "Reduces noise, keeps docstrings proportional to function complexity"
+  },
+  {
+    "id": "merge-gas-cost-hardcoded-eth-usdc",
+    "title": "merge.py gas_cost_for: Hardcoded 2500 ETH/USDC price",
+    "location": "src/polymaker/merge.py",
+    "lines": "155-162",
+    "issue": "_usdc_per_eth() returns a hardcoded 2500.0 with a comment that it's a 'fallback' and 'rough conversion is sufficient'. But it's the ONLY source — no config, no oracle, no env override. If ETH moves 50%, gas accounting is wrong by 50%.",
+    "simpler_form": "Add eth_usdc_price_usd to Config (wallet section or risk section) with default 2500.0. Read from config in _usdc_per_eth(). Allows operators to update without code change; future-proof for oracle integration.",
+    "impact": "Makes gas accounting configurable and accurate; one-line config change vs code deploy"
+  },
+  {
+    "id": "quoting-add-layers-max-notional-dup",
+    "title": "quoting.py construct_quotes: max_notional_usdc passed identically to 4 _add_layers calls",
+    "location": "src/polymaker/strategy/quoting.py",
+    "lines": "137, 275-330, 530-533",
+    "issue": "max_market_notional = p.q_max_usdc is computed once (line 137) and passed to all four _add_layers calls (lines 281, 297, 314, 330). Inside _add_layers (lines 530-533) the same cap logic runs 4x. Not 'wrong' but the 4 call sites are copy-paste with only side/token/price varying.",
+    "simpler_form": "The 4 quote-construction blocks (BUY YES, SELL YES, BUY NO, SELL NO) follow an identical pattern: check flag → _place_bid/_place_ask → _add_layers. Could unify into a loop over a small list of (flag, side, token, target_price, is_buy) tuples, or a helper _add_side_quotes(). The max_notional_usdc becomes a single argument to the helper.",
+    "impact": "Reduces ~80 lines of repetitive quote construction to ~30, single source of truth for layer logic, easier to modify band/ordering behavior"
+  },
+  {
+    "id": "engine-fill-model-retrain-interval",
+    "title": "Engine: fill model retrain + sample checkpoint on different schedules (5min vs 60s)",
+    "location": "src/polymaker/engine.py",
+    "lines": "3598-3657, 3722-3735",
+    "issue": "_retrain_fill_model runs every 300s (line 3607). _sample_checkpoint_loop runs every 60s (line 3733). Both call _checkpoint_online_samples. The 60s loop exists because 'a restart costs at most a minute of evidence' — but the retrain already checkpoints on every successful deploy. Two loops doing the same write is redundant.",
+    "simpler_form": "Remove _sample_checkpoint_loop entirely. The retrain loop (5min) calls _checkpoint_online_samples after validation. For the 'restart loses evidence' concern: the model artifact already persists the training buffer via save/load_bundle; online samples are in that buffer. If a restart happens between retrains, at most 5min of online samples are lost — acceptable for a model that needs 100+ fills to deploy.",
+    "impact": "Removes a background task, eliminates duplicate checkpoint writes, simplifies the persistence story"
+  }
+]

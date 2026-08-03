@@ -91,6 +91,15 @@ class ModelConfig(BaseModel):
     min_markout_corr: float = 0.05
     # Online (live) samples required before the model may be deployed.
     min_live_validation_samples: int = 200
+    # Minimum online samples that are actual FILLS.
+    #
+    # The row count above is dominated by non-fill samples: one recorded per
+    # kept quote. An observed run reached 361 online rows containing just 3
+    # fills, so the 200-row gate was satisfiable with almost no positive class
+    # at all — an AUC computed on 3 positives is noise, and the model would have
+    # been promoted to gating real money on it. P(fill) skill cannot be
+    # established without fills, so require them explicitly.
+    min_live_fills: int = 30
 
 
 class RiskConfig(BaseModel):

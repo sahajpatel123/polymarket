@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import dataclasses
+import pickle
 import time
 from datetime import datetime
 from pathlib import Path
@@ -86,7 +87,6 @@ from polymaker.strategy.fill_model import (
     quality_filter_score,
 )
 from polymaker.strategy.online_opt import MarketOptimizer, OnlineOptimizerManager, OptimizerParams
-from polymaker.strategy.regime_strategies import StrategyContext, dispatch_strategy
 from polymaker.strategy.decision_pipeline import build_targets
 from polymaker.strategy.estimators import (
     FlowEstimator,
@@ -136,8 +136,12 @@ class Engine:
         self._pending_fill_labels: list[_PendingFillLabel] = []
         self.opt_mgr = OnlineOptimizerManager()
         self._fill_sample_ts: dict[tuple[str, str, float], float] = {}
+        self._bundle_online_n = 0
         self._last_model_retrain_ts: float = 0.0
         self._fill_model_path = Path(cfg.paths.model_dir) / "fill_model.pkl"
+        # Durable online-sample checkpoint. Separate from the model artifact so
+        # collecting evidence never risks the validated model.
+        self._online_store_path = Path(cfg.paths.model_dir) / "fill_online_samples.pkl"
         # TP/SL risk-managed exits: condition_id → {token_id: (tp_quote, sl_quote)}
         self._tp_sl_targets: dict[str, dict[str, tuple[Quote | None, Quote | None]]] = {}
         self._dirty: dict[str, asyncio.Event] = {}
@@ -209,6 +213,10 @@ class Engine:
         # V3: long-term memory + self-improve + review
         self.memory: AgentMemory | None = None
         self.profile_hist: ProfileHistory | None = None
+        # cid -> configured strategy profile NAME. Needed so self-improvement
+        # can apply a validated change to exactly the markets running that
+        # profile (the engine otherwise keeps only resolved profile objects).
+        self._profile_name: dict[str, str] = {}
         self.self_improver: SelfImprover | None = None
         self._last_improve_ts: float = 0.0
         self._last_review_ts: float = 0.0
@@ -422,6 +430,8 @@ class Engine:
         self._spawn("rebalancer", self._capital_rebalance_loop)
 
         self._spawn("supervisor", self._supervise)
+        # Durable evidence for the model deployment gate.
+        self._spawn("sample_checkpoint", self._sample_checkpoint_loop)
         # Resume today's daily-loss budget if this is a restart, so a restart
         # cannot hand the engine a fresh allowance mid-day.
         self.risk.begin_day()
@@ -516,6 +526,10 @@ class Engine:
 
     async def shutdown(self) -> None:
         self._running = False
+        # Flush collected online samples before teardown; otherwise everything
+        # gathered since the last 5-minute retrain tick is lost on every stop.
+        with contextlib.suppress(Exception):
+            self._checkpoint_online_samples()
         log.info("engine_shutdown")
         self._stop_live_dashboard()
         self.md.stop()
@@ -548,6 +562,7 @@ class Engine:
                     continue
                 self.metas[meta.condition_id] = meta
                 self.profiles[meta.condition_id] = self.cfg.profile_for(entry)
+                self._profile_name[meta.condition_id] = entry.profile
                 self.est[meta.condition_id] = self._make_estimators(self.profiles[meta.condition_id])
                 self.regime_m[meta.condition_id] = RegimeMachine()
                 self._dirty[meta.condition_id] = asyncio.Event()
@@ -1160,6 +1175,64 @@ class Engine:
                 log.exception("oversight_loop_error")
             await asyncio.sleep(30)  # continuous — DeepSeek sees every market move
 
+    def _apply_improved_profile(
+        self, profile_name: str, new_profile: dict[str, Any],
+        diff: dict[str, Any] | None = None,
+    ) -> int:
+        """Apply a self-improvement result to the live markets running a profile.
+
+        ``SelfImprover.run()`` already strips forbidden keys, coerces types,
+        paper-validates anything outside ``SAFE_IMMEDIATE_KEYS`` and records the
+        change in ProfileHistory (so it can be rolled back). What it did NOT do
+        was reach the engine: it mutated only its own ``live_profile`` copy, so
+        the loop burned reasoning-model calls every 6h and changed nothing. This
+        closes that gap.
+
+        The forbidden-key check is re-applied here as defence in depth — this is
+        the boundary where an LLM-derived value would reach live sizing and risk,
+        and it must not be possible to widen exposure through this path however
+        the suggestion was produced.
+        """
+        from polymaker.intelligence.self_improve import _is_forbidden_key
+
+        valid = set(StrategyProfile.model_fields)
+        overrides: dict[str, Any] = {}
+        rejected: list[str] = []
+        for key, value in (new_profile or {}).items():
+            if key not in valid:
+                rejected.append(f"{key}:unknown")
+                continue
+            if _is_forbidden_key(key):
+                rejected.append(f"{key}:forbidden")
+                continue
+            overrides[key] = value
+        if rejected:
+            log.warning("improve_overrides_rejected", profile=profile_name,
+                        rejected=rejected)
+        if not overrides:
+            return 0
+
+        applied_cids: list[str] = []
+        for cid, name in self._profile_name.items():
+            if name != profile_name or cid not in self.profiles:
+                continue
+            cur = self.profiles[cid]
+            changed = {k: v for k, v in overrides.items()
+                       if getattr(cur, k, None) != v}
+            if not changed:
+                continue
+            self.profiles[cid] = cur.model_copy(update=changed)
+            applied_cids.append(cid)
+            ev = self._dirty.get(cid)
+            if ev is not None:
+                ev.set()
+        if applied_cids:
+            log.info("improve_applied", profile=profile_name,
+                     markets=len(applied_cids),
+                     keys=sorted(overrides), diff=diff or {})
+            self._wake_all()
+        return len(applied_cids)
+
     async def _improve_loop(self) -> None:
         """Auto self-improve: every 6h or on strategy decay."""
         if self.self_improver is None:
@@ -1179,6 +1252,29 @@ class Engine:
                             log.info("improve_suggestion",
                                      diagnosis=result.suggestion.diagnosis,
                                      suggestion=result.suggestion.suggestion)
+                            # Apply it. run() has already sanitised, coerced and
+                            # (where required) paper-validated the overrides, and
+                            # recorded them in ProfileHistory for rollback.
+                            if result.promoted and result.live_profile:
+                                n = self._apply_improved_profile(
+                                    self.self_improver.profile_name,
+                                    result.live_profile,
+                                    diff=result.diff,
+                                )
+                                if n == 0:
+                                    log.info("improve_no_live_markets",
+                                             profile=self.self_improver.profile_name)
+                                # Re-seed so the improver's next diff is taken
+                                # against what is actually live; it was only
+                                # seeded once at construction and drifted after
+                                # the first promotion.
+                                with contextlib.suppress(Exception):
+                                    self.self_improver.set_live_profile(
+                                        dict(result.live_profile))
+                            elif result.errors:
+                                log.info("improve_not_applied",
+                                         errors=result.errors,
+                                         paper_validated=result.paper_validated)
                             if self.llm_gov is not None:
                                 _ = self.llm_gov.critique_prompt(
                                     suggestion=result.suggestion.suggestion,
@@ -1210,11 +1306,19 @@ class Engine:
         while self._running:
             try:
                 if should_run_eod_review():
-                    summary = gather_day_summary(
+                    # Both of these block: gather_day_summary hits SQLite and
+                    # run_daily_review does a synchronous urlopen with a 90s
+                    # timeout (up to 3 retries). Run on the event loop they stall
+                    # every book update, every requote, and — critically in live
+                    # mode — the exchange heartbeat, whose dead-man switch would
+                    # then auto-cancel all resting orders.
+                    summary = await asyncio.to_thread(
+                        gather_day_summary,
                         db_path=self.cfg.paths.db,
                         memory=self.memory,
                     )
-                    result = run_daily_review(
+                    result = await asyncio.to_thread(
+                        run_daily_review,
                         summary=summary,
                         memory=self.memory,
                         api_key=self.cfg.secrets.deepseek_api_key,
@@ -2065,6 +2169,10 @@ class Engine:
         if cid is None:
             return
         for fill in fills:
+            # Capture the pre-fill cost basis BEFORE apply_fill zeroes avg_price
+            # on a full round-trip close, so the governor sees realized PnL.
+            pre_pos = self.state.position(fill.token_id)
+            _cost_basis = pre_pos.avg_price if pre_pos.size > 0 else 0.0
             if not self.state.apply_fill(fill):
                 continue  # duplicate (shouldn't happen in paper, but be safe)
             # Keep StateStore.orders remaining in sync with FillSimulator
@@ -2081,11 +2189,23 @@ class Engine:
                             o.order_id, o.token_id, o.side, o.price, new_sz,
                             OrderState.LIVE, o.created_ts,
                         ))
-            self._on_fill(fill)
+            self._on_fill(fill, cost_basis=_cost_basis)
             self._wake_cid(cid)
 
-    def _on_fill(self, fill: Fill) -> None:
-        self.risk.note_fill(fill)
+    def _on_fill(self, fill: Fill, *, cost_basis: float | None = None) -> None:
+        realized_pnl = self.risk.note_fill(fill, cost_basis=cost_basis)
+        # Close the governor's loop on MONEY, not on fair-value drift. A SELL
+        # that closes inventory is the only point at which the outcome of a trade
+        # is actually known.
+        if realized_pnl is not None:
+            self.win_gov.record_outcome(realized_pnl > 0.0)
+            pol = self.win_gov.policy()
+            log.info("round_trip_closed",
+                     token=fill.token_id[:8],
+                     realized_pnl=round(realized_pnl, 4),
+                     win=realized_pnl > 0.0,
+                     realized_wr=round(pol.realized_wr, 3),
+                     n_evaluated=pol.n_evaluated, mode=pol.mode)
         cid = self._token_cid.get(fill.token_id)
         if cid is None:
             return
@@ -2122,7 +2242,8 @@ class Engine:
                         quote=Quote(fill.token_id, fill.side, fill.price, fill.size),
                         meta=meta, mid=float(_v.mid or fv),
                         best_bid=_v.best_bid, best_ask=_v.best_ask,
-                        bid_depth=_v.bid_depth, ask_depth=_v.ask_depth,
+                        # Top-10 depth (trainer convention), not level-1 size.
+                        bid_depth=_bd_total, ask_depth=_ad_total,
                         vol_ratio=est.vol.ratio, flow_z=est.flow.z,
                         toxicity=float(getattr(est.markout, "toxicity", 0.0) or 0.0),
                         regime=Regime(_regime_s),
@@ -2208,7 +2329,11 @@ class Engine:
         if p is not None and fill.side is Side.BUY and (p.take_profit_pct > 0 or p.stop_loss_pct > 0):
             from polymaker.strategy.quoting import compute_tp_sl
             tp, sl = compute_tp_sl(
-                fill_price=fill.price, fill_size=fill.size, fv=fv,
+                fill_price=fill.price, fill_size=fill.size,
+                # Per-token fv: the SL floor is applied in the token's own
+                # price space. Using YES-space fv for a NO-token fill dropped
+                # the stop entirely when fv_yes > 0.5.
+                fv=token_fv,
                 tp_pct=p.take_profit_pct, sl_pct=p.stop_loss_pct,
                 max_risk_usdc=p.max_risk_per_trade_usdc,
                 tick=meta.tick_size, dec=meta.price_decimals,
@@ -2269,7 +2394,16 @@ class Engine:
             move = token_fv_now - lab.fv_at_fill
             markout = move if lab.side is Side.BUY else -move
             self.fill_store.add(lab.feats, filled=True, markout=markout, source="online")
-            self.win_gov.record_outcome(markout > 0.0)
+            # NOTE: the governor is deliberately NOT fed from markout sign.
+            # markout measures 30s fair-value drift, which mislabels the maker's
+            # core trade: buying the bid and selling the ask earns a tick even
+            # when fair value never moved, yet scores as a loss. Observed: 10
+            # resolved labels gave realized_wr=0.0 while all 6 completed round
+            # trips were profitable — on that signal the governor would have hit
+            # its hard floor and blocked entries outright. It is driven from
+            # realized round-trip PnL in _on_fill instead. The markout label is
+            # still the right training target for the fill MODEL (it predicts
+            # quote quality); it is the wrong control signal for trade volume.
             resolved += 1
         self._pending_fill_labels = still
         if resolved:
@@ -2669,43 +2803,41 @@ class Engine:
             return
         tq = pipe.targets
         # ── Fill model: filter adverse quotes + collect training samples ──
-        # In paper mode the model is force-deployed so WR metrics and governor
-        # behaviour can be validated before risking live capital. The gate is
-        # ALWAYS on (paper AND live): it is the only source of non-fill
-        # training samples (store.add(filled=False)) and the governor overlay,
-        # so disabling it in paper would collapse the online validation loop.
-        if True:
-            _mid = max(0.01, min(0.99, yes_view.mid if yes_view.mid is not None else fv))
-            _held: dict[str, float] = {}
-            if pos_yes.size > 0.0:
-                _held[yes_token] = pos_yes.size
-            if pos_no.size > 0.0:
-                _held[no_token] = pos_no.size
-            _ofi_hist = self._ofi_history.get(cid, [])
-            _ofi_now = est.ofi.normalized_ofi
-            _ofi_trend = _ofi_now - _ofi_hist[0][1] if len(_ofi_hist) >= 3 else 0.0
-            _sizes = self._trade_sizes.get(cid, [])
-            _recent_sizes = [s for t, s in _sizes if now - t <= 60.0]
-            _avg_size = sum(_recent_sizes) / len(_recent_sizes) if _recent_sizes else 1.0
-            _size_anomaly = 1.0
-            _trade_rate = len([t for t, _s in _sizes if now - t <= 30.0]) / 30.0
-            _filtered = _filter_quotes_by_fill_model(
-                tq.quotes,
-                cid=cid, meta=meta, tick=tick, mid=_mid,
-                yes_view=yes_view, yes_book=yes_book, no_book=no_book,
-                yes_token=yes_token, est=est, fv=fv, now=now,
-                hours_to_end=hours_to_end, regime=tq.regime,
-                model=self.fill_model, store=self.fill_store,
-                gov=self.win_gov,
-                sample_ts=self._fill_sample_ts,
-                risk_cap_usdc=self.cfg.risk.max_market_notional_usdc,
-                held=_held,
-                ofi=_ofi_now,
-                ofi_trend=_ofi_trend,
-                size_anomaly=_size_anomaly,
-                trade_rate=_trade_rate,
-            )
-            tq = TargetQuotes(tq.condition_id, tq.regime, tuple(_filtered))
+        # The gate is ALWAYS on (paper AND live): it is the only source of
+        # non-fill training samples (store.add(filled=False)) and the governor
+        # overlay, so disabling it in paper would collapse the online
+        # validation loop. Paper-mode force-deploy happens at load.
+        _mid = max(0.01, min(0.99, yes_view.mid if yes_view.mid is not None else fv))
+        _held: dict[str, float] = {}
+        if pos_yes.size > 0.0:
+            _held[yes_token] = pos_yes.size
+        if pos_no.size > 0.0:
+            _held[no_token] = pos_no.size
+        _ofi_hist = self._ofi_history.get(cid, [])
+        _ofi_now = est.ofi.normalized_ofi
+        _ofi_trend = _ofi_now - _ofi_hist[0][1] if len(_ofi_hist) >= 3 else 0.0
+        _sizes = self._trade_sizes.get(cid, [])
+        _recent_sizes = [s for t, s in _sizes if now - t <= 60.0]
+        _avg_size = sum(_recent_sizes) / len(_recent_sizes) if _recent_sizes else 1.0
+        _size_anomaly = 1.0
+        _trade_rate = len([t for t, _s in _sizes if now - t <= 30.0]) / 30.0
+        _filtered = _filter_quotes_by_fill_model(
+            tq.quotes,
+            cid=cid, meta=meta, tick=tick, mid=_mid,
+            yes_view=yes_view, yes_book=yes_book, no_book=no_book,
+            yes_token=yes_token, est=est, fv=fv, now=now,
+            hours_to_end=hours_to_end, regime=tq.regime,
+            model=self.fill_model, store=self.fill_store,
+            gov=self.win_gov,
+            sample_ts=self._fill_sample_ts,
+            risk_cap_usdc=self.cfg.risk.max_market_notional_usdc,
+            held=_held,
+            ofi=_ofi_now,
+            ofi_trend=_ofi_trend,
+            size_anomaly=_size_anomaly,
+            trade_rate=_trade_rate,
+        )
+        tq = TargetQuotes(tq.condition_id, tq.regime, tuple(_filtered))
         # ─────────────────────────────────────────────────────────────
         fv = pipe.fv
         regime = pipe.regime
@@ -2953,7 +3085,13 @@ class Engine:
                 raw = int(amount * 1e6)
                 if raw <= 0:
                     return
-                await asyncio.to_thread(self.merger.merge, meta.condition_id, raw, meta.neg_risk)
+                tx_hash = await asyncio.to_thread(
+                    self.merger.merge, meta.condition_id, raw, meta.neg_risk
+                )
+                if tx_hash:
+                    gas = await asyncio.to_thread(self.merger.gas_cost_for, tx_hash)
+                    if gas > 0:
+                        self.risk.note_gas_cost(gas)
         finally:
             self._merging.discard(cid)
 
@@ -2981,15 +3119,25 @@ class Engine:
                 # quotes, and then get overwritten by the stale REST snapshot.
                 self.state.clear_orders()
                 self._fill_sim.clear()
+                resync_failed = False
                 for _cid, meta in self.metas.items():
                     lock = self._locks.get(_cid)
-                    if lock is not None:
-                        async with lock:
-                            with contextlib.suppress(Exception):
+                    try:
+                        if lock is not None:
+                            async with lock:
                                 await self._refresh_token_orders(meta, grace_s=0.0)
-                    else:
-                        with contextlib.suppress(Exception):
+                        else:
                             await self._refresh_token_orders(meta, grace_s=0.0)
+                    except Exception:
+                        resync_failed = True
+                        log.warning("heartbeat_recovery_resync_failed",
+                                    cid=_cid[:8], exc_info=True)
+                if resync_failed:
+                    # A failed REST resync after clear_orders() must not be
+                    # mistaken for an authoritative empty book: keep quoting
+                    # halted for the affected cycle so we cannot re-place
+                    # orders that may still exist server-side (duplicates).
+                    self._hb_was_down = True
                 self._wake_all()
             await asyncio.sleep(self.cfg.engine.heartbeat_interval_s)
 
@@ -3470,12 +3618,22 @@ class Engine:
         """
         if not self._fill_model_path.exists():
             log.info("fill_model_cold_start", path=str(self._fill_model_path))
+            # No artifact yet, but earlier runs may still have banked samples.
+            self._restore_online_samples()
             return
         try:
             model, store = FillModel.load_bundle(self._fill_model_path)
             self.fill_model = model
             if store is not None:
                 self.fill_store = store
+            # The bundle's online rows are the chronological prefix of any
+            # sidecar checkpoint, so restore skips exactly these rows to avoid
+            # double-counting evidence across restarts.
+            _online = self.fill_store.online_arrays()
+            self._bundle_online_n = 0 if _online is None else len(_online[0])
+            # Carry forward online samples collected by previous runs so the
+            # deployment gate is reachable across restarts.
+            self._restore_online_samples()
             # Paper mode: force deploy so the full ML pipeline (sizing,
             # consensus, governor) can be validated against simulated fills.
             if self.paper and model.is_trained and not model.is_deployable:
@@ -3484,7 +3642,12 @@ class Engine:
             metrics: dict[str, float | bool | int | str] | None = None
             if model.is_trained and store is not None:
                 online = store.online_arrays()
-                if online is not None and len(online[0]) >= self.cfg.model.min_live_validation_samples:
+                # Same requirement as the retrain gate: rows are not evidence
+                # unless enough of them are actual fills.
+                n_online_fills = 0 if online is None else int(online[1].sum())
+                if (online is not None
+                        and len(online[0]) >= self.cfg.model.min_live_validation_samples
+                        and n_online_fills >= self.cfg.model.min_live_fills):
                     metrics = model.validate(
                         *online,
                         min_auc=self.cfg.model.min_auc,
@@ -3533,7 +3696,13 @@ class Engine:
             metrics: dict[str, float | bool | int | str] | None = None
             if self.fill_model.is_trained:
                 online = self.fill_store.online_arrays()
-                if online is not None and len(online[0]) >= self.cfg.model.min_live_validation_samples:
+                # Row count alone is not evidence: non-fill samples dominate the
+                # online slice (one per kept quote). Require real fills too, or
+                # AUC is measured on a handful of positives.
+                n_online_fills = 0 if online is None else int(online[1].sum())
+                if (online is not None
+                        and len(online[0]) >= self.cfg.model.min_live_validation_samples
+                        and n_online_fills >= self.cfg.model.min_live_fills):
                     metrics = self.fill_model.validate(
                         *online,
                         min_auc=self.cfg.model.min_auc,
@@ -3550,21 +3719,111 @@ class Engine:
                         min_corr=self.cfg.model.min_markout_corr,
                     )
             self._last_model_retrain_ts = now
+            # Checkpoint the ONLINE slice every cycle, independent of
+            # deployability. save() above only runs once is_deployable is True,
+            # which itself requires min_live_validation_samples online rows — so
+            # below the threshold nothing was ever written and the samples lived
+            # only in RAM. Every restart began again at zero, making the gate
+            # unreachable by construction. The sidecar keeps the validated model
+            # artifact untouched (a bad retrain still cannot overwrite it).
+            self._checkpoint_online_samples()
             log.info("fill_model_retrained", n_samples=len(yf),
                      fill_rate=round(float(yf.mean()), 3),
                      deployable=self.fill_model.is_deployable,
+                     online_fills=n_online_fills,
                      auc=metrics.get("auc") if metrics else None,
                      corr=metrics.get("corr") if metrics else None,
                      path=str(self._fill_model_path))
         except Exception:
             log.warning("fill_model_retrain_failed", exc_info=True)
 
+    def _checkpoint_online_samples(self) -> None:
+        """Write the online sample slice to a sidecar so restarts accumulate.
+
+        Atomic (tmp + replace) so a crash mid-write cannot corrupt the file.
+        """
+        online = self.fill_store.online_arrays()
+        if online is None or len(online[0]) == 0:
+            return
+        path = self._online_store_path
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix(".tmp")
+            with tmp.open("wb") as fh:
+                pickle.dump(
+                    {"version": 1, "features": online[0],
+                     "y_fill": online[1], "y_markout": online[2],
+                     "saved_ts": time.time()},
+                    fh, protocol=pickle.HIGHEST_PROTOCOL,
+                )
+            tmp.replace(path)
+            log.info("online_samples_checkpointed", n=len(online[0]),
+                     path=str(path))
+        except Exception:
+            log.warning("online_sample_checkpoint_failed", exc_info=True)
+
+    def _restore_online_samples(self) -> None:
+        """Merge any previously checkpointed online samples into the buffer."""
+        path = self._online_store_path
+        if not path.exists():
+            return
+        try:
+            with path.open("rb") as fh:
+                blob = pickle.load(fh)
+            feats = blob["features"]
+            y_fill = blob["y_fill"]
+            y_mk = blob["y_markout"]
+        except Exception:
+            log.warning("online_sample_restore_failed", path=str(path),
+                        exc_info=True)
+            return
+        existing = self.fill_store.online_arrays()
+        n_existing = 0 if existing is None else len(existing[0])
+        if n_existing >= len(feats):
+            # The loaded bundle already carries at least as many online rows.
+            return
+        # The bundle's online rows are a chronological prefix of the sidecar
+        # (the bundle is saved only on deployable retrains while the 60s sidecar
+        # keeps accumulating), so skip the rows already inside the bundle and
+        # append only the rows collected since its last save. Content-based
+        # dedup is wrong here: distinct samples can legitimately share identical
+        # feature vectors, so identity must come from the array position.
+        skip = min(self._bundle_online_n, len(feats))
+        added = 0
+        for i in range(skip, len(feats)):
+            self.fill_store.features.append(feats[i])
+            self.fill_store.y_fill.append(float(y_fill[i]))
+            self.fill_store.y_markout.append(float(y_mk[i]))
+            self.fill_store.source.append("online")
+            added += 1
+        log.info("online_samples_restored", n=added, path=str(path))
+
     # ── maintenance loop ───────────────────────────────────────────────
+
+    async def _sample_checkpoint_loop(self) -> None:
+        """Persist online fill samples on a short, independent cadence.
+
+        Decoupled from the 5-minute retrain tick on purpose. The retrain also
+        gates on a 300s cooldown measured from model load, so an engine that
+        restarts inside that window would checkpoint nothing and every restart
+        would discard the samples gathered since boot — which is exactly how the
+        200-sample deployment gate stayed unreachable. At 60s a restart costs at
+        most a minute of evidence.
+        """
+        while self._running:
+            await asyncio.sleep(60.0)
+            with contextlib.suppress(Exception):
+                self._checkpoint_online_samples()
 
     async def _maintenance_loop(self) -> None:
         """Periodic REST book refresh + auto-compounding."""
         while self._running:
             await asyncio.sleep(120.0)
+            # UTC day rollover: rebase the daily-loss budget on a new day so a
+            # process that runs across midnight does not keep yesterday's
+            # equity snapshot (and an already-latched loss) forever.
+            with contextlib.suppress(Exception):
+                self.risk.rollover_if_new_day()
             for meta in list(self.metas.values()):
                 for tok in (meta.yes.token_id, meta.no.token_id):
                     with contextlib.suppress(Exception):
@@ -3869,7 +4128,9 @@ def _filter_quotes_by_fill_model(
         feats = extract_features(
             quote=q, meta=meta, mid=float(q_view.mid or mid),
             best_bid=q_view.best_bid, best_ask=q_view.best_ask,
-            bid_depth=q_view.bid_depth, ask_depth=q_view.ask_depth,
+            # Top-10 depth (same convention as the trainer) — BookView.bid_depth
+            # is level-1 size only, which would mismatch the training features.
+            bid_depth=bd_total, ask_depth=ad_total,
             vol_ratio=est.vol.ratio, flow_z=est.flow.z,
             toxicity=float(getattr(est.markout, "toxicity", 0.0) or 0.0),
             regime=regime, hours_to_resolve=hours_to_end, now=now,

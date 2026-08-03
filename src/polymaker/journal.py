@@ -2,7 +2,9 @@
 
 Captures raw WS-in and orders-out so the replay backtester (see the README) can
 reconstruct books and re-run the strategy. Also the substrate for post-mortems.
-Cheap: one line per event, flushed, rotated by day.
+Cheap: one line per event, line-flushed. The file is NEVER rotated or
+truncated — ``day`` only selects the filename (e.g. ``paper.jsonl``); the
+journal keeps appending until the process exits.
 """
 
 from __future__ import annotations

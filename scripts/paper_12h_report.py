@@ -137,7 +137,7 @@ def main() -> int:
     # Gate / health
     gate_out = ""
     _, g_out, g_err = _run(
-        [sys.executable, "scripts/paper_data_gate.py", "--config-dir", config_dir],
+        [sys.executable, "scripts/paper_data_gate.py"],
         repo,
     )
     gate_out = (g_out + "\n" + g_err).strip()

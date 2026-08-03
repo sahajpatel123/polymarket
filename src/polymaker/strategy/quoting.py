@@ -131,6 +131,10 @@ def construct_quotes(inp: QuoteInputs) -> TargetQuotes:
     q_max_shares = p.q_max_usdc / max(inp.fv, tick)
     u = _clamp(net_shares / q_max_shares, -1.0, 1.0) if q_max_shares > 0 else 0.0
     reward_floor = m.rewards_min_size * p.reward_size_mult  # scoring size w/ margin
+    # Hard ceiling on any single order's notional. The reward floor is an
+    # absolute share count and will otherwise blow straight through the position
+    # cap on higher-priced tokens.
+    max_market_notional = float(p.q_max_usdc)
 
     # Inventory skew: quadratic taper near |u|→1 so edge compounds without
     # over-skewing mid-range inventory (linear gamma·σ·u under-reacts at tails).
@@ -273,7 +277,8 @@ def construct_quotes(inp: QuoteInputs) -> TargetQuotes:
                         p.layers, p.layer_step_ticks, down=True,
                         exchange_min=m.min_order_size, reward_floor=reward_floor,
                         band_lo=yes_band_lo,
-                        max_orders=p.max_open_orders_per_market)
+                        max_orders=p.max_open_orders_per_market,
+                        max_notional_usdc=max_market_notional)
 
     # entry: SELL YES (when we have YES inventory to exit or want to short)
     if add_sell_yes and inp.pos_yes.size >= m.min_order_size:
@@ -288,7 +293,8 @@ def construct_quotes(inp: QuoteInputs) -> TargetQuotes:
                         p.layers, p.layer_step_ticks, down=False,
                         exchange_min=m.min_order_size, reward_floor=reward_floor,
                         band_lo=yes_band_hi,
-                        max_orders=p.max_open_orders_per_market)
+                        max_orders=p.max_open_orders_per_market,
+                        max_notional_usdc=max_market_notional)
 
     # entry: BUY NO
     if add_no:
@@ -304,7 +310,8 @@ def construct_quotes(inp: QuoteInputs) -> TargetQuotes:
                         p.layers, p.layer_step_ticks, down=True,
                         exchange_min=m.min_order_size, reward_floor=reward_floor,
                         band_lo=no_band_lo,
-                        max_orders=p.max_open_orders_per_market)
+                        max_orders=p.max_open_orders_per_market,
+                        max_notional_usdc=max_market_notional)
 
     # entry: SELL NO (when we have NO inventory to exit or want to short)
     if add_sell_no and inp.pos_no.size >= m.min_order_size:
@@ -319,7 +326,8 @@ def construct_quotes(inp: QuoteInputs) -> TargetQuotes:
                         p.layers, p.layer_step_ticks, down=False,
                         exchange_min=m.min_order_size, reward_floor=reward_floor,
                         band_lo=no_band_hi,
-                        max_orders=p.max_open_orders_per_market)
+                        max_orders=p.max_open_orders_per_market,
+                        max_notional_usdc=max_market_notional)
 
     # ── exits: SELL held inventory (maker, never cross) ─────────────────
     _maybe_exit(quotes, m.yes.token_id, inp.pos_yes, inp.fv, delta, inp.yes_view, tick, dec,
@@ -457,6 +465,7 @@ def _add_layers(
     exchange_min: float = 0.0, reward_floor: float = 0.0,
     band_lo: float | None = None,
     max_orders: int = 0,
+    max_notional_usdc: float = 0.0,
 ) -> None:
     """Split size across `layers` price levels stepping away from the touch.
 
@@ -511,6 +520,17 @@ def _add_layers(
         per = round(total_size / layers, 2)
     if reward_floor > 0 and 0.5 * reward_floor <= per < reward_floor:
         per = reward_floor  # bump each order up to scoring size
+    # The reward bump must not breach the per-market notional cap. Polymarket's
+    # reward minimum is an absolute share count (commonly 200), so on a $0.88
+    # token one "scoring" order is $176 — one observed run placed 255.68 shares
+    # ($225) against a $75 cap. That over-size immediately pushes the market
+    # into REDUCE_ONLY, which disables the exit's profit floor, so the position
+    # then unwinds at cost: round trips close flat or negative by construction.
+    # Rewards are worth forfeiting; a risk cap is not.
+    if max_notional_usdc > 0 and top_price > 0:
+        cap_shares = max_notional_usdc / top_price
+        if per > cap_shares:
+            per = round(cap_shares, 2)
     if per < exchange_min or per <= 0:
         return
     # Apply max_orders cap after consolidation too.

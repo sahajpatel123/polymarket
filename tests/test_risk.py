@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from polymaker.config import RiskConfig
 from polymaker.domain import Fill, Side
 from polymaker.risk.manager import RiskManager
@@ -392,3 +394,119 @@ def test_risk_manager_uses_resolved_bankroll(tmp_path, meta):
     assert d.reduce_only
     assert d.reason in ("market_cap",) or "concentration" in d.reason or "market" in d.reason
     store.close()
+
+
+def test_net_cash_is_reconstructed_from_persisted_fills(tmp_path, meta):
+    """Equity must not be overstated after a restart.
+
+    _net_cash lived only in memory, so a restart zeroed the cash side while
+    positions reloaded in full from SQLite. Equity = net_cash + inventory_value
+    then counted the inventory without the money spent on it: one observed run
+    reported +$665 equity when the fills implied -$517 cash against $532 of
+    inventory. An overstated equity means the daily-loss stop never fires.
+    """
+    db = tmp_path / "s.db"
+    store = StateStore(db)
+    tok = meta.yes.token_id
+    # Production order: the manager is built at startup (seeding from whatever
+    # history exists), and fills arrive afterwards.
+    rm = RiskManager(RiskConfig(max_total_exposure_usdc=5000,
+                                max_market_notional_usdc=800,
+                                max_event_group_loss_usdc=1000,
+                                daily_loss_kill_usdc=250), store)
+    buy = Fill(tok, Side.BUY, 0.50, 1000, "b1")
+    store.apply_fill(buy)
+    rm.note_fill(buy)
+    rm.update_mark(tok, 0.50)
+    assert rm.net_cash == pytest.approx(-500.0)
+    assert rm.equity == pytest.approx(0.0, abs=1e-6)
+    store.close()
+
+    # restart: fresh manager, same db
+    store2 = StateStore(db)
+    rm2 = RiskManager(RiskConfig(max_total_exposure_usdc=5000,
+                                 max_market_notional_usdc=800,
+                                 max_event_group_loss_usdc=1000,
+                                 daily_loss_kill_usdc=250), store2)
+    rm2.update_mark(tok, 0.50)
+    assert rm2.net_cash == pytest.approx(-500.0), (
+        f"net_cash was {rm2.net_cash}, not reconstructed from fills"
+    )
+    assert rm2.equity == pytest.approx(0.0, abs=1e-6), (
+        "equity overstated after restart — the daily-loss stop would not fire"
+    )
+    store2.close()
+
+
+def test_net_cash_counts_sells_as_inflow(tmp_path, meta):
+    db = tmp_path / "s.db"
+    store = StateStore(db)
+    tok = meta.yes.token_id
+    store.apply_fill(Fill(tok, Side.BUY, 0.40, 100, "b1"))
+    store.apply_fill(Fill(tok, Side.SELL, 0.50, 100, "s1"))
+    assert store.net_cash_from_fills() == pytest.approx(10.0)
+    store.close()
+
+
+def test_restart_after_a_loss_still_trips_the_daily_stop(tmp_path, meta):
+    """End to end: the bug's real consequence was a stop that never fired."""
+    db = tmp_path / "s.db"
+    cfg = RiskConfig(max_total_exposure_usdc=5000, max_market_notional_usdc=800,
+                     max_event_group_loss_usdc=1000, daily_loss_kill_usdc=100)
+    store = StateStore(db)
+    tok = meta.yes.token_id
+    rm = RiskManager(cfg, store)
+    f = Fill(tok, Side.BUY, 0.50, 1000, "b1")
+    store.apply_fill(f)
+    rm.note_fill(f)
+    rm.update_mark(tok, 0.50)
+    rm.begin_day()
+    store.close()
+
+    store2 = StateStore(db)
+    rm2 = RiskManager(cfg, store2)
+    rm2.update_mark(tok, 0.20)      # -300 unrealized vs the -100 cap
+    rm2.begin_day()
+    assert rm2.global_halt()[0] is True, (
+        "restart hid the loss behind an overstated equity"
+    )
+    store2.close()
+
+
+def test_seed_and_note_fill_do_not_double_count(tmp_path, meta):
+    """The seed covers HISTORY; note_fill covers new fills. They must not overlap.
+
+    RiskManager is constructed once at engine startup, before any fill of that
+    run is booked, so a fill is counted exactly once: by the seed if it predates
+    the process, by note_fill if it arrives during it.
+    """
+    db = tmp_path / "s.db"
+    cfg = RiskConfig(max_total_exposure_usdc=5000, max_market_notional_usdc=800,
+                     max_event_group_loss_usdc=1000, daily_loss_kill_usdc=250)
+    tok = meta.yes.token_id
+
+    store = StateStore(db)
+    rm = RiskManager(cfg, store)
+    f = Fill(tok, Side.BUY, 0.50, 100, "b1")
+    store.apply_fill(f)
+    rm.note_fill(f)
+    assert rm.net_cash == pytest.approx(-50.0)
+    store.close()
+
+    # restart: the same fill must contribute exactly once, via the seed
+    store2 = StateStore(db)
+    rm2 = RiskManager(cfg, store2)
+    assert rm2.net_cash == pytest.approx(-50.0), (
+        f"history counted {rm2.net_cash / -50.0:.1f}x"
+    )
+    # a NEW fill in this run adds on top, still once
+    f2 = Fill(tok, Side.BUY, 0.50, 100, "b2")
+    store2.apply_fill(f2)
+    rm2.note_fill(f2)
+    assert rm2.net_cash == pytest.approx(-100.0)
+    store2.close()
+
+    store3 = StateStore(db)
+    rm3 = RiskManager(cfg, store3)
+    assert rm3.net_cash == pytest.approx(-100.0)
+    store3.close()
